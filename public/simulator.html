@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flight Simulator</title>
+<script>window.CESIUM_BASE_URL='https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/';</script>
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/Cesium.js"></script>
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:'JetBrains Mono',monospace;cursor:none}
+#cesiumContainer{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1}
+#cesiumContainer .cesium-widget-credits{font-size:9px !important;opacity:0.4}
+#sim-canvas{position:fixed;top:0;left:0;display:block;width:100%;height:100%;background:transparent;z-index:2;pointer-events:none}
+#scanlines{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px)}
+#vignette{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:11;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,0.4) 75%,rgba(0,0,0,0.85) 100%)}
+#hud{position:fixed;bottom:0;left:0;right:0;pointer-events:none;z-index:20;display:flex;justify-content:center;padding:0 20px 20px}
+.hud-panel{background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.3);border-radius:4px;padding:10px 18px;color:#00FF41;font-size:13px;font-family:'JetBrains Mono',monospace;display:flex;gap:28px;align-items:center;backdrop-filter:blur(2px);box-shadow:0 0 20px rgba(0,255,65,0.05),inset 0 0 30px rgba(0,255,65,0.02)}
+.hud-item{display:flex;flex-direction:column;align-items:center;gap:2px}
+.hud-label{font-size:9px;letter-spacing:2px;opacity:0.5;font-weight:300}
+.hud-value{font-size:18px;font-weight:500;letter-spacing:1px;text-shadow:0 0 8px rgba(0,255,65,0.4)}
+#ahi-container{position:fixed;top:16px;left:50%;transform:translateX(-50%);pointer-events:none;z-index:20}
+#ahi-canvas{border:1px solid rgba(0,255,65,0.3);border-radius:50%;background:rgba(0,255,65,0.03);box-shadow:0 0 20px rgba(0,255,65,0.06)}
+#stall-warn{position:fixed;top:42%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:48px;font-weight:700;color:#ff2020;text-shadow:0 0 30px rgba(255,0,0,0.6);font-family:'JetBrains Mono',monospace;letter-spacing:6px;pointer-events:none;display:none}
+#overspeed-warn{position:fixed;top:58%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:38px;font-weight:700;color:#ffaa00;text-shadow:0 0 30px rgba(255,170,0,0.6);font-family:'JetBrains Mono',monospace;letter-spacing:5px;pointer-events:none;display:none}
+#terrain-warn{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:30;pointer-events:none;display:none;text-align:center}
+#terrain-warn .tw-main{font-size:42px;font-weight:700;color:#ff4400;text-shadow:0 0 30px rgba(255,68,0,0.6);font-family:'JetBrains Mono',monospace;letter-spacing:4px}
+#terrain-warn .tw-sub{font-size:14px;color:rgba(255,68,0,0.6);margin-top:8px;font-family:'JetBrains Mono',monospace}
+#controls-hint{position:fixed;top:16px;left:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.25);font-size:10px;font-family:'JetBrains Mono',monospace;line-height:1.8;letter-spacing:1px}
+#throttle-bar-container{position:fixed;right:24px;top:50%;transform:translateY(-50%);z-index:20;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:4px}
+#throttle-bar-bg{width:8px;height:140px;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.2);border-radius:4px;position:relative;overflow:hidden}
+#throttle-bar-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(0,255,65,0.5),rgba(0,255,65,0.2));border-radius:0 0 3px 3px;transition:height 0.15s}
+.thr-label{font-size:8px;color:rgba(0,255,65,0.4);letter-spacing:2px;font-family:'JetBrains Mono',monospace}
+#compass{position:fixed;top:140px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none}
+#compass-canvas{border:1px solid rgba(0,255,65,0.15);border-radius:4px;background:rgba(0,255,65,0.02)}
+#cam-label{position:fixed;top:16px;right:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.6);font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:4px 10px}
+#loc-label{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;color:rgba(0,255,65,0.45);font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;text-align:center}
+#loading{position:fixed;top:0;left:0;width:100%;height:100%;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0a0f;color:#00FF41;font-family:'JetBrains Mono',monospace;gap:14px}
+#loading .l-title{font-size:18px;letter-spacing:4px;text-shadow:0 0 10px rgba(0,255,65,0.4)}
+#loading .l-sub{font-size:11px;opacity:0.5;letter-spacing:2px}
+@keyframes flash{0%,100%{opacity:1}50%{opacity:0}}
+.flashing{animation:flash 0.4s infinite}
+@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+.pulsing{animation:pulse 1.2s infinite}
+/* ===== Start menu (departure selection) ===== */
+#startmenu{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(8,10,14,0.82);backdrop-filter:blur(3px);color:#00FF41;font-family:'JetBrains Mono',monospace;cursor:auto}
+#startmenu .sm-title{font-size:30px;letter-spacing:8px;text-shadow:0 0 14px rgba(0,255,65,0.5)}
+#startmenu .sm-sub{font-size:11px;letter-spacing:3px;opacity:0.6;margin-top:-6px}
+#sm-grid{display:grid;grid-template-columns:repeat(3,minmax(118px,1fr));gap:10px;max-width:440px;width:92%}
+.sm-btn{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:inherit;font-size:11px;letter-spacing:1px;padding:13px 8px;border-radius:5px;transition:all .15s;text-align:center;text-transform:uppercase}
+.sm-btn:hover{background:rgba(0,255,65,0.16);border-color:#00FF41;box-shadow:0 0 14px rgba(0,255,65,0.25)}
+.sm-btn .sm-sub2{display:block;font-size:8px;opacity:0.5;margin-top:4px;letter-spacing:1px}
+#sm-geo{grid-column:1 / -1;background:rgba(0,160,255,0.06);border-color:rgba(80,180,255,0.45);color:#7fd0ff}
+#sm-geo:hover{background:rgba(0,160,255,0.18);border-color:#7fd0ff;box-shadow:0 0 14px rgba(80,180,255,0.3)}
+#startmenu .sm-hint{font-size:9px;opacity:0.4;letter-spacing:2px;margin-top:8px}
+/* ===== Minimap ===== */
+#minimap{position:fixed;left:18px;bottom:84px;width:160px;height:160px;z-index:20;border-radius:50%;overflow:hidden;border:1px solid rgba(0,255,65,0.35);box-shadow:0 0 18px rgba(0,255,65,0.12),inset 0 0 20px rgba(0,0,0,0.4);pointer-events:none;display:none;background:#0a140a}
+#mm-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.92}
+#mm-cv{position:absolute;inset:0;width:100%;height:100%}
+#mm-label{position:absolute;top:7px;left:0;right:0;text-align:center;font-size:8px;letter-spacing:2px;color:rgba(0,255,65,0.7);font-family:'JetBrains Mono',monospace;text-shadow:0 0 4px #000}
+</style>
+</head>
+<body>
+<div id="cesiumContainer"></div>
+<canvas id="sim-canvas"></canvas>
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<div id="ahi-container">
+  <canvas id="ahi-canvas" width="120" height="120"></canvas>
+</div>
+
+<div id="compass">
+  <canvas id="compass-canvas" width="200" height="28"></canvas>
+</div>
+
+<div id="hud">
+  <div class="hud-panel">
+    <div class="hud-item"><span class="hud-label">ALT</span><span class="hud-value" id="hud-alt">1000</span></div>
+    <div class="hud-item"><span class="hud-label">SPD</span><span class="hud-value" id="hud-spd">120</span></div>
+    <div class="hud-item"><span class="hud-label">HDG</span><span class="hud-value" id="hud-hdg">360</span></div>
+    <div class="hud-item"><span class="hud-label">V/S</span><span class="hud-value" id="hud-vs">+0</span></div>
+    <div class="hud-item"><span class="hud-label">AOA</span><span class="hud-value" id="hud-aoa">0°</span></div>
+    <div class="hud-item"><span class="hud-label">G</span><span class="hud-value" id="hud-g">1.0</span></div>
+    <div class="hud-item"><span class="hud-label">THR</span><span class="hud-value" id="hud-thr">50%</span></div>
+  </div>
+</div>
+
+<div id="throttle-bar-container">
+  <span class="thr-label">THR</span>
+  <div id="throttle-bar-bg"><div id="throttle-bar-fill"></div></div>
+</div>
+
+<div id="stall-warn" class="flashing">STALL</div>
+<div id="overspeed-warn" class="flashing">OVERSPEED</div>
+<div id="terrain-warn"><div class="tw-main">TERRAIN</div><div class="tw-sub">PULL UP</div></div>
+
+<div id="cam-label">COCKPIT</div>
+<div id="loc-label">GRAND CANYON, AZ</div>
+<div id="controls-hint">
+  ↑↓ PITCH<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA<br>R RESET
+</div>
+
+<div id="minimap">
+  <img id="mm-img" alt="">
+  <canvas id="mm-cv" width="180" height="180"></canvas>
+  <div id="mm-label">NAV MAP</div>
+</div>
+
+<div id="loading" style="display:none">
+  <div class="l-title">FLIGHT SIM</div>
+  <div class="l-sub pulsing">LOADING EARTH...</div>
+</div>
+
+<div id="startmenu">
+  <div class="sm-title">FLIGHT SIM</div>
+  <div class="sm-sub">SELECT DEPARTURE POINT</div>
+  <div id="sm-grid">
+    <button class="sm-btn" data-name="GRAND CANYON, AZ" data-lat="36.1069" data-lon="-112.1129" data-alt="1500" data-hdg="90">Grand Canyon<span class="sm-sub2">USA</span></button>
+    <button class="sm-btn" data-name="SWISS ALPS" data-lat="45.9763" data-lon="7.6586" data-alt="2500" data-hdg="210">Swiss Alps<span class="sm-sub2">Matterhorn</span></button>
+    <button class="sm-btn" data-name="MOUNT EVEREST" data-lat="27.9881" data-lon="86.9250" data-alt="3000" data-hdg="320">Mt Everest<span class="sm-sub2">Himalaya</span></button>
+    <button class="sm-btn" data-name="DUBAI, UAE" data-lat="25.1972" data-lon="55.2744" data-alt="2000" data-hdg="200">Dubai<span class="sm-sub2">Burj Khalifa</span></button>
+    <button class="sm-btn" data-name="JERUSALEM" data-lat="31.7767" data-lon="35.2345" data-alt="2500" data-hdg="270">Jerusalem<span class="sm-sub2">Israel</span></button>
+    <button class="sm-btn" data-name="TEL AVIV" data-lat="32.0809" data-lon="34.7806" data-alt="2000" data-hdg="0">Tel Aviv<span class="sm-sub2">Coast</span></button>
+    <button class="sm-btn" id="sm-geo">📍 My Location</button>
+  </div>
+  <div class="sm-hint">↑↓ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C camera &nbsp;·&nbsp; R reset</div>
+</div>
+
+<script>
+(function(){
+// Surface any fatal error onto the loading screen
+function showFatal(msg){
+  var l = document.getElementById('loading');
+  if(l){ l.style.display='flex'; var s=l.querySelector('.l-sub'); if(s){ s.classList.remove('pulsing'); s.style.color='#ff5555'; s.textContent = String(msg).slice(0,240); } }
+}
+window.addEventListener('error', function(e){ showFatal('ERR: ' + (e.message || (e.error && e.error.message) || 'unknown')); });
+window.addEventListener('unhandledrejection', function(e){ showFatal('ERR: ' + ((e.reason && (e.reason.message || e.reason)) || 'promise rejected')); });
+
+const canvas = document.getElementById('sim-canvas');
+const ctx = canvas.getContext('2d');
+const ahiCanvas = document.getElementById('ahi-canvas');
+const ahiCtx = ahiCanvas.getContext('2d');
+const compassCanvas = document.getElementById('compass-canvas');
+const compassCtx = compassCanvas.getContext('2d');
+
+const hudAlt = document.getElementById('hud-alt');
+const hudSpd = document.getElementById('hud-spd');
+const hudHdg = document.getElementById('hud-hdg');
+const hudVs = document.getElementById('hud-vs');
+const hudThr = document.getElementById('hud-thr');
+const hudAoa = document.getElementById('hud-aoa');
+const hudG = document.getElementById('hud-g');
+const stallWarn = document.getElementById('stall-warn');
+const overspeedWarn = document.getElementById('overspeed-warn');
+const terrainWarn = document.getElementById('terrain-warn');
+const thrFill = document.getElementById('throttle-bar-fill');
+const loadingEl = document.getElementById('loading');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// === Starting position (chosen on the start menu; defaults to Grand Canyon) ===
+let START = { lat: 36.1069, lon: -112.1129, alt: 8000, hdg: 90, spd: 250, thr: 60 };
+
+// Aircraft state. Units: altitude=feet, speed=knots(TAS), angles=degrees.
+let state = {
+  lat: START.lat,
+  lon: START.lon,
+  altitude: START.alt,
+  speed: START.spd,      // true airspeed, knots
+  heading: START.hdg,
+  pitch: 0,              // attitude theta (deg)
+  bank: 0,              // roll phi (deg)
+  gamma: 0,             // flight-path angle (deg)
+  aoa: 0,               // angle of attack (deg)
+  gforce: 1,            // load factor n = L/W
+  throttle: START.thr,  // commanded throttle 0..100
+  thrustPct: START.thr, // actual (spooled) thrust 0..100
+  vs: 0,                // vertical speed ft/min
+  stall: false,
+  overspeed: false,
+  terrainHit: false,
+  terrainTimer: 0
+};
+
+function resetState() {
+  state.lat = START.lat;
+  state.lon = START.lon;
+  state.altitude = START.alt;
+  state.speed = START.spd;
+  state.heading = START.hdg;
+  state.pitch = 0;
+  state.bank = 0;
+  state.gamma = 0;
+  state.aoa = 0;
+  state.gforce = 1;
+  state.throttle = START.thr;
+  state.thrustPct = START.thr;
+  state.vs = 0;
+  state.stall = false;
+  state.overspeed = false;
+  state.terrainHit = false;
+  state.terrainTimer = 0;
+  terrainWarn.style.display = 'none';
+}
+
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key] = true; if (e.key === 'c' || e.key === 'C') { cameraMode = (cameraMode + 1) % 2; } e.preventDefault(); });
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+// Keep keyboard focus inside the simulator (iframe) on any interaction
+window.addEventListener('pointerdown', function(){ try { window.focus(); } catch (e) {} });
+
+// ===================== Aircraft / aerodynamics model (SI) =====================
+// A nimble light jet. Real point-mass dynamics: lift, drag, thrust, weight.
+const AC = {
+  m: 5200,            // mass (kg)
+  S: 30,              // wing area (m^2)
+  g: 9.81,
+  CL_a: 5.2,          // lift-curve slope (per rad)
+  CL_max: 1.5,        // max lift coefficient (before stall)
+  aStall: 16,         // stall angle of attack (deg)
+  Cd0: 0.024,         // parasitic drag
+  k: 0.045,           // induced drag factor
+  incidence: 2.0,     // wing mounting incidence (deg) — neutral stick ≈ level flight
+  Tmax: 52000,        // max thrust at sea level (N)
+  rho0: 1.225,        // sea-level air density
+  scaleH: 9200,       // density scale height (m)
+  Vne: 320            // never-exceed true airspeed (m/s) ~ 620 kt
+};
+const VNE_KTS = AC.Vne / 0.514444;
+
+// Current 1g stall speed (knots) at the present altitude — rises with altitude.
+function stallSpeedKts() {
+  const altM = (state.altitude || 0) * 0.3048;
+  const rho = AC.rho0 * Math.exp(-Math.max(0, altM) / AC.scaleH);
+  const Vs = Math.sqrt((AC.m * AC.g) / (0.5 * rho * AC.S * AC.CL_max));
+  return Vs / 0.514444;
+}
+
+let lastTime = performance.now();
+let cameraMode = 0; // 0=cockpit, 1=chase
+
+// ===================== CESIUM GLOBE (real world) =====================
+let viewer = null;
+function initCesium() {
+  if (!window.Cesium) { if (loadingEl) loadingEl.querySelector('.l-sub').textContent = 'EARTH FAILED TO LOAD'; return; }
+  try {
+    viewer = new Cesium.Viewer('cesiumContainer', {
+      // Real satellite imagery from ArcGIS, served as plain {z}/{y}/{x} Web-Mercator
+      // tiles (no metadata parsing) — no API key, no signup required.
+      // NOTE: ArcGisMapServerImageryProvider.fromUrl produced a broken tiling
+      // scheme here (it requested nonsensical zoom levels and rendered nothing),
+      // so we use UrlTemplateImageryProvider with the standard scheme instead.
+      baseLayer: new Cesium.ImageryLayer(
+        new Cesium.UrlTemplateImageryProvider({
+          url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          maximumLevel: 18,
+          credit: 'Imagery © Esri, Maxar, Earthstar Geographics'
+        })
+      ),
+      animation: false, timeline: false, baseLayerPicker: false, geocoder: false,
+      homeButton: false, sceneModePicker: false, navigationHelpButton: false,
+      fullscreenButton: false, infoBox: false, selectionIndicator: false
+    });
+
+    // We drive the camera ourselves from the flight model
+    viewer.scene.screenSpaceCameraController.enableInputs = false;
+    viewer.scene.globe.enableLighting = false;        // always lit, no dark night side
+    viewer.scene.globe.depthTestAgainstTerrain = true; // terrain hides things behind it
+    viewer.scene.fog.enabled = true;
+    viewer.scene.skyAtmosphere.show = true;
+
+    // Real 3D terrain elevation (keyless) — graceful fallback to smooth globe if unavailable
+    Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(
+      'https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer'
+    ).then(function(t){ viewer.terrainProvider = t; }).catch(function(){ /* keep ellipsoid */ });
+  } catch (e) {
+    console.warn('Cesium init failed', e);
+    if (loadingEl) loadingEl.querySelector('.l-sub').textContent = 'EARTH FAILED TO LOAD';
+  }
+}
+initCesium();
+
+const FT_TO_M = 0.3048;
+const KTS_TO_MPS = 0.514444;
+const M_PER_DEG_LAT = 111320;
+
+function updateCamera() {
+  if (!viewer) return;
+
+  // Sense of speed: widen FOV as we go faster.
+  try {
+    const fr = viewer.camera.frustum;
+    if (fr && typeof fr.fov === 'number') {
+      const fovDeg = 55 + Math.min(22, Math.max(0, (state.speed - 150)) * 0.06);
+      fr.fov = Cesium.Math.toRadians(fovDeg);
+    }
+  } catch (e) { /* not a perspective frustum */ }
+
+  const lat = state.lat, lon = state.lon;
+  const h = Math.max(state.altitude, 0) * FT_TO_M;
+  // Airframe buffet shake while stalled
+  const buf = state.stall ? (Math.random() - 0.5) : 0;
+  const hdg = Cesium.Math.toRadians(state.heading);
+  const pitch = Cesium.Math.toRadians(state.pitch + buf * 1.2);
+  const roll = Cesium.Math.toRadians(state.bank + buf * 2.2);
+
+  if (cameraMode === 0) {
+    // Cockpit: camera sits at the aircraft, looking out the nose
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(lon, lat, h),
+      orientation: { heading: hdg, pitch: pitch, roll: roll }
+    });
+  } else {
+    // Chase: camera behind & above the aircraft
+    const back = 90, up = 30;
+    const hr = state.heading * Math.PI / 180;
+    const dN = -Math.cos(hr) * back;
+    const dE = -Math.sin(hr) * back;
+    const dLat = dN / M_PER_DEG_LAT;
+    const dLon = dE / (M_PER_DEG_LAT * Math.cos(lat * Math.PI / 180));
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(lon + dLon, lat + dLat, h + up),
+      orientation: { heading: hdg, pitch: Cesium.Math.toRadians(state.pitch - 8), roll: roll }
+    });
+  }
+}
+
+const DEG = Math.PI / 180;
+
+// Sample real terrain height (m) under the aircraft, when tiles are loaded.
+function terrainHeightM() {
+  if (!viewer) return 0;
+  try {
+    const h = viewer.scene.globe.getHeight(
+      Cesium.Cartographic.fromDegrees(state.lon, state.lat)
+    );
+    return (typeof h === 'number' && isFinite(h)) ? h : 0;
+  } catch (e) { return 0; }
+}
+
+function update(dt) {
+  if (state.terrainHit) {
+    state.terrainTimer -= dt;
+    if (state.terrainTimer <= 0) resetState();
+    return;
+  }
+  // clamp dt so a stutter can't explode the integrator
+  dt = Math.min(dt, 0.05);
+
+  // ---- Pilot inputs (elevator / aileron / throttle / airbrake) ----
+  // Control authority scales with airspeed (sluggish when slow, like a real wing).
+  const V0 = Math.max(state.speed * KTS_TO_MPS, 1);
+  const authority = Math.min(1, V0 / 90);            // ~full above ~175 kt
+  const pitchRate = 26 * (0.35 + 0.65 * authority);
+  const bankRate = 75 * (0.4 + 0.6 * authority);
+  const throttleRate = 35;
+
+  if (keys['ArrowUp']) state.pitch = Math.min(state.pitch + pitchRate * dt, 28);
+  if (keys['ArrowDown']) state.pitch = Math.max(state.pitch - pitchRate * dt, -22);
+  if (keys['ArrowLeft']) state.bank = Math.max(state.bank - bankRate * dt, -80);
+  if (keys['ArrowRight']) state.bank = Math.min(state.bank + bankRate * dt, 80);
+  if (keys['w'] || keys['W']) state.throttle = Math.min(state.throttle + throttleRate * dt, 100);
+  if (keys['s'] || keys['S']) state.throttle = Math.max(state.throttle - throttleRate * dt, 0);
+  if (keys['r'] || keys['R']) { resetState(); return; }
+  const airbrake = !!(keys['b'] || keys['B'] || keys[' ']);
+
+  // Roll stability: wings level themselves slowly with no aileron input (dihedral).
+  if (!keys['ArrowLeft'] && !keys['ArrowRight']) {
+    state.bank *= Math.pow(0.55, dt);
+    if (Math.abs(state.bank) < 0.4) state.bank = 0;
+  }
+
+  // Engine spool-up lag
+  state.thrustPct += (state.throttle - state.thrustPct) * Math.min(1, dt * 1.6);
+
+  // ---- Aerodynamics (point-mass, SI units) ----
+  const m = AC.m, g = AC.g, S = AC.S;
+  let V = Math.max(state.speed * KTS_TO_MPS, 1);
+  const altM = state.altitude * FT_TO_M;
+  const rho = AC.rho0 * Math.exp(-Math.max(0, altM) / AC.scaleH);
+  const q = 0.5 * rho * V * V;                        // dynamic pressure
+
+  const theta = state.pitch;                          // attitude (deg)
+  let gamma = state.gamma;                            // flight-path (deg)
+  let aoaDeg = theta - gamma + AC.incidence;          // angle of attack (incl. wing incidence)
+  // clamp AoA so numerical excursions stay sane
+  aoaDeg = Math.max(-30, Math.min(30, aoaDeg));
+
+  // Lift coefficient, with a stall break past the critical AoA
+  let CL, stalled = false;
+  if (Math.abs(aoaDeg) <= AC.aStall) {
+    CL = AC.CL_a * (aoaDeg * DEG);
+    CL = Math.max(-AC.CL_max, Math.min(AC.CL_max, CL));
+  } else {
+    stalled = true;
+    const sgn = aoaDeg > 0 ? 1 : -1;
+    const over = Math.abs(aoaDeg) - AC.aStall;
+    CL = sgn * AC.CL_max * Math.max(0.45, 1 - over / 18); // lift collapses
+  }
+
+  const Cd = AC.Cd0 + AC.k * CL * CL + (airbrake ? 0.08 : 0);
+  const L = q * S * CL;
+  const D = q * S * Cd;
+  const W = m * g;
+  const T = (state.thrustPct / 100) * AC.Tmax * (rho / AC.rho0); // thrust fades with altitude
+  const phi = state.bank * DEG;
+  const gam = gamma * DEG;
+  const Vsafe = Math.max(V, 14);                      // avoid divide-by-zero at low speed
+
+  // Translational + rotational EOM
+  const dV = (T - D - W * Math.sin(gam)) / m;                       // along velocity
+  let dGam = (L * Math.cos(phi) - W * Math.cos(gam)) / (m * Vsafe); // pitch of velocity vector
+  let dPsi = (L * Math.sin(phi)) / (m * Vsafe);                     // turn rate (rad/s)
+  dGam = Math.max(-1.6, Math.min(1.6, dGam));
+  dPsi = Math.max(-1.6, Math.min(1.6, dPsi));
+
+  V += dV * dt;
+  V = Math.max(0, Math.min(AC.Vne * 1.15, V));
+  gamma += (dGam * dt) / DEG;
+  gamma = Math.max(-89, Math.min(89, gamma));
+  state.heading += (dPsi * dt) / DEG;
+  if (state.heading < 0) state.heading += 360;
+  if (state.heading >= 360) state.heading -= 360;
+
+  // Load factor (G)
+  const n = L / W;
+
+  // Vertical + horizontal motion from the velocity vector
+  const climbRate = V * Math.sin(gamma * DEG);        // m/s
+  const groundSpeed = V * Math.cos(gamma * DEG);      // m/s
+  let newAltM = altM + climbRate * dt;
+
+  // ---- Terrain / ground collision (real elevation under the aircraft) ----
+  const groundM = terrainHeightM();
+  if (newAltM <= groundM + 3) {
+    newAltM = groundM + 3;
+    state.terrainHit = true;
+    state.terrainTimer = 2.2;
+    terrainWarn.style.display = 'block';
+  }
+
+  // ---- Commit state (convert back to display units) ----
+  state.speed = V / KTS_TO_MPS;
+  state.altitude = newAltM / FT_TO_M;
+  state.gamma = gamma;
+  state.aoa = aoaDeg;
+  state.gforce = n;
+  state.vs = climbRate * 196.85;                      // m/s -> ft/min
+  state.stall = stalled || (Math.abs(CL) >= AC.CL_max * 0.97);
+  state.overspeed = V > AC.Vne;
+
+  // Advance position across the real globe
+  const dist = groundSpeed * dt;
+  const hr = state.heading * DEG;
+  const dN = Math.cos(hr) * dist;
+  const dE = Math.sin(hr) * dist;
+  state.lat += dN / M_PER_DEG_LAT;
+  state.lon += dE / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+  if (state.lon > 180) state.lon -= 360;
+  if (state.lon < -180) state.lon += 360;
+  state.lat = Math.max(-85, Math.min(85, state.lat));
+}
+
+function drawCrosshair() {
+  const cx = W / 2;
+  const cy = H / 2;
+
+  ctx.strokeStyle = 'rgba(0,255,65,0.35)';
+  ctx.lineWidth = 1.5;
+
+  // Center dot
+  ctx.fillStyle = 'rgba(0,255,65,0.5)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wings
+  ctx.beginPath();
+  ctx.moveTo(cx - 40, cy);
+  ctx.lineTo(cx - 15, cy);
+  ctx.lineTo(cx - 15, cy + 6);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(cx + 40, cy);
+  ctx.lineTo(cx + 15, cy);
+  ctx.lineTo(cx + 15, cy + 6);
+  ctx.stroke();
+}
+
+function drawPitchLadder(bankRad) {
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.rotate(-bankRad);
+
+  const pixPerDeg = 6;
+  ctx.strokeStyle = 'rgba(0,255,65,0.2)';
+  ctx.fillStyle = 'rgba(0,255,65,0.4)';
+  ctx.font = '9px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 1;
+
+  for (let deg = -20; deg <= 30; deg += 5) {
+    if (deg === 0) continue;
+    const y = -(deg - state.pitch) * pixPerDeg;
+    if (Math.abs(y) > H * 0.35) continue;
+
+    const halfW = deg % 10 === 0 ? 35 : 18;
+    const isDashed = deg < 0;
+
+    if (isDashed) {
+      ctx.setLineDash([4, 4]);
+    } else {
+      ctx.setLineDash([]);
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(-halfW, y);
+    ctx.lineTo(halfW, y);
+    ctx.stroke();
+
+    if (deg % 10 === 0) {
+      ctx.fillText(deg.toString(), halfW + 16, y + 3);
+      ctx.fillText(deg.toString(), -halfW - 16, y + 3);
+    }
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawAirplane() {
+  // === 3D Airplane Model (chase view overlay) ===
+  // Coordinate system: X=right, Y=up, Z=forward (nose)
+  const verts = [];
+  const faces = [];
+  const sides = 6;
+
+  function addSection(z, r) {
+    const startIdx = verts.length;
+    if (r <= 0.01) { verts.push([0, 0, z]); return [startIdx]; }
+    const indices = [];
+    for (let i = 0; i < sides; i++) {
+      const a = (i / sides) * Math.PI * 2 + Math.PI / 6;
+      indices.push(startIdx + i);
+      verts.push([Math.cos(a) * r, Math.sin(a) * r, z]);
+    }
+    return indices;
+  }
+
+  // Fuselage sections (nose to tail)
+  const sec0 = addSection(3.0, 0);
+  const sec1 = addSection(2.0, 0.30);
+  const sec2 = addSection(0.5, 0.40);
+  const sec3 = addSection(-1.0, 0.32);
+  const sec4 = addSection(-2.5, 0.12);
+  const fSecs = [sec0, sec1, sec2, sec3, sec4];
+  const fusCol = [0.35, 0.43, 0.50];
+
+  for (let s = 0; s < fSecs.length - 1; s++) {
+    const a = fSecs[s], b = fSecs[s + 1];
+    if (a.length === 1) {
+      for (let i = 0; i < b.length; i++) {
+        const ni = (i + 1) % b.length;
+        faces.push({ v: [a[0], b[i], b[ni]], c: fusCol });
+      }
+    } else if (b.length === 1) {
+      for (let i = 0; i < a.length; i++) {
+        const ni = (i + 1) % a.length;
+        faces.push({ v: [a[i], a[ni], b[0]], c: fusCol });
+      }
+    } else {
+      for (let i = 0; i < a.length; i++) {
+        const ni = (i + 1) % a.length;
+        faces.push({ v: [a[i], a[ni], b[ni], b[i]], c: fusCol });
+      }
+    }
+  }
+
+  // Wings with thickness
+  const wt = 0.06;
+  const wCol = [0.25, 0.32, 0.38];
+  function addWing(side) {
+    const s = side;
+    const rLE = verts.length; verts.push([s*0.35, wt, 0.6]);
+    const rTE = verts.length; verts.push([s*0.35, wt, -0.4]);
+    const tLE = verts.length; verts.push([s*3.0, wt, -0.1]);
+    const tTE = verts.length; verts.push([s*3.0, wt, -0.8]);
+    const rLEb = verts.length; verts.push([s*0.35, -wt, 0.6]);
+    const rTEb = verts.length; verts.push([s*0.35, -wt, -0.4]);
+    const tLEb = verts.length; verts.push([s*3.0, -wt, -0.1]);
+    const tTEb = verts.length; verts.push([s*3.0, -wt, -0.8]);
+    faces.push({ v: [rLE, tLE, tTE, rTE], c: wCol });
+    faces.push({ v: [rLEb, rTEb, tTEb, tLEb], c: [wCol[0]*0.65, wCol[1]*0.65, wCol[2]*0.65] });
+    faces.push({ v: [tLE, tLEb, tTEb, tTE], c: [wCol[0]*0.8, wCol[1]*0.8, wCol[2]*0.8] });
+    faces.push({ v: [rLE, rLEb, tLEb, tLE], c: [wCol[0]*0.85, wCol[1]*0.85, wCol[2]*0.85] });
+    faces.push({ v: [rTE, tTE, tTEb, rTEb], c: [wCol[0]*0.72, wCol[1]*0.72, wCol[2]*0.72] });
+    return { tip: tLE };
+  }
+  const lwTips = addWing(-1);
+  const rwTips = addWing(1);
+
+  // Horizontal stabilizer
+  function addHS(side) {
+    const s = side;
+    const rLE = verts.length; verts.push([s*0.15, 0.03, -2.2]);
+    const rTE = verts.length; verts.push([s*0.15, 0.03, -2.5]);
+    const tLE = verts.length; verts.push([s*1.1, 0.03, -2.4]);
+    const tTE = verts.length; verts.push([s*1.1, 0.03, -2.6]);
+    const rLEb = verts.length; verts.push([s*0.15, -0.03, -2.2]);
+    const rTEb = verts.length; verts.push([s*0.15, -0.03, -2.5]);
+    const tLEb = verts.length; verts.push([s*1.1, -0.03, -2.4]);
+    const tTEb = verts.length; verts.push([s*1.1, -0.03, -2.6]);
+    faces.push({ v: [rLE, tLE, tTE, rTE], c: wCol });
+    faces.push({ v: [rLEb, rTEb, tTEb, tLEb], c: [wCol[0]*0.65, wCol[1]*0.65, wCol[2]*0.65] });
+    faces.push({ v: [tLE, tLEb, tTEb, tTE], c: [wCol[0]*0.8, wCol[1]*0.8, wCol[2]*0.8] });
+    faces.push({ v: [rLE, rLEb, tLEb, tLE], c: [wCol[0]*0.85, wCol[1]*0.85, wCol[2]*0.85] });
+  }
+  addHS(-1); addHS(1);
+
+  // Vertical stabilizer
+  const vBLE = verts.length; verts.push([0, 0, -2.2]);
+  const vBTE = verts.length; verts.push([0, 0, -2.5]);
+  const vTLE = verts.length; verts.push([0, 0.7, -2.3]);
+  const vTTE = verts.length; verts.push([0, 0.7, -2.6]);
+  const vCol = [0.30, 0.37, 0.43];
+  faces.push({ v: [vBLE, vTLE, vTTE, vBTE], c: vCol });
+  faces.push({ v: [vBLE, vBTE, vTTE, vTLE], c: [vCol[0]*0.75, vCol[1]*0.75, vCol[2]*0.75] });
+
+  // Cockpit canopy
+  const cF = verts.length; verts.push([0, 0.15, 1.5]);
+  const cB = verts.length; verts.push([0, 0.15, 0.3]);
+  const cFT = verts.length; verts.push([0, 0.38, 1.3]);
+  const cBT = verts.length; verts.push([0, 0.38, 0.5]);
+  faces.push({ v: [cF, cFT, cBT, cB], c: [0.10, 0.20, 0.32] });
+  faces.push({ v: [cF, cB, cBT, cFT], c: [0.07, 0.14, 0.24] });
+
+  // === Transform & Project ===
+  const pitchRad = state.pitch * Math.PI / 180;
+  const bankRad = state.bank * Math.PI / 180;
+  const camY = 1.0, camZ = -7.5;
+  const focal = Math.min(W, H) * 0.75;
+  const scY = H * 0.52;
+
+  const tf = verts.map(v => {
+    let x = v[0], y = v[1], z = v[2];
+    const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad);
+    const ny = y * cp - z * sp;
+    const nz = y * sp + z * cp;
+    y = ny; z = nz;
+    const cb = Math.cos(bankRad), sb = Math.sin(bankRad);
+    const nx = x * cb - y * sb;
+    const nyy = x * sb + y * cb;
+    return [nx, nyy, z];
+  });
+
+  const proj = tf.map(v => {
+    const vz = v[2] - camZ;
+    if (vz <= 0.1) return null;
+    return { x: (v[0] * focal) / vz + W / 2, y: (-(v[1] - camY) * focal) / vz + scY, z: vz };
+  });
+
+  // Light direction
+  const lD = [-0.4, 0.7, 0.6];
+  const lL = Math.sqrt(lD[0]**2 + lD[1]**2 + lD[2]**2);
+  const lx = lD[0]/lL, ly = lD[1]/lL, lz = lD[2]/lL;
+
+  // Build face list with depth & lighting
+  const fData = faces.map(face => {
+    const pts = face.v.map(vi => proj[vi]);
+    if (pts.some(p => !p)) return null;
+    const tv = face.v.map(vi => tf[vi]);
+    const avgZ = pts.reduce((s, p) => s + p.z, 0) / pts.length;
+    const e1 = [tv[1][0]-tv[0][0], tv[1][1]-tv[0][1], tv[1][2]-tv[0][2]];
+    const e2 = [tv[2][0]-tv[0][0], tv[2][1]-tv[0][1], tv[2][2]-tv[0][2]];
+    let nx = e1[1]*e2[2] - e1[2]*e2[1];
+    let ny = e1[2]*e2[0] - e1[0]*e2[2];
+    let nz = e1[0]*e2[1] - e1[1]*e2[0];
+    const nL = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+    nx /= nL; ny /= nL; nz /= nL;
+    // Flip normal toward camera
+    const cxA = tv.reduce((s, v) => s + v[0], 0) / tv.length;
+    const cyA = tv.reduce((s, v) => s + v[1], 0) / tv.length;
+    const czA = tv.reduce((s, v) => s + v[2], 0) / tv.length;
+    const vDot = nx*(0-cxA) + ny*(camY-cyA) + nz*(camZ-czA);
+    const sign = vDot > 0 ? 1 : -1;
+    const light = Math.max(0.15, sign * (nx*lx + ny*ly + nz*lz));
+    return { pts, avgZ, light, color: face.c };
+  }).filter(f => f);
+
+  // Sort back-to-front
+  fData.sort((a, b) => b.avgZ - a.avgZ);
+
+  // Draw
+  fData.forEach(fd => {
+    const r = Math.round(fd.color[0] * fd.light * 255);
+    const g = Math.round(fd.color[1] * fd.light * 255);
+    const b = Math.round(fd.color[2] * fd.light * 255);
+    ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+    ctx.strokeStyle = 'rgba(0,255,65,0.12)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    fd.pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  // Wing tip nav lights
+  function drawLight(vi, color) {
+    const p = proj[vi];
+    if (!p) return;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  drawLight(rwTips.tip, 'rgba(0,255,65,0.9)');
+  drawLight(lwTips.tip, 'rgba(255,40,40,0.9)');
+
+  // Engine exhaust glow
+  const glow = state.throttle / 100;
+  if (glow > 0.1) {
+    [[1.0, 0, -0.5], [-1.0, 0, -0.5]].forEach(pos => {
+      let x = pos[0], y = pos[1], z = pos[2];
+      const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad);
+      const ny = y * cp - z * sp; const nz = y * sp + z * cp;
+      y = ny; z = nz;
+      const cb = Math.cos(bankRad), sb = Math.sin(bankRad);
+      const nx = x * cb - y * sb; const nyy = x * sb + y * cb;
+      const vz = z - camZ;
+      if (vz <= 0.1) return;
+      const sx = (nx * focal) / vz + W / 2;
+      const sy = (-(y - camY) * focal) / vz + scY;
+      const rad = 18 * glow;
+      const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, rad);
+      grad.addColorStop(0, 'rgba(255,200,50,' + (0.7 * glow) + ')');
+      grad.addColorStop(0.4, 'rgba(255,100,20,' + (0.35 * glow) + ')');
+      grad.addColorStop(1, 'rgba(255,50,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(sx, sy, rad, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+}
+
+function drawAHI() {
+  const size = 120;
+  const r = size / 2 - 2;
+  const cx = size / 2;
+  const cy = size / 2;
+
+  ahiCtx.clearRect(0, 0, size, size);
+
+  ahiCtx.save();
+  ahiCtx.beginPath();
+  ahiCtx.arc(cx, cy, r, 0, Math.PI * 2);
+  ahiCtx.clip();
+
+  ahiCtx.translate(cx, cy);
+  ahiCtx.rotate(-state.bank * Math.PI / 180);
+
+  const pitchOffset = state.pitch * 1.2;
+
+  // Sky
+  ahiCtx.fillStyle = '#1a3060';
+  ahiCtx.fillRect(-r * 2, -r * 2, r * 4, r * 2 + pitchOffset);
+
+  // Ground
+  ahiCtx.fillStyle = '#1a3a1a';
+  ahiCtx.fillRect(-r * 2, pitchOffset, r * 4, r * 4);
+
+  // Horizon line
+  ahiCtx.strokeStyle = 'rgba(0,255,65,0.6)';
+  ahiCtx.lineWidth = 1.5;
+  ahiCtx.beginPath();
+  ahiCtx.moveTo(-r * 2, pitchOffset);
+  ahiCtx.lineTo(r * 2, pitchOffset);
+  ahiCtx.stroke();
+
+  // Pitch marks
+  ahiCtx.strokeStyle = 'rgba(0,255,65,0.25)';
+  ahiCtx.lineWidth = 0.8;
+  for (let p = -30; p <= 30; p += 10) {
+    if (p === 0) continue;
+    const y = pitchOffset - p * 1.2;
+    const hw = p % 20 === 0 ? 16 : 10;
+    ahiCtx.beginPath();
+    ahiCtx.moveTo(-hw, y);
+    ahiCtx.lineTo(hw, y);
+    ahiCtx.stroke();
+  }
+
+  ahiCtx.restore();
+
+  // Fixed aircraft symbol
+  ahiCtx.strokeStyle = '#00FF41';
+  ahiCtx.lineWidth = 2;
+
+  // Center dot
+  ahiCtx.fillStyle = '#00FF41';
+  ahiCtx.beginPath();
+  ahiCtx.arc(cx, cy, 2, 0, Math.PI * 2);
+  ahiCtx.fill();
+
+  // Wings
+  ahiCtx.beginPath();
+  ahiCtx.moveTo(cx - 28, cy);
+  ahiCtx.lineTo(cx - 10, cy);
+  ahiCtx.lineTo(cx - 10, cy + 4);
+  ahiCtx.stroke();
+
+  ahiCtx.beginPath();
+  ahiCtx.moveTo(cx + 28, cy);
+  ahiCtx.lineTo(cx + 10, cy);
+  ahiCtx.lineTo(cx + 10, cy + 4);
+  ahiCtx.stroke();
+
+  // Bank angle indicator at top
+  ahiCtx.save();
+  ahiCtx.translate(cx, cy);
+  const bankMarks = [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60];
+  bankMarks.forEach(deg => {
+    const rad = (deg - 90) * Math.PI / 180;
+    const inner = r - 10;
+    const outer = r - 4;
+    ahiCtx.strokeStyle = deg === 0 ? '#00FF41' : 'rgba(0,255,65,0.3)';
+    ahiCtx.lineWidth = deg % 30 === 0 ? 2 : 1;
+    ahiCtx.beginPath();
+    ahiCtx.moveTo(Math.cos(rad) * inner, Math.sin(rad) * inner);
+    ahiCtx.lineTo(Math.cos(rad) * outer, Math.sin(rad) * outer);
+    ahiCtx.stroke();
+  });
+
+  // Current bank pointer
+  const bRad = (-state.bank - 90) * Math.PI / 180;
+  const pInner = r - 14;
+  const pTip = r - 5;
+  ahiCtx.fillStyle = '#00FF41';
+  ahiCtx.beginPath();
+  ahiCtx.moveTo(Math.cos(bRad) * pTip, Math.sin(bRad) * pTip);
+  ahiCtx.lineTo(Math.cos(bRad - 0.08) * pInner, Math.sin(bRad - 0.08) * pInner);
+  ahiCtx.lineTo(Math.cos(bRad + 0.08) * pInner, Math.sin(bRad + 0.08) * pInner);
+  ahiCtx.closePath();
+  ahiCtx.fill();
+  ahiCtx.restore();
+
+  // Outer ring
+  ahiCtx.strokeStyle = 'rgba(0,255,65,0.2)';
+  ahiCtx.lineWidth = 1;
+  ahiCtx.beginPath();
+  ahiCtx.arc(cx, cy, r, 0, Math.PI * 2);
+  ahiCtx.stroke();
+}
+
+function drawCompass() {
+  const w = 200;
+  const h = 28;
+  compassCtx.clearRect(0, 0, w, h);
+
+  const hdg = state.heading;
+  const degsVisible = 60;
+  const pxPerDeg = w / degsVisible;
+
+  compassCtx.fillStyle = 'rgba(0,255,65,0.03)';
+  compassCtx.fillRect(0, 0, w, h);
+
+  const cardinals = {0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
+
+  for (let d = -degsVisible; d <= degsVisible; d++) {
+    let deg = Math.round(hdg + d);
+    if (deg < 0) deg += 360;
+    if (deg >= 360) deg -= 360;
+
+    const x = w / 2 + d * pxPerDeg;
+    if (x < -10 || x > w + 10) continue;
+
+    if (deg % 10 === 0) {
+      compassCtx.strokeStyle = deg % 30 === 0 ? 'rgba(0,255,65,0.5)' : 'rgba(0,255,65,0.2)';
+      compassCtx.lineWidth = 1;
+      compassCtx.beginPath();
+      const tickH = deg % 30 === 0 ? 8 : 5;
+      compassCtx.moveTo(x, h);
+      compassCtx.lineTo(x, h - tickH);
+      compassCtx.stroke();
+    }
+
+    if (cardinals[deg]) {
+      compassCtx.fillStyle = deg === 0 || deg === 360 ? '#00FF41' : 'rgba(0,255,65,0.6)';
+      compassCtx.font = '10px "JetBrains Mono", monospace';
+      compassCtx.textAlign = 'center';
+      compassCtx.fillText(cardinals[deg], x, 12);
+    } else if (deg % 30 === 0) {
+      compassCtx.fillStyle = 'rgba(0,255,65,0.35)';
+      compassCtx.font = '8px "JetBrains Mono", monospace';
+      compassCtx.textAlign = 'center';
+      compassCtx.fillText(deg.toString(), x, 11);
+    }
+  }
+
+  // Center marker
+  compassCtx.fillStyle = '#00FF41';
+  compassCtx.beginPath();
+  compassCtx.moveTo(w / 2, h);
+  compassCtx.lineTo(w / 2 - 4, h - 4);
+  compassCtx.lineTo(w / 2 + 4, h - 4);
+  compassCtx.closePath();
+  compassCtx.fill();
+}
+
+function drawAltTape() {
+  const tapeW = 52;
+  const tapeH = 180;
+  const x = W - 80;
+  const y = H / 2 - tapeH / 2;
+
+  ctx.fillStyle = 'rgba(0,20,5,0.55)';
+  ctx.strokeStyle = 'rgba(0,255,65,0.2)';
+  ctx.lineWidth = 1;
+  ctx.fillRect(x, y, tapeW, tapeH);
+  ctx.strokeRect(x, y, tapeW, tapeH);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, tapeW, tapeH);
+  ctx.clip();
+
+  const alt = state.altitude;
+  const pxPerFt = 0.4;
+  const midY = y + tapeH / 2;
+
+  ctx.font = '9px "JetBrains Mono", monospace';
+  ctx.textAlign = 'right';
+
+  for (let ft = Math.floor(alt / 100) * 100 - 500; ft <= alt + 500; ft += 100) {
+    if (ft < 0) continue;
+    const dy = (alt - ft) * pxPerFt;
+    const ty = midY + dy;
+
+    if (ty < y - 10 || ty > y + tapeH + 10) continue;
+
+    ctx.strokeStyle = 'rgba(0,255,65,0.2)';
+    ctx.beginPath();
+    ctx.moveTo(x, ty);
+    ctx.lineTo(x + 6, ty);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(0,255,65,0.5)';
+    ctx.fillText(ft.toString(), x + tapeW - 6, ty + 3);
+  }
+  ctx.restore();
+
+  // Current value box
+  ctx.fillStyle = 'rgba(0,10,0,0.85)';
+  ctx.fillRect(x - 2, midY - 10, tapeW + 4, 20);
+  ctx.strokeStyle = '#00FF41';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 2, midY - 10, tapeW + 4, 20);
+  ctx.fillStyle = '#00FF41';
+  ctx.font = '12px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(alt).toString(), x + tapeW / 2, midY + 4);
+
+  // Label
+  ctx.fillStyle = 'rgba(0,255,65,0.3)';
+  ctx.font = '8px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ALT', x + tapeW / 2, y - 6);
+}
+
+function drawSpdTape() {
+  const tapeW = 52;
+  const tapeH = 180;
+  const x = 28;
+  const y = H / 2 - tapeH / 2;
+
+  ctx.fillStyle = 'rgba(0,20,5,0.55)';
+  ctx.strokeStyle = 'rgba(0,255,65,0.2)';
+  ctx.lineWidth = 1;
+  ctx.fillRect(x, y, tapeW, tapeH);
+  ctx.strokeRect(x, y, tapeW, tapeH);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, tapeW, tapeH);
+  ctx.clip();
+
+  const spd = state.speed;
+  const pxPerKt = 1.5;
+  const midY = y + tapeH / 2;
+  const stallKt = stallSpeedKts();
+
+  ctx.font = '9px "JetBrains Mono", monospace';
+  ctx.textAlign = 'left';
+
+  for (let kt = Math.floor(spd / 10) * 10 - 80; kt <= spd + 80; kt += 10) {
+    if (kt < 0) continue;
+    const dy = (spd - kt) * pxPerKt;
+    const ty = midY + dy;
+
+    if (ty < y - 10 || ty > y + tapeH + 10) continue;
+
+    const danger = kt < stallKt || kt > VNE_KTS;
+    ctx.strokeStyle = danger ? 'rgba(255,40,40,0.3)' : 'rgba(0,255,65,0.2)';
+    ctx.beginPath();
+    ctx.moveTo(x + tapeW - 6, ty);
+    ctx.lineTo(x + tapeW, ty);
+    ctx.stroke();
+
+    ctx.fillStyle = danger ? 'rgba(255,40,40,0.5)' : 'rgba(0,255,65,0.5)';
+    ctx.fillText(kt.toString(), x + 6, ty + 3);
+  }
+  ctx.restore();
+
+  // Current value box
+  const spdDanger = spd < stallKt || spd > VNE_KTS;
+  ctx.fillStyle = 'rgba(0,10,0,0.85)';
+  ctx.fillRect(x - 2, midY - 10, tapeW + 4, 20);
+  ctx.strokeStyle = spdDanger ? '#ff2020' : '#00FF41';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 2, midY - 10, tapeW + 4, 20);
+  ctx.fillStyle = spdDanger ? '#ff2020' : '#00FF41';
+  ctx.font = '12px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(spd).toString(), x + tapeW / 2, midY + 4);
+
+  // Label
+  ctx.fillStyle = 'rgba(0,255,65,0.3)';
+  ctx.font = '8px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('KTS', x + tapeW / 2, y - 6);
+}
+
+function render() {
+  // Transparent overlay on top of the real-world globe
+  ctx.clearRect(0, 0, W, H);
+
+  const bankRad = state.bank * Math.PI / 180;
+
+  if (cameraMode === 0) {
+    drawPitchLadder(bankRad);
+    drawCrosshair();
+  } else {
+    drawAirplane();
+  }
+
+  drawAltTape();
+  drawSpdTape();
+  drawAHI();
+  drawCompass();
+
+  document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : 'CHASE';
+
+  // Update HUD
+  hudAlt.textContent = Math.round(state.altitude);
+  hudSpd.textContent = Math.round(state.speed);
+  const hdgDisplay = Math.round(state.heading) % 360;
+  hudHdg.textContent = hdgDisplay === 0 ? '360' : hdgDisplay.toString().padStart(3, '0');
+  const vsSign = state.vs >= 0 ? '+' : '';
+  hudVs.textContent = vsSign + Math.round(state.vs);
+  hudThr.textContent = Math.round(state.throttle) + '%';
+  if (hudAoa) {
+    hudAoa.textContent = Math.round(state.aoa) + '°';
+    hudAoa.style.color = state.stall ? '#ff2020' : (Math.abs(state.aoa) > AC.aStall * 0.8 ? '#ffaa00' : '#00FF41');
+  }
+  if (hudG) {
+    hudG.textContent = state.gforce.toFixed(1);
+    hudG.style.color = (state.gforce > 5 || state.gforce < -1.5) ? '#ff2020'
+      : (state.gforce > 3.5 || state.gforce < -0.5) ? '#ffaa00' : '#00FF41';
+  }
+
+  // Throttle bar
+  thrFill.style.height = state.throttle + '%';
+
+  // Stall + overspeed warnings
+  stallWarn.style.display = state.stall && !state.terrainHit ? 'block' : 'none';
+  if (overspeedWarn) overspeedWarn.style.display = state.overspeed && !state.terrainHit ? 'block' : 'none';
+
+  // Color VS based on positive/negative
+  hudVs.style.color = state.vs < -200 ? '#ff4444' : state.vs > 200 ? '#44ff44' : '#00FF41';
+
+  // Minimap + drive the real-world camera
+  updateMinimap();
+  updateCamera();
+}
+
+// ===== Minimap (north-up satellite tile + heading-rotated marker) =====
+const mmImg = document.getElementById('mm-img');
+const mmCv = document.getElementById('mm-cv');
+const mmCtx = mmCv ? mmCv.getContext('2d') : null;
+const minimapEl = document.getElementById('minimap');
+let mmLast = 0;
+function updateMinimap() {
+  if (!mmCtx || !minimapEl || minimapEl.style.display === 'none') return;
+  const s = mmCv.width;
+  mmCtx.clearRect(0, 0, s, s);
+
+  // Heading-up aircraft marker at the centre
+  mmCtx.save();
+  mmCtx.translate(s / 2, s / 2);
+  mmCtx.rotate(state.heading * Math.PI / 180);
+  mmCtx.fillStyle = '#00FF41';
+  mmCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+  mmCtx.lineWidth = 1.5;
+  mmCtx.beginPath();
+  mmCtx.moveTo(0, -11); mmCtx.lineTo(7, 8); mmCtx.lineTo(0, 4); mmCtx.lineTo(-7, 8);
+  mmCtx.closePath();
+  mmCtx.fill();
+  mmCtx.stroke();
+  mmCtx.restore();
+
+  // Refresh the satellite tile as we move (throttled)
+  const now = performance.now();
+  if (now - mmLast > 1500) {
+    mmLast = now;
+    const d = 0.035;
+    const dLon = d / Math.max(0.2, Math.cos(state.lat * Math.PI / 180));
+    const bbox = (state.lon - dLon) + ',' + (state.lat - d) + ',' + (state.lon + dLon) + ',' + (state.lat + d);
+    mmImg.src = 'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox=' +
+      bbox + '&bboxSR=4326&imageSR=4326&size=180,180&format=png&transparent=false&f=image';
+  }
+}
+
+// ===== Start menu / departure selection =====
+const startMenu = document.getElementById('startmenu');
+let chosen = false;
+let simReady = false;
+let spawnResolved = false;
+let startTime = 0;
+
+function markReady() {
+  if (simReady) return;
+  simReady = true;
+  if (loadingEl) loadingEl.style.display = 'none';
+  lastTime = performance.now(); // avoid a dt spike after the wait
+}
+
+function beginFlight(loc) {
+  const aglFt = (loc.alt != null) ? loc.alt : 1500; // data-alt is height ABOVE GROUND
+  START.lat = loc.lat;
+  START.lon = loc.lon;
+  START.hdg = (loc.hdg != null) ? loc.hdg : 90;
+  START.alt = aglFt + 2000; // safe placeholder until terrain is sampled
+  resetState();
+
+  const locLabel = document.getElementById('loc-label');
+  if (locLabel) locLabel.textContent = loc.name || '';
+  if (startMenu) startMenu.style.display = 'none';
+  if (minimapEl) minimapEl.style.display = 'block';
+  if (loadingEl) {
+    loadingEl.style.display = 'flex';
+    const sub = loadingEl.querySelector('.l-sub');
+    if (sub) { sub.style.color = '#00FF41'; sub.classList.add('pulsing'); sub.textContent = 'LOADING EARTH...'; }
+  }
+
+  // Spawn the aircraft aglFt feet ABOVE the real terrain at the chosen point.
+  spawnResolved = false;
+  function spawnAt(groundM) {
+    const absFt = (groundM / FT_TO_M) + aglFt;
+    START.alt = absFt;
+    state.altitude = absFt;
+    state.gamma = 0;
+    state.vs = 0;
+    spawnResolved = true;
+  }
+  const carto = Cesium.Cartographic.fromDegrees(loc.lon, loc.lat);
+  if (viewer && viewer.terrainProvider && Cesium.sampleTerrainMostDetailed) {
+    Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [carto])
+      .then(function (r) {
+        const gm = (r && r[0] && isFinite(r[0].height)) ? r[0].height : 0;
+        spawnAt(gm);
+      })
+      .catch(function () { spawnAt(0); });
+  } else {
+    spawnAt(0);
+  }
+
+  chosen = true;
+  simReady = false;
+  startTime = performance.now();
+  try { window.focus(); } catch (e) {} // capture keyboard for flight controls
+}
+
+if (startMenu) {
+  startMenu.querySelectorAll('.sm-btn[data-lat]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      beginFlight({
+        name: btn.getAttribute('data-name'),
+        lat: parseFloat(btn.getAttribute('data-lat')),
+        lon: parseFloat(btn.getAttribute('data-lon')),
+        alt: parseFloat(btn.getAttribute('data-alt')),
+        hdg: parseFloat(btn.getAttribute('data-hdg'))
+      });
+    });
+  });
+  const geoBtn = document.getElementById('sm-geo');
+  if (geoBtn) {
+    geoBtn.addEventListener('click', function () {
+      if (!navigator.geolocation) { geoBtn.textContent = '📍 NOT SUPPORTED'; return; }
+      geoBtn.textContent = '📍 LOCATING...';
+      navigator.geolocation.getCurrentPosition(
+        function (p) { beginFlight({ name: 'MY LOCATION', lat: p.coords.latitude, lon: p.coords.longitude, alt: 2000, hdg: 90 }); },
+        function () { geoBtn.textContent = '📍 DENIED — PICK ABOVE'; },
+        { enableHighAccuracy: false, timeout: 8000 }
+      );
+    });
+  }
+}
+
+function loop() {
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  // After a departure is chosen, start flying once the terrain spawn height is
+  // resolved AND the globe tiles for the start view have loaded (aircraft is
+  // parked, so this resolves quickly), or after a safety timeout.
+  if (chosen && !simReady && viewer && spawnResolved &&
+      (viewer.scene.globe.tilesLoaded || now - startTime > 15000)) {
+    markReady();
+  }
+  if (chosen && !simReady && !viewer && now - startTime > 4000) markReady();
+
+  if (simReady) update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+loop();
+})();
+</script>
+</body>
+</html>
