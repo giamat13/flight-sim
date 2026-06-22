@@ -69,6 +69,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sm-geo{grid-column:1 / -1;background:rgba(0,160,255,0.06);border-color:rgba(80,180,255,0.45);color:#7fd0ff}
 #sm-geo:hover{background:rgba(0,160,255,0.18);border-color:#7fd0ff;box-shadow:0 0 14px rgba(80,180,255,0.3)}
 #startmenu .sm-hint{font-size:9px;opacity:0.4;letter-spacing:2px;margin-top:8px}
+#sm-custom{display:flex;gap:8px;max-width:440px;width:92%;margin-top:4px}
+#sm-input{flex:1;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:12px;padding:11px 12px;border-radius:5px;outline:none}
+#sm-input::placeholder{color:rgba(0,255,65,0.35)}
+#sm-input:focus{border-color:#00FF41;box-shadow:0 0 12px rgba(0,255,65,0.2)}
+#sm-go{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.12);border:1px solid rgba(0,255,65,0.4);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;letter-spacing:1px;padding:11px 16px;border-radius:5px;transition:all .15s}
+#sm-go:hover{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 12px rgba(0,255,65,0.25)}
+#sm-status{font-size:10px;letter-spacing:1px;min-height:14px;color:rgba(0,255,65,0.6)}
+#sm-status.sm-err{color:#ff6060}
 /* ===== Minimap ===== */
 #minimap{position:fixed;left:18px;bottom:84px;width:160px;height:160px;z-index:20;border-radius:50%;overflow:hidden;border:1px solid rgba(0,255,65,0.35);box-shadow:0 0 18px rgba(0,255,65,0.12),inset 0 0 20px rgba(0,0,0,0.4);pointer-events:none;display:none;background:#0a140a}
 #mm-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.92}
@@ -165,6 +173,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="sm-btn" data-name="TEL AVIV" data-lat="32.0809" data-lon="34.7806" data-alt="2000" data-hdg="0">Tel Aviv<span class="sm-sub2">Coast</span></button>
     <button class="sm-btn" id="sm-geo">📍 My Location</button>
   </div>
+  <div id="sm-custom">
+    <input id="sm-input" type="text" autocomplete="off" spellcheck="false"
+           placeholder="City name · lat,lon · or Google Maps link…" />
+    <button id="sm-go">GO ✈</button>
+  </div>
+  <div id="sm-status"></div>
   <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C cam &nbsp;·&nbsp; R reset &nbsp;·&nbsp; 🎮 gamepad</div>
 </div>
 
@@ -334,6 +348,9 @@ const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, Key
   ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1 };
 const keys = {};
 window.addEventListener('keydown', e => {
+  // Don't hijack typing in text inputs (custom location field, etc.)
+  const tag = e.target && e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
   const code = e.code;
   const wasDown = keys[code];
   keys[code] = true;
@@ -344,7 +361,9 @@ window.addEventListener('keydown', e => {
     if (code === 'KeyF') cycleFlaps();
     if (code === 'KeyG') toggleGear();
   }
-  if (USED_CODES[code]) e.preventDefault();
+  // Only swallow the keys we actually use, and never when a modifier is held,
+  // so browser shortcuts (F12 devtools, Ctrl+R, Ctrl+Shift+I, etc.) keep working.
+  if (USED_CODES[code] && !e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 // Keep keyboard focus inside the simulator (iframe) on any interaction
@@ -602,12 +621,23 @@ function initCesium() {
     viewer.scene.screenSpaceCameraController.enableInputs = false;
     viewer.scene.globe.enableLighting = false;
     viewer.scene.globe.depthTestAgainstTerrain = true;
-    viewer.scene.fog.enabled = true;
-    viewer.scene.skyAtmosphere.show = true;
-    // Larger tile cache so far-traveled flights don't see "Map data not yet available"
-    viewer.scene.globe.tileCacheSize = 1000;
+
+    // --- Performance + stability (much lower RAM/GPU use) ---
+    // A huge tile cache exhausts GPU memory, which loses the WebGL context and
+    // causes "Fragment shader failed to compile". Keep the cache modest.
+    viewer.scene.globe.tileCacheSize = 100;
+    viewer.scene.globe.maximumScreenSpaceError = 4;   // coarser tiles -> far less memory
     viewer.scene.globe.preloadAncestors = true;
-    viewer.scene.globe.preloadSiblings = true;
+    viewer.scene.globe.preloadSiblings = false;
+    // Atmosphere/fog shaders are heavy and crash on some GPUs — turn them off.
+    viewer.scene.fog.enabled = false;
+    viewer.scene.skyAtmosphere.show = false;
+    viewer.scene.globe.showGroundAtmosphere = false;
+    try { viewer.scene.postProcessStages.fxaa.enabled = false; } catch (e) {}
+    try { viewer.scene.msaaSamples = 1; } catch (e) {}
+    try { viewer.scene.highDynamicRange = false; } catch (e) {}
+    // Don't let a single bad frame tear down the whole app with an error overlay.
+    try { viewer.scene.renderError.addEventListener(function () {}); } catch (e) {}
 
     // Real 3D terrain elevation (keyless) — graceful fallback to smooth globe if unavailable
     Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(
@@ -1630,6 +1660,84 @@ if (startMenu) {
       );
     });
   }
+
+  // ---- Custom location: city name / coordinates / Google Maps link ----
+  const goBtn = document.getElementById('sm-go');
+  const input = document.getElementById('sm-input');
+  const statusEl = document.getElementById('sm-status');
+  function setStatus(msg, isErr) {
+    if (!statusEl) return;
+    statusEl.textContent = msg || '';
+    statusEl.className = isErr ? 'sm-err' : '';
+  }
+
+  // Pull "lat,lon" out of common Google Maps URL shapes.
+  function parseGoogleMaps(t) {
+    let m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);                 // /maps/@lat,lon,zoom
+    if (m) return { lat: +m[1], lon: +m[2] };
+    m = t.match(/[?&](?:q|query|ll|center|destination|sll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+    if (m) return { lat: +m[1], lon: +m[2] };
+    m = t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);                 // place data
+    if (m) return { lat: +m[1], lon: +m[2] };
+    return null;
+  }
+  // Plain "lat, lon" / "lat lon".
+  function parseCoords(t) {
+    const m = t.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+    if (!m) return null;
+    const lat = +m[1], lon = +m[2];
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) return { lat, lon };
+    return null;
+  }
+  // Geocode a place name via OpenStreetMap Nominatim (free, no API key).
+  function geocode(q) {
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q);
+    return fetch(url, { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d[0]) {
+          return { lat: +d[0].lat, lon: +d[0].lon,
+                   name: String(d[0].display_name || q).split(',')[0].toUpperCase() };
+        }
+        return null;
+      });
+  }
+
+  function submitCustom() {
+    const raw = (input && input.value || '').trim();
+    if (!raw) { setStatus('Type a city, coordinates, or a Maps link', true); return; }
+
+    // 1) Google Maps link
+    if (/https?:\/\/|google\.|maps\.|goo\.gl|@-?\d/.test(raw)) {
+      const g = parseGoogleMaps(raw);
+      if (g) { setStatus('FOUND — LAUNCHING…');
+        beginFlight({ name: 'CUSTOM ' + g.lat.toFixed(3) + ',' + g.lon.toFixed(3), lat: g.lat, lon: g.lon, alt: 2000, hdg: 90 });
+        return;
+      }
+      // shortened goo.gl links can't be expanded in-browser (CORS)
+      if (/goo\.gl|maps\.app/.test(raw)) { setStatus('Short links unsupported — paste the full URL or a city name', true); return; }
+    }
+    // 2) Plain coordinates
+    const c = parseCoords(raw);
+    if (c) { setStatus('LAUNCHING…');
+      beginFlight({ name: c.lat.toFixed(3) + ', ' + c.lon.toFixed(3), lat: c.lat, lon: c.lon, alt: 2000, hdg: 90 });
+      return;
+    }
+    // 3) City / place name -> geocode
+    setStatus('SEARCHING “' + raw + '”…');
+    geocode(raw)
+      .then(function (loc) {
+        if (loc) { setStatus('FOUND: ' + loc.name);
+          beginFlight({ name: loc.name, lat: loc.lat, lon: loc.lon, alt: 2000, hdg: 90 });
+        } else { setStatus('No match for “' + raw + '”', true); }
+      })
+      .catch(function () { setStatus('Search failed — check connection', true); });
+  }
+
+  if (goBtn) goBtn.addEventListener('click', submitCustom);
+  if (input) input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitCustom(); }
+  });
 }
 
 function loop() {
