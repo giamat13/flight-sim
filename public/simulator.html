@@ -691,11 +691,13 @@ function readGamepad() {
   gpPrev.reset = resetNow;
 
   return {
-    pitch: dz(ax[1]),                    // left stick back/down = nose up
-    roll:  dz(ax[0]),                    // left stick right = bank right
-    thr:   val(7) - val(6),              // RT throttle up, LT throttle down
-    airbrake: pressed(0),                // A (cross)
-    reset: resetEdge
+    pitch:     dz(ax[1]),                // left stick back/down = nose up
+    roll:      dz(ax[0]),                // left stick right = bank right
+    thr:       val(7) - val(6),          // RT throttle up, LT throttle down
+    airbrake:  pressed(0),               // A (cross)
+    reset:     resetEdge,
+    lookYaw:   dz(ax[2]),                // right stick left/right = look left/right
+    lookPitch: dz(ax[3])                 // right stick up/down = look up/down
   };
 }
 
@@ -847,6 +849,8 @@ function stallSpeedKts() {
 
 let lastTime = performance.now();
 let cameraMode = 0; // 0=cockpit, 1=chase
+// Right-stick look offset (degrees). Decays back to centre when stick released.
+let lookYawOff = 0, lookPitchOff = 0;
 
 // ===================== CESIUM GLOBE (real world) =====================
 let viewer = null;
@@ -924,8 +928,8 @@ function updateCamera() {
   const h = Math.max(state.altitude, 0) * FT_TO_M;
   // Airframe buffet shake while stalled
   const buf = state.stall ? (Math.random() - 0.5) : 0;
-  const hdg = Cesium.Math.toRadians(state.heading);
-  const pitch = Cesium.Math.toRadians(state.pitch + buf * 1.2);
+  const hdg = Cesium.Math.toRadians(state.heading + lookYawOff);
+  const pitch = Cesium.Math.toRadians(state.pitch + buf * 1.2 + lookPitchOff);
   const roll = Cesium.Math.toRadians(state.bank + buf * 2.2);
 
   if (cameraMode === 0) {
@@ -935,7 +939,7 @@ function updateCamera() {
       orientation: { heading: hdg, pitch: pitch, roll: roll }
     });
   } else {
-    // Chase: camera behind & above the aircraft
+    // Chase: camera behind & above the aircraft; offset look position by yaw
     const back = 90, up = 30;
     const hr = state.heading * Math.PI / 180;
     const dN = -Math.cos(hr) * back;
@@ -944,7 +948,7 @@ function updateCamera() {
     const dLon = dE / (M_PER_DEG_LAT * Math.cos(lat * Math.PI / 180));
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(lon + dLon, lat + dLat, h + up),
-      orientation: { heading: hdg, pitch: Cesium.Math.toRadians(state.pitch - 8), roll: roll }
+      orientation: { heading: hdg, pitch: Cesium.Math.toRadians(state.pitch - 8 + lookPitchOff), roll: roll }
     });
   }
 }
@@ -984,6 +988,18 @@ function update(dt) {
   // Combine keyboard + gamepad into analog axes in [-1, 1].
   const gp = readGamepad();
 
+  // Right stick: look offset, max ±90° yaw / ±45° pitch. Decays to centre when stick released.
+  const LOOK_YAW_MAX = 90, LOOK_PITCH_MAX = 45, LOOK_RATE = 80, LOOK_DECAY = 3;
+  if (gp && (gp.lookYaw || gp.lookPitch)) {
+    lookYawOff   = Math.max(-LOOK_YAW_MAX,   Math.min(LOOK_YAW_MAX,   lookYawOff   + gp.lookYaw   * LOOK_RATE * dt));
+    lookPitchOff = Math.max(-LOOK_PITCH_MAX, Math.min(LOOK_PITCH_MAX, lookPitchOff - gp.lookPitch * LOOK_RATE * dt));
+  } else {
+    // Spring back to centre when stick is released
+    const decay = Math.exp(-LOOK_DECAY * dt);
+    lookYawOff   = Math.abs(lookYawOff)   < 0.5 ? 0 : lookYawOff   * decay;
+    lookPitchOff = Math.abs(lookPitchOff) < 0.5 ? 0 : lookPitchOff * decay;
+  }
+
   // Elevator: yoke convention — DOWN arrow / stick back = NOSE UP.
   let pitchIn = 0;
   if (keys['ArrowDown']) pitchIn += 1;
@@ -1008,13 +1024,31 @@ function update(dt) {
   state.bank = normDeg(state.bank + rollIn * bankRate * dt);
   state.throttle = Math.max(0, Math.min(100, state.throttle + thrIn * throttleRate * dt));
 
-  // Angle-of-attack limiter: during hard pulls, keep the nose from outrunning the
-  // flight path (which would deep-stall). This holds the wing near max lift so
-  // loops stay clean and the aircraft tracks its velocity vector around the circle.
-  const aLim = AC.aStall;
-  const aoaCmd = normDeg(state.pitch - state.gamma + AC.incidence);
-  if (aoaCmd > aLim) state.pitch = normDeg(state.pitch - (aoaCmd - aLim));
-  else if (aoaCmd < -aLim) state.pitch = normDeg(state.pitch - (aoaCmd + aLim));
+  // ---- Longitudinal handling ----
+  // Hands-off, the nose gently settles to the flight path at the angle of attack
+  // that trims for 1g, so level flight is STABLE and the aircraft doesn't wander
+  // on its own. With active elevator input you keep FULL authority to pitch the
+  // nose anywhere — steep climbs, dives, inverted flight and loops.
+  if (Math.abs(pitchIn) < 0.05) {
+    const Vtrim = Math.max(state.speed * KTS_TO_MPS, 1);
+    const rhoTrim = AC.rho0 * Math.exp(-Math.max(0, state.altitude * FT_TO_M) / AC.scaleH);
+    const qTrim = 0.5 * rhoTrim * Vtrim * Vtrim;
+    let clTrim = (AC.m * AC.g) / Math.max(qTrim * AC.S, 1e-3);
+    clTrim = Math.max(-AC.CL_max, Math.min(AC.CL_max, clTrim));
+    const aoaTrim = ((clTrim - FLAP_CL[state.flaps]) / AC.CL_a) / DEG;
+    const targetPitch = normDeg(state.gamma + aoaTrim - AC.incidence);
+    const k = 1 - Math.exp(-1.8 * dt);                 // smooth relaxation
+    state.pitch = normDeg(state.pitch + normDeg(targetPitch - state.pitch) * k);
+  }
+
+  // Soft deep-stall guard: allow brief excursions past stall, but never let the
+  // nose run away from the flight path (which would lock the sim into a 90° AoA
+  // deep stall). This pulls gently — it never snaps the nose back.
+  const aMax = 24;
+  const aoaNow = normDeg(state.pitch - state.gamma + AC.incidence);
+  if (aoaNow > aMax) state.pitch = normDeg(state.pitch - (aoaNow - aMax) * Math.min(1, dt * 3));
+  else if (aoaNow < -aMax) state.pitch = normDeg(state.pitch - (aoaNow + aMax) * Math.min(1, dt * 3));
+
   const airbrake = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake));
 
   // Roll stability: wings self-level only GENTLY with no aileron input, so it
