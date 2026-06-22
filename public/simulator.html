@@ -36,6 +36,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #compass-canvas{border:1px solid rgba(0,255,65,0.15);border-radius:4px;background:rgba(0,255,65,0.02)}
 #cam-label{position:fixed;top:16px;right:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.6);font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:4px 10px}
 #gp-indicator{position:fixed;top:46px;right:16px;z-index:20;pointer-events:none;display:none;color:#7fd0ff;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(0,160,255,0.06);border:1px solid rgba(80,180,255,0.4);border-radius:4px;padding:3px 8px}
+#sys-panel{position:fixed;left:16px;top:50%;transform:translateY(-50%);z-index:20;pointer-events:none;display:none;flex-direction:column;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px}
+.sys-row{display:flex;align-items:center;gap:6px;color:rgba(0,255,65,0.55)}
+.sys-key{width:42px;text-align:right;opacity:0.7}
+.sys-val{font-size:11px;font-weight:600}
+.sys-ok{color:#00FF41}.sys-warn{color:#ffaa00}.sys-off{color:rgba(0,255,65,0.3)}.sys-red{color:#ff3030}
+#fire-warn{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:44px;font-weight:700;color:#ff3000;text-shadow:0 0 40px rgba(255,50,0,0.9);font-family:'JetBrains Mono',monospace;letter-spacing:5px;pointer-events:none;display:none}
 #loc-label{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;color:rgba(0,255,65,0.45);font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;text-align:center}
 #loading{position:fixed;top:0;left:0;width:100%;height:100%;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0a0f;color:#00FF41;font-family:'JetBrains Mono',monospace;gap:14px}
 #loading .l-title{font-size:18px;letter-spacing:4px;text-shadow:0 0 10px rgba(0,255,65,0.4)}
@@ -95,13 +101,21 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 
 <div id="stall-warn" class="flashing">STALL</div>
 <div id="overspeed-warn" class="flashing">OVERSPEED</div>
+<div id="fire-warn" class="flashing">ENGINE FIRE</div>
 <div id="terrain-warn"><div class="tw-main">TERRAIN</div><div class="tw-sub">PULL UP</div></div>
+
+<div id="sys-panel">
+  <div class="sys-row"><span class="sys-key">ENG</span><span class="sys-val sys-off" id="sys-eng">OFF</span></div>
+  <div class="sys-row"><span class="sys-key">RPM</span><span class="sys-val sys-off" id="sys-rpm">0%</span></div>
+  <div class="sys-row"><span class="sys-key">FLAP</span><span class="sys-val sys-ok" id="sys-flap">UP</span></div>
+  <div class="sys-row"><span class="sys-key">GEAR</span><span class="sys-val sys-warn" id="sys-gear">DN</span></div>
+</div>
 
 <div id="cam-label">COCKPIT</div>
 <div id="gp-indicator">🎮 CONTROLLER</div>
 <div id="loc-label">GRAND CANYON, AZ</div>
 <div id="controls-hint">
-  ↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA<br>R RESET<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>
+  E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · R RESET<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>
 </div>
 
 <div id="minimap">
@@ -127,7 +141,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="sm-btn" data-name="TEL AVIV" data-lat="32.0809" data-lon="34.7806" data-alt="2000" data-hdg="0">Tel Aviv<span class="sm-sub2">Coast</span></button>
     <button class="sm-btn" id="sm-geo">📍 My Location</button>
   </div>
-  <div class="sm-hint">↓ nose-up · ↑ nose-down &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C camera &nbsp;·&nbsp; R reset &nbsp;·&nbsp; 🎮 gamepad supported</div>
+  <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C cam &nbsp;·&nbsp; R reset &nbsp;·&nbsp; 🎮 gamepad</div>
 </div>
 
 <script>
@@ -189,7 +203,15 @@ let state = {
   stall: false,
   overspeed: false,
   terrainHit: false,
-  terrainTimer: 0
+  terrainTimer: 0,
+  // Engine system
+  engineState: 'off',   // 'off' | 'starting' | 'running' | 'fire'
+  engineTimer: 0,       // countdown for startup sequence
+  rpm: 0,               // 0..100
+  // Flaps (0=up, 1=10°, 2=20°, 3=40°)
+  flaps: 0,
+  // Landing gear
+  gearDown: true
 };
 
 function resetState() {
@@ -210,14 +232,125 @@ function resetState() {
   state.overspeed = false;
   state.terrainHit = false;
   state.terrainTimer = 0;
+  state.engineState = 'running'; // reset = back in the air, engine running
+  state.engineTimer = 0;
+  state.rpm = START.thr;
+  state.flaps = 0;
+  state.gearDown = false; // gear up after reset (airborne)
   terrainWarn.style.display = 'none';
 }
 
+// ===================== Web Audio — engine sounds (no external files) =====================
+let audioCtx = null;
+const audio = { eng: null, engGain: null, rumble: null, rumbleGain: null };
+
+function ensureAudio() {
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Turbine whine: two detuned oscillators for that jet engine character
+    const o1 = audioCtx.createOscillator();
+    const o2 = audioCtx.createOscillator();
+    o1.type = 'sawtooth'; o2.type = 'sawtooth';
+    o1.frequency.value = 80; o2.frequency.value = 83;
+    audio.engGain = audioCtx.createGain();
+    audio.engGain.gain.value = 0;
+    const dist = audioCtx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = x * 0.7; }
+    dist.curve = curve;
+    o1.connect(dist); o2.connect(dist);
+    dist.connect(audio.engGain); audio.engGain.connect(audioCtx.destination);
+    o1.start(); o2.start();
+    audio.eng = { o1, o2 };
+
+    // Airframe rumble (low-frequency noise at high speed)
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = audioCtx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 60;
+    audio.rumbleGain = audioCtx.createGain(); audio.rumbleGain.gain.value = 0;
+    src.connect(lp); lp.connect(audio.rumbleGain); audio.rumbleGain.connect(audioCtx.destination);
+    src.start(); audio.rumble = src;
+  } catch(e) { console.warn('Audio init failed', e); }
+}
+
+function updateAudio(rpm, speed) {
+  if (!audioCtx || !audio.eng) return;
+  const t = audioCtx.currentTime;
+  const vol = rpm > 5 ? Math.min(0.3, rpm / 100 * 0.3) : 0;
+  audio.engGain.gain.setTargetAtTime(vol, t, 0.1);
+  // Pitch of turbine whine tracks RPM
+  const freq = 60 + rpm * 3.2;
+  audio.eng.o1.frequency.setTargetAtTime(freq, t, 0.3);
+  audio.eng.o2.frequency.setTargetAtTime(freq * 1.04, t, 0.3);
+  // Airframe rumble grows with speed
+  const rumble = Math.max(0, (speed - 200) / 600 * 0.12);
+  audio.rumbleGain.gain.setTargetAtTime(rumble, t, 0.2);
+}
+
+function playStartupSound() {
+  ensureAudio();
+  if (!audioCtx || !audio.eng) return;
+  // Whine ramps up from ~40Hz during the 6-second startup
+  const t = audioCtx.currentTime;
+  audio.eng.o1.frequency.setValueAtTime(40, t);
+  audio.eng.o1.frequency.linearRampToValueAtTime(80, t + 6);
+  audio.eng.o2.frequency.setValueAtTime(41, t);
+  audio.eng.o2.frequency.linearRampToValueAtTime(83, t + 6);
+  audio.engGain.gain.setValueAtTime(0.05, t);
+  audio.engGain.gain.linearRampToValueAtTime(0.15, t + 6);
+}
+
+// ===================== Keys =====================
 const keys = {};
-window.addEventListener('keydown', e => { keys[e.key] = true; if (e.key === 'c' || e.key === 'C') { cameraMode = (cameraMode + 1) % 2; } e.preventDefault(); });
+const keysPrev = {};
+window.addEventListener('keydown', e => {
+  const wasDown = keys[e.key];
+  keys[e.key] = true;
+  if (!wasDown) {
+    // edge-triggered actions
+    if (e.key === 'c' || e.key === 'C') cameraMode = (cameraMode + 1) % 2;
+    if (e.key === 'e' || e.key === 'E') handleEngineKey();
+    if (e.key === 'f' || e.key === 'F') cycleFlaps();
+    if (e.key === 'g' || e.key === 'G') toggleGear();
+  }
+  e.preventDefault();
+});
 window.addEventListener('keyup', e => { keys[e.key] = false; });
 // Keep keyboard focus inside the simulator (iframe) on any interaction
-window.addEventListener('pointerdown', function(){ try { window.focus(); } catch (e) {} });
+window.addEventListener('pointerdown', function(){ ensureAudio(); try { window.focus(); } catch (e) {} });
+
+function handleEngineKey() {
+  ensureAudio();
+  if (state.engineState === 'off') {
+    state.engineState = 'starting';
+    state.engineTimer = 6.0; // 6-second startup sequence
+    playStartupSound();
+  } else if (state.engineState === 'running') {
+    state.engineState = 'off';
+    state.rpm = 0;
+    updateAudio(0, 0);
+  } else if (state.engineState === 'fire') {
+    // E to acknowledge fire and cut engine
+    state.engineState = 'off'; state.rpm = 0;
+  }
+  // Can't interrupt startup
+}
+
+const FLAP_LABELS = ['UP', '10°', '20°', '40°'];
+const FLAP_CL    = [0, 0.28, 0.55, 0.90];  // extra CL per flap notch
+const FLAP_CD    = [0, 0.012, 0.030, 0.080]; // extra CD per flap notch
+
+function cycleFlaps() {
+  state.flaps = (state.flaps + 1) % 4;
+}
+
+function toggleGear() {
+  if (state.altitude < 100) return; // can't retract on ground
+  state.gearDown = !state.gearDown;
+}
 
 // ===================== Gamepad (Xbox / PlayStation) support =====================
 let gpConnected = false;
@@ -314,10 +447,14 @@ function initCesium() {
 
     // We drive the camera ourselves from the flight model
     viewer.scene.screenSpaceCameraController.enableInputs = false;
-    viewer.scene.globe.enableLighting = false;        // always lit, no dark night side
-    viewer.scene.globe.depthTestAgainstTerrain = true; // terrain hides things behind it
+    viewer.scene.globe.enableLighting = false;
+    viewer.scene.globe.depthTestAgainstTerrain = true;
     viewer.scene.fog.enabled = true;
     viewer.scene.skyAtmosphere.show = true;
+    // Larger tile cache so far-traveled flights don't see "Map data not yet available"
+    viewer.scene.globe.tileCacheSize = 1000;
+    viewer.scene.globe.preloadAncestors = true;
+    viewer.scene.globe.preloadSiblings = true;
 
     // Real 3D terrain elevation (keyless) — graceful fallback to smooth globe if unavailable
     Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(
@@ -437,8 +574,34 @@ function update(dt) {
     if (Math.abs(state.bank) < 0.2) state.bank = 0;
   }
 
-  // Engine spool-up lag
-  state.thrustPct += (state.throttle - state.thrustPct) * Math.min(1, dt * 1.6);
+  // ---- Engine state machine ----
+  if (state.engineState === 'starting') {
+    state.engineTimer -= dt;
+    state.rpm = Math.min(100, (6.0 - state.engineTimer) / 6.0 * 100);
+    if (state.engineTimer <= 0) { state.engineState = 'running'; state.rpm = 100; }
+  } else if (state.engineState === 'running') {
+    // RPM tracks throttle with spool lag; minimum idle is 18% (engine is spinning)
+    const targetRpm = Math.max(18, state.throttle);
+    state.rpm += (targetRpm - state.rpm) * Math.min(1, dt * 1.8);
+    // Engine fire if severely overspeeding for extended time
+    if (state.overspeed) {
+      state.engineTimer = (state.engineTimer || 0) + dt;
+      if (state.engineTimer > 8) { state.engineState = 'fire'; state.engineTimer = 0; }
+    } else {
+      state.engineTimer = Math.max(0, (state.engineTimer || 0) - dt * 2);
+    }
+  } else if (state.engineState === 'fire') {
+    state.rpm = Math.max(0, state.rpm - dt * 20);
+  } else { // off
+    state.rpm = Math.max(0, state.rpm - dt * 15);
+    state.engineTimer = 0;
+  }
+  updateAudio(state.rpm, state.speed);
+
+  // Engine spool-up lag — only if engine is running
+  const engRunning = state.engineState === 'running';
+  const effectiveThr = engRunning ? state.throttle : 0;
+  state.thrustPct += (effectiveThr - state.thrustPct) * Math.min(1, dt * 1.6);
 
   // ---- Aerodynamics (point-mass, SI units) ----
   const m = AC.m, g = AC.g, S = AC.S;
@@ -447,37 +610,42 @@ function update(dt) {
   const rho = AC.rho0 * Math.exp(-Math.max(0, altM) / AC.scaleH);
   const q = 0.5 * rho * V * V;                        // dynamic pressure
 
+  // Flap coefficients
+  const flapCL = FLAP_CL[state.flaps];
+  const flapCD = FLAP_CD[state.flaps];
+  const gearCD = state.gearDown ? 0.025 : 0;
+
   const theta = state.pitch;                          // attitude (deg)
   let gamma = state.gamma;                            // flight-path (deg)
   let aoaDeg = theta - gamma + AC.incidence;          // angle of attack (incl. wing incidence)
-  // clamp AoA so numerical excursions stay sane
   aoaDeg = Math.max(-30, Math.min(30, aoaDeg));
 
-  // Lift coefficient, with a stall break past the critical AoA
+  // Lift coefficient — flaps raise both CL and CL_max (more lift at lower speed)
+  const clMax = AC.CL_max + flapCL * 0.5;
   let CL, stalled = false;
   if (Math.abs(aoaDeg) <= AC.aStall) {
-    CL = AC.CL_a * (aoaDeg * DEG);
-    CL = Math.max(-AC.CL_max, Math.min(AC.CL_max, CL));
+    CL = AC.CL_a * (aoaDeg * DEG) + flapCL;
+    CL = Math.max(-clMax, Math.min(clMax, CL));
   } else {
     stalled = true;
     const sgn = aoaDeg > 0 ? 1 : -1;
     const over = Math.abs(aoaDeg) - AC.aStall;
-    CL = sgn * AC.CL_max * Math.max(0.45, 1 - over / 18); // lift collapses
+    CL = sgn * clMax * Math.max(0.45, 1 - over / 18);
   }
 
-  const Cd = AC.Cd0 + AC.k * CL * CL + (airbrake ? 0.08 : 0);
+  const Cd = AC.Cd0 + AC.k * CL * CL + (airbrake ? 0.08 : 0) + flapCD + gearCD;
   const L = q * S * CL;
   const D = q * S * Cd;
   const W = m * g;
-  const T = (state.thrustPct / 100) * AC.Tmax * (rho / AC.rho0); // thrust fades with altitude
+  const T = (state.thrustPct / 100) * AC.Tmax * (rho / AC.rho0);
   const phi = state.bank * DEG;
   const gam = gamma * DEG;
-  const Vsafe = Math.max(V, 14);                      // avoid divide-by-zero at low speed
+  const Vsafe = Math.max(V, 14);
 
   // Translational + rotational EOM
-  const dV = (T - D - W * Math.sin(gam)) / m;                       // along velocity
-  let dGam = (L * Math.cos(phi) - W * Math.cos(gam)) / (m * Vsafe); // pitch of velocity vector
-  let dPsi = (L * Math.sin(phi)) / (m * Vsafe);                     // turn rate (rad/s)
+  const dV = (T - D - W * Math.sin(gam)) / m;
+  let dGam = (L * Math.cos(phi) - W * Math.cos(gam)) / (m * Vsafe);
+  let dPsi = (L * Math.sin(phi)) / (m * Vsafe);
   dGam = Math.max(-1.6, Math.min(1.6, dGam));
   dPsi = Math.max(-1.6, Math.min(1.6, dPsi));
 
@@ -489,15 +657,13 @@ function update(dt) {
   if (state.heading < 0) state.heading += 360;
   if (state.heading >= 360) state.heading -= 360;
 
-  // Load factor (G)
   const n = L / W;
 
-  // Vertical + horizontal motion from the velocity vector
-  const climbRate = V * Math.sin(gamma * DEG);        // m/s
-  const groundSpeed = V * Math.cos(gamma * DEG);      // m/s
+  const climbRate = V * Math.sin(gamma * DEG);
+  const groundSpeed = V * Math.cos(gamma * DEG);
   let newAltM = altM + climbRate * dt;
 
-  // ---- Terrain / ground collision (real elevation under the aircraft) ----
+  // ---- Terrain / ground collision ----
   const groundM = terrainHeightM();
   if (newAltM <= groundM + 3) {
     newAltM = groundM + 3;
@@ -506,14 +672,14 @@ function update(dt) {
     terrainWarn.style.display = 'block';
   }
 
-  // ---- Commit state (convert back to display units) ----
+  // ---- Commit state ----
   state.speed = V / KTS_TO_MPS;
   state.altitude = newAltM / FT_TO_M;
   state.gamma = gamma;
   state.aoa = aoaDeg;
   state.gforce = n;
-  state.vs = climbRate * 196.85;                      // m/s -> ft/min
-  state.stall = stalled || (Math.abs(CL) >= AC.CL_max * 0.97);
+  state.vs = climbRate * 196.85;
+  state.stall = stalled || (Math.abs(CL) >= clMax * 0.97);
   state.overspeed = V > AC.Vne;
 
   // Advance position across the real globe
@@ -1142,12 +1308,41 @@ function render() {
   // Throttle bar
   thrFill.style.height = state.throttle + '%';
 
-  // Stall + overspeed warnings
+  // Stall + overspeed + fire warnings
   stallWarn.style.display = state.stall && !state.terrainHit ? 'block' : 'none';
   if (overspeedWarn) overspeedWarn.style.display = state.overspeed && !state.terrainHit ? 'block' : 'none';
+  const fireEl = document.getElementById('fire-warn');
+  if (fireEl) fireEl.style.display = state.engineState === 'fire' ? 'block' : 'none';
 
   // Color VS based on positive/negative
   hudVs.style.color = state.vs < -200 ? '#ff4444' : state.vs > 200 ? '#44ff44' : '#00FF41';
+
+  // Systems panel
+  const sysPanel = document.getElementById('sys-panel');
+  if (sysPanel) {
+    sysPanel.style.display = 'flex';
+    const engEl = document.getElementById('sys-eng');
+    const rpmEl = document.getElementById('sys-rpm');
+    const flapEl = document.getElementById('sys-flap');
+    const gearEl = document.getElementById('sys-gear');
+    if (engEl) {
+      const labels = { off:'OFF', starting:'START', running:'ON', fire:'FIRE' };
+      engEl.textContent = labels[state.engineState] || 'OFF';
+      engEl.className = 'sys-val ' + (state.engineState === 'running' ? 'sys-ok' : state.engineState === 'fire' ? 'sys-red' : state.engineState === 'starting' ? 'sys-warn' : 'sys-off');
+    }
+    if (rpmEl) {
+      rpmEl.textContent = Math.round(state.rpm) + '%';
+      rpmEl.className = 'sys-val ' + (state.rpm > 95 ? 'sys-warn' : state.rpm > 5 ? 'sys-ok' : 'sys-off');
+    }
+    if (flapEl) {
+      flapEl.textContent = FLAP_LABELS[state.flaps];
+      flapEl.className = 'sys-val ' + (state.flaps > 0 ? 'sys-warn' : 'sys-ok');
+    }
+    if (gearEl) {
+      gearEl.textContent = state.gearDown ? 'DN' : 'UP';
+      gearEl.className = 'sys-val ' + (state.gearDown ? 'sys-warn' : 'sys-ok');
+    }
+  }
 
   // Minimap + drive the real-world camera
   updateMinimap();
@@ -1245,6 +1440,11 @@ function beginFlight(loc) {
     spawnAt(0);
   }
 
+  // Start with engine off — player must press E to start
+  state.engineState = 'off';
+  state.rpm = 0;
+  state.thrustPct = 0;
+  state.throttle = 0;
   chosen = true;
   simReady = false;
   startTime = performance.now();
