@@ -15,6 +15,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sim-canvas{position:fixed;top:0;left:0;display:block;width:100%;height:100%;background:transparent;z-index:2;pointer-events:none}
 #scanlines{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px)}
 #vignette{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:11;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,0.4) 75%,rgba(0,0,0,0.85) 100%)}
+#env-time,#env-wx{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9;background:none;transition:background .6s ease}
 #hud{position:fixed;bottom:0;left:0;right:0;pointer-events:none;z-index:20;display:flex;justify-content:center;padding:0 20px 20px}
 .hud-panel{background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.3);border-radius:4px;padding:10px 18px;color:#00FF41;font-size:13px;font-family:'JetBrains Mono',monospace;display:flex;gap:28px;align-items:center;backdrop-filter:blur(2px);box-shadow:0 0 20px rgba(0,255,65,0.05),inset 0 0 30px rgba(0,255,65,0.02)}
 .hud-item{display:flex;flex-direction:column;align-items:center;gap:2px}
@@ -77,6 +78,21 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sm-go:hover{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 12px rgba(0,255,65,0.25)}
 #sm-status{font-size:10px;letter-spacing:1px;min-height:14px;color:rgba(0,255,65,0.6)}
 #sm-status.sm-err{color:#ff6060}
+#startmenu .sm-section{font-size:9px;letter-spacing:3px;opacity:0.5;margin-top:4px}
+.env-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:460px;width:94%}
+.env-btn{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.25);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 11px;border-radius:5px;transition:all .15s}
+.env-btn:hover{background:rgba(0,255,65,0.14);border-color:#00FF41}
+.env-btn.env-on{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 10px rgba(0,255,65,0.2)}
+.sm-focus{outline:2px solid #7fd0ff !important;outline-offset:2px}
+/* ===== Virtual keyboard (gamepad text entry) ===== */
+#vkb{position:fixed;inset:0;z-index:60;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(6,8,12,0.92);backdrop-filter:blur(4px)}
+#vkb-display{min-width:300px;max-width:90%;min-height:24px;padding:10px 16px;border:1px solid rgba(0,255,65,0.4);border-radius:6px;color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:16px;background:rgba(0,255,65,0.05);text-align:center;word-break:break-all}
+#vkb-grid{display:flex;flex-direction:column;gap:8px}
+.vkb-row{display:flex;gap:8px;justify-content:center}
+.vkb-key{min-width:46px;height:46px;display:flex;align-items:center;justify-content:center;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.3);border-radius:6px;color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:15px;cursor:pointer;-webkit-user-select:none;user-select:none}
+.vkb-key.vkb-wide{min-width:92px;font-size:12px;letter-spacing:1px}
+.vkb-key.vkb-focus{background:rgba(127,208,255,0.28);border-color:#7fd0ff;box-shadow:0 0 12px rgba(127,208,255,0.4)}
+.vkb-hint{font-size:10px;color:rgba(0,255,65,0.5);letter-spacing:2px}
 /* ===== Minimap ===== */
 #minimap{position:fixed;left:18px;bottom:84px;width:160px;height:160px;z-index:20;border-radius:50%;overflow:hidden;border:1px solid rgba(0,255,65,0.35);box-shadow:0 0 18px rgba(0,255,65,0.12),inset 0 0 20px rgba(0,0,0,0.4);pointer-events:none;display:none;background:#0a140a}
 #mm-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.92}
@@ -89,6 +105,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <canvas id="sim-canvas"></canvas>
 <div id="scanlines"></div>
 <div id="vignette"></div>
+<div id="env-time"></div>
+<div id="env-wx"></div>
 
 <div id="ahi-container">
   <canvas id="ahi-canvas" width="120" height="120"></canvas>
@@ -161,6 +179,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="l-sub pulsing">LOADING EARTH...</div>
 </div>
 
+<div id="vkb">
+  <div id="vkb-display">_</div>
+  <div id="vkb-grid"></div>
+  <div class="vkb-hint">D-PAD MOVE · A TYPE · B CLOSE · GO ✈ LAUNCH</div>
+</div>
+
 <div id="startmenu">
   <div class="sm-title">FLIGHT SIM</div>
   <div class="sm-sub">SELECT DEPARTURE POINT</div>
@@ -179,6 +203,21 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button id="sm-go">GO ✈</button>
   </div>
   <div id="sm-status"></div>
+  <div class="sm-section">TIME OF DAY</div>
+  <div class="env-row" id="time-row">
+    <button class="env-btn" data-env="time" data-val="dawn">🌅 Dawn</button>
+    <button class="env-btn env-on" data-env="time" data-val="day">☀️ Day</button>
+    <button class="env-btn" data-env="time" data-val="dusk">🌇 Dusk</button>
+    <button class="env-btn" data-env="time" data-val="night">🌙 Night</button>
+  </div>
+  <div class="sm-section">WEATHER</div>
+  <div class="env-row" id="wx-row">
+    <button class="env-btn env-on" data-env="weather" data-val="clear">☀ Clear</button>
+    <button class="env-btn" data-env="weather" data-val="clouds">☁ Clouds</button>
+    <button class="env-btn" data-env="weather" data-val="rain">🌧 Rain</button>
+    <button class="env-btn" data-env="weather" data-val="snow">❄ Snow</button>
+    <button class="env-btn" data-env="weather" data-val="fog">🌫 Fog</button>
+  </div>
   <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C cam &nbsp;·&nbsp; R reset &nbsp;·&nbsp; 🎮 gamepad</div>
 </div>
 
@@ -348,6 +387,16 @@ const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, Key
   ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1 };
 const keys = {};
 window.addEventListener('keydown', e => {
+  // Virtual keyboard navigation (when open) takes priority
+  if (typeof vkbOpen !== 'undefined' && vkbOpen) {
+    if (e.key === 'ArrowUp') { vkbMove(-1, 0); e.preventDefault(); return; }
+    if (e.key === 'ArrowDown') { vkbMove(1, 0); e.preventDefault(); return; }
+    if (e.key === 'ArrowLeft') { vkbMove(0, -1); e.preventDefault(); return; }
+    if (e.key === 'ArrowRight') { vkbMove(0, 1); e.preventDefault(); return; }
+    if (e.key === 'Enter') { vkbActivate(); e.preventDefault(); return; }
+    if (e.key === 'Escape') { closeVkb(); e.preventDefault(); return; }
+    return;
+  }
   // Don't hijack typing in text inputs (custom location field, etc.)
   const tag = e.target && e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
@@ -504,6 +553,92 @@ function initTouchControls() {
 // Re-calibrate tilt neutral if the device rotates
 window.addEventListener('orientationchange', function () { if (tiltEnabled) setTimeout(calibrateTilt, 400); });
 
+// ===================== Time of day & weather =====================
+let env = { time: 'day', weather: 'clear' };
+let frameDt = 0.016;
+let wxParticles = [];
+
+function initWeatherParticles() {
+  wxParticles = [];
+  const kind = env.weather;
+  const n = kind === 'rain' ? 220 : kind === 'snow' ? 160 : 0;
+  for (let i = 0; i < n; i++) {
+    wxParticles.push({
+      x: Math.random() * (W || 800),
+      y: Math.random() * (H || 600),
+      v: kind === 'rain' ? (760 + Math.random() * 480) : (45 + Math.random() * 45),
+      len: kind === 'rain' ? (12 + Math.random() * 16) : 0,
+      r: kind === 'snow' ? (1.2 + Math.random() * 2.2) : 0,
+      drift: (Math.random() - 0.5) * 60
+    });
+  }
+}
+
+function drawWeather() {
+  if (env.weather !== 'rain' && env.weather !== 'snow') return;
+  const dt = Math.min(frameDt, 0.05);
+  ctx.save();
+  if (env.weather === 'rain') {
+    ctx.strokeStyle = 'rgba(180,205,235,0.35)';
+    ctx.lineWidth = 1.1;
+    for (const p of wxParticles) {
+      p.y += p.v * dt; p.x += p.drift * dt;
+      if (p.y > H) { p.y = -p.len; p.x = Math.random() * W; }
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.drift * 0.03, p.y + p.len); ctx.stroke();
+    }
+  } else { // snow
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    for (const p of wxParticles) {
+      p.y += p.v * dt; p.x += Math.sin(p.y * 0.02) * 18 * dt + p.drift * dt * 0.3;
+      if (p.y > H) { p.y = -2; p.x = Math.random() * W; }
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.3); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function applyEnvironment() {
+  const te = document.getElementById('env-time');
+  const we = document.getElementById('env-wx');
+  const timeBg = {
+    dawn:  'radial-gradient(ellipse at 50% 80%, rgba(255,170,90,0.18), rgba(150,90,120,0.10))',
+    day:   'none',
+    dusk:  'radial-gradient(ellipse at 50% 85%, rgba(255,115,55,0.24), rgba(70,40,95,0.26))',
+    night: 'linear-gradient(rgba(6,10,34,0.34), rgba(6,10,34,0.34))'
+  };
+  const wxBg = {
+    clear:  'none',
+    clouds: 'linear-gradient(rgba(120,128,135,0.22), rgba(120,128,135,0.22))',
+    rain:   'linear-gradient(rgba(55,65,82,0.36), rgba(55,65,82,0.36))',
+    snow:   'linear-gradient(rgba(220,226,236,0.20), rgba(220,226,236,0.20))',
+    fog:    'linear-gradient(rgba(200,206,212,0.52), rgba(200,206,212,0.52))'
+  };
+  if (te) te.style.background = timeBg[env.time] || 'none';
+  if (we) we.style.background = wxBg[env.weather] || 'none';
+  if (viewer) {
+    const w = env.weather;
+    try {
+      viewer.scene.fog.enabled = (w === 'fog' || w === 'rain' || w === 'clouds');
+      viewer.scene.fog.density = (w === 'fog') ? 0.0008 : 0.00025;
+      // Sky colour by time of day (flat clear-colour, no atmosphere shaders).
+      const sky = ({
+        dawn:  [250, 200, 150],
+        day:   [135, 206, 235],
+        dusk:  [232, 140, 100],
+        night: [6, 10, 30]
+      })[env.time] || [135, 206, 235];
+      let rgb = sky.slice();
+      if (w === 'fog') rgb = [205, 210, 216];
+      else if (w === 'rain') rgb = rgb.map(function (c) { return Math.round(c * 0.5 + 35); });
+      else if (w === 'clouds') rgb = rgb.map(function (c) { return Math.round(c * 0.6 + 52); });
+      else if (w === 'snow') rgb = rgb.map(function (c) { return Math.round(c * 0.6 + 84); });
+      viewer.scene.backgroundColor = Cesium.Color.fromBytes(rgb[0], rgb[1], rgb[2], 255);
+      viewer.scene.skyBox.show = (env.time === 'night' && w === 'clear'); // stars only on clear nights
+    } catch (e) {}
+  }
+  initWeatherParticles();
+}
+
 // ===================== Gamepad (Xbox / PlayStation) support =====================
 let gpConnected = false;
 
@@ -562,6 +697,125 @@ function readGamepad() {
     airbrake: pressed(0),                // A (cross)
     reset: resetEdge
   };
+}
+
+// ----- Gamepad navigation of the start menu -----
+let menuItems = [];
+let menuFocus = -1;
+const menuNavPrev = { u: false, d: false, l: false, r: false, a: false, b: false };
+let runSubmitCustom = function () {}; // set when the start menu wires up
+
+function refreshMenuItems() {
+  const menu = document.getElementById('startmenu');
+  // Locations, environment toggles, the text field, and the GO button.
+  menuItems = menu ? Array.prototype.slice.call(
+    menu.querySelectorAll('.sm-btn, .env-btn, #sm-input, #sm-go')) : [];
+}
+function setMenuFocus(i) {
+  if (!menuItems.length) return;
+  menuFocus = (i + menuItems.length) % menuItems.length;
+  for (let k = 0; k < menuItems.length; k++) menuItems[k].classList.toggle('sm-focus', k === menuFocus);
+  try { menuItems[menuFocus].scrollIntoView({ block: 'nearest' }); } catch (e) {}
+}
+function activateMenuItem() {
+  const el = menuItems[menuFocus];
+  if (!el) return;
+  if (el.id === 'sm-input') { openVkb(); return; } // open virtual keyboard
+  el.click();
+}
+
+// ----- On-screen virtual keyboard (type into text fields with a controller) -----
+const VKB_ROWS = [
+  ['1','2','3','4','5','6','7','8','9','0'],
+  ['Q','W','E','R','T','Y','U','I','O','P'],
+  ['A','S','D','F','G','H','J','K','L'],
+  ['Z','X','C','V','B','N','M',',','.','-'],
+  ['SPACE','⌫','CLEAR','GO','✕']
+];
+let vkbOpen = false, vkbR = 1, vkbC = 0, vkbBuilt = false;
+
+function buildVkb() {
+  if (vkbBuilt) return;
+  const grid = document.getElementById('vkb-grid');
+  if (!grid) return;
+  VKB_ROWS.forEach(function (row, ri) {
+    const rd = document.createElement('div'); rd.className = 'vkb-row';
+    row.forEach(function (k, ci) {
+      const kd = document.createElement('div');
+      kd.className = 'vkb-key' + (k.length > 1 ? ' vkb-wide' : '');
+      kd.textContent = k; kd.dataset.r = ri; kd.dataset.c = ci;
+      kd.addEventListener('click', function () { vkbR = ri; vkbC = ci; vkbHighlight(); vkbActivate(); });
+      rd.appendChild(kd);
+    });
+    grid.appendChild(rd);
+  });
+  vkbBuilt = true;
+}
+function vkbHighlight() {
+  const keys = document.querySelectorAll('#vkb .vkb-key');
+  keys.forEach(function (k) { k.classList.toggle('vkb-focus', +k.dataset.r === vkbR && +k.dataset.c === vkbC); });
+}
+function vkbSync() {
+  const d = document.getElementById('vkb-display'); const i = document.getElementById('sm-input');
+  if (d) d.textContent = (i && i.value) ? i.value : '_';
+}
+function openVkb() {
+  buildVkb(); vkbOpen = true; vkbR = 1; vkbC = 0;
+  const el = document.getElementById('vkb'); if (el) el.style.display = 'flex';
+  vkbHighlight(); vkbSync();
+}
+function closeVkb() {
+  vkbOpen = false;
+  const el = document.getElementById('vkb'); if (el) el.style.display = 'none';
+}
+function vkbMove(dr, dc) {
+  if (dr) vkbR = (vkbR + dr + VKB_ROWS.length) % VKB_ROWS.length;
+  const len = VKB_ROWS[vkbR].length;
+  if (vkbC > len - 1) vkbC = len - 1;
+  if (dc) { let c = vkbC + dc; if (c < 0) c = len - 1; if (c > len - 1) c = 0; vkbC = c; }
+  vkbHighlight();
+}
+function vkbActivate() {
+  const key = VKB_ROWS[vkbR][vkbC];
+  const i = document.getElementById('sm-input'); if (!i) return;
+  if (key === 'SPACE') i.value += ' ';
+  else if (key === '⌫') i.value = i.value.slice(0, -1);
+  else if (key === 'CLEAR') i.value = '';
+  else if (key === '✕') { closeVkb(); return; }
+  else if (key === 'GO') { closeVkb(); runSubmitCustom(); return; }
+  else i.value += key;
+  vkbSync();
+}
+
+function pollMenuGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+  if (!gp) return;
+  if (!gpConnected) { gpConnected = true; updateGpIndicator(); }
+  const ax = gp.axes || [];
+  const pressed = function (i) { return !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed); };
+  const up = pressed(12) || (ax[1] || 0) < -0.5;
+  const down = pressed(13) || (ax[1] || 0) > 0.5;
+  const left = pressed(14) || (ax[0] || 0) < -0.5;
+  const right = pressed(15) || (ax[0] || 0) > 0.5;
+  const a = pressed(0), b = pressed(1);
+
+  if (vkbOpen) {
+    if (up && !menuNavPrev.u) vkbMove(-1, 0);
+    if (down && !menuNavPrev.d) vkbMove(1, 0);
+    if (left && !menuNavPrev.l) vkbMove(0, -1);
+    if (right && !menuNavPrev.r) vkbMove(0, 1);
+    if (a && !menuNavPrev.a) vkbActivate();
+    if (b && !menuNavPrev.b) closeVkb();
+  } else {
+    if (!menuItems.length) { refreshMenuItems(); setMenuFocus(0); }
+    if ((up || left) && !(menuNavPrev.u || menuNavPrev.l)) setMenuFocus(menuFocus - 1);
+    else if ((down || right) && !(menuNavPrev.d || menuNavPrev.r)) setMenuFocus(menuFocus + 1);
+    if (a && !menuNavPrev.a) activateMenuItem();
+  }
+  menuNavPrev.u = up; menuNavPrev.d = down; menuNavPrev.l = left; menuNavPrev.r = right;
+  menuNavPrev.a = a; menuNavPrev.b = b;
 }
 
 // ===================== Aircraft / aerodynamics model (SI) =====================
@@ -696,6 +950,8 @@ function updateCamera() {
 }
 
 const DEG = Math.PI / 180;
+// Wrap an angle to (-180, 180] so attitude can rotate full circle (loops/rolls).
+function normDeg(a) { a = ((a + 180) % 360 + 360) % 360 - 180; return a; }
 
 // Sample real terrain height (m) under the aircraft, when tiles are loaded.
 function terrainHeightM() {
@@ -721,8 +977,8 @@ function update(dt) {
   // Control authority scales with airspeed (sluggish when slow, like a real wing).
   const V0 = Math.max(state.speed * KTS_TO_MPS, 1);
   const authority = Math.min(1, V0 / 90);            // ~full above ~175 kt
-  const pitchRate = 26 * (0.35 + 0.65 * authority);
-  const bankRate = 75 * (0.4 + 0.6 * authority);
+  const pitchRate = 34 * (0.35 + 0.65 * authority);   // higher = brisker loops
+  const bankRate = 100 * (0.4 + 0.6 * authority);     // higher = quicker rolls
   const throttleRate = 35;
 
   // Combine keyboard + gamepad into analog axes in [-1, 1].
@@ -747,9 +1003,18 @@ function update(dt) {
 
   if (keys['KeyR'] || (gp && gp.reset)) { resetState(); return; }
 
-  state.pitch = Math.max(-22, Math.min(28, state.pitch + pitchIn * pitchRate * dt));
-  state.bank = Math.max(-80, Math.min(80, state.bank + rollIn * bankRate * dt));
+  // Full-circle attitude: hold elevator -> loop, hold aileron -> roll.
+  state.pitch = normDeg(state.pitch + pitchIn * pitchRate * dt);
+  state.bank = normDeg(state.bank + rollIn * bankRate * dt);
   state.throttle = Math.max(0, Math.min(100, state.throttle + thrIn * throttleRate * dt));
+
+  // Angle-of-attack limiter: during hard pulls, keep the nose from outrunning the
+  // flight path (which would deep-stall). This holds the wing near max lift so
+  // loops stay clean and the aircraft tracks its velocity vector around the circle.
+  const aLim = AC.aStall;
+  const aoaCmd = normDeg(state.pitch - state.gamma + AC.incidence);
+  if (aoaCmd > aLim) state.pitch = normDeg(state.pitch - (aoaCmd - aLim));
+  else if (aoaCmd < -aLim) state.pitch = normDeg(state.pitch - (aoaCmd + aLim));
   const airbrake = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake));
 
   // Roll stability: wings self-level only GENTLY with no aileron input, so it
@@ -802,8 +1067,8 @@ function update(dt) {
 
   const theta = state.pitch;                          // attitude (deg)
   let gamma = state.gamma;                            // flight-path (deg)
-  let aoaDeg = theta - gamma + AC.incidence;          // angle of attack (incl. wing incidence)
-  aoaDeg = Math.max(-30, Math.min(30, aoaDeg));
+  // angle of attack: nose vs. velocity vector, wrapped then clamped for the lift model
+  let aoaDeg = Math.max(-30, Math.min(30, normDeg(theta - gamma + AC.incidence)));
 
   // Lift coefficient — flaps raise both CL and CL_max (more lift at lower speed)
   const clMax = AC.CL_max + flapCL * 0.5;
@@ -836,8 +1101,7 @@ function update(dt) {
 
   V += dV * dt;
   V = Math.max(0, Math.min(AC.Vne * 1.15, V));
-  gamma += (dGam * dt) / DEG;
-  gamma = Math.max(-89, Math.min(89, gamma));
+  gamma = normDeg(gamma + (dGam * dt) / DEG);          // full circle for loops
   state.heading += (dPsi * dt) / DEG;
   if (state.heading < 0) state.heading += 360;
   if (state.heading >= 360) state.heading -= 360;
@@ -1456,6 +1720,8 @@ function render() {
   // Transparent overlay on top of the real-world globe
   ctx.clearRect(0, 0, W, H);
 
+  drawWeather(); // rain/snow particles behind the HUD
+
   const bankRad = state.bank * Math.PI / 180;
 
   if (cameraMode === 0) {
@@ -1633,10 +1899,23 @@ function beginFlight(loc) {
   chosen = true;
   simReady = false;
   startTime = performance.now();
+  applyEnvironment(); // apply chosen time-of-day & weather
   try { window.focus(); } catch (e) {} // capture keyboard for flight controls
 }
 
 if (startMenu) {
+  // Time-of-day & weather toggle buttons
+  startMenu.querySelectorAll('.env-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const k = btn.getAttribute('data-env');
+      const v = btn.getAttribute('data-val');
+      env[k] = v;
+      startMenu.querySelectorAll('.env-btn[data-env="' + k + '"]').forEach(function (b) {
+        b.classList.toggle('env-on', b === btn);
+      });
+      applyEnvironment();
+    });
+  });
   startMenu.querySelectorAll('.sm-btn[data-lat]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       beginFlight({
@@ -1738,12 +2017,16 @@ if (startMenu) {
   if (input) input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); submitCustom(); }
   });
+  runSubmitCustom = submitCustom; // let the virtual keyboard's GO key submit too
 }
 
 function loop() {
   const now = performance.now();
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
+  frameDt = dt;
+
+  if (!chosen) pollMenuGamepad(); // let a controller drive the start menu
 
   // After a departure is chosen, start flying once the terrain spawn height is
   // resolved AND the globe tiles for the start view have loaded (aircraft is
