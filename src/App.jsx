@@ -10,7 +10,7 @@ import FlightSimulator from '@/pages/FlightSimulator';
 function App() {
   return (
     <QueryClientProvider client={queryClientInstance}>
-      <Router>
+      <Router basename="/flight-sim">
         <ScrollToTop />
         <Routes>
           <Route path="/" element={<FlightSimulator />} />
