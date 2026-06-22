@@ -35,6 +35,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #compass{position:fixed;top:140px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none}
 #compass-canvas{border:1px solid rgba(0,255,65,0.15);border-radius:4px;background:rgba(0,255,65,0.02)}
 #cam-label{position:fixed;top:16px;right:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.6);font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:4px 10px}
+#gp-indicator{position:fixed;top:46px;right:16px;z-index:20;pointer-events:none;display:none;color:#7fd0ff;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(0,160,255,0.06);border:1px solid rgba(80,180,255,0.4);border-radius:4px;padding:3px 8px}
 #loc-label{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;color:rgba(0,255,65,0.45);font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;text-align:center}
 #loading{position:fixed;top:0;left:0;width:100%;height:100%;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0a0f;color:#00FF41;font-family:'JetBrains Mono',monospace;gap:14px}
 #loading .l-title{font-size:18px;letter-spacing:4px;text-shadow:0 0 10px rgba(0,255,65,0.4)}
@@ -97,9 +98,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <div id="terrain-warn"><div class="tw-main">TERRAIN</div><div class="tw-sub">PULL UP</div></div>
 
 <div id="cam-label">COCKPIT</div>
+<div id="gp-indicator">🎮 CONTROLLER</div>
 <div id="loc-label">GRAND CANYON, AZ</div>
 <div id="controls-hint">
-  ↑↓ PITCH<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA<br>R RESET
+  ↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA<br>R RESET<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>
 </div>
 
 <div id="minimap">
@@ -125,7 +127,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="sm-btn" data-name="TEL AVIV" data-lat="32.0809" data-lon="34.7806" data-alt="2000" data-hdg="0">Tel Aviv<span class="sm-sub2">Coast</span></button>
     <button class="sm-btn" id="sm-geo">📍 My Location</button>
   </div>
-  <div class="sm-hint">↑↓ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C camera &nbsp;·&nbsp; R reset</div>
+  <div class="sm-hint">↓ nose-up · ↑ nose-down &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C camera &nbsp;·&nbsp; R reset &nbsp;·&nbsp; 🎮 gamepad supported</div>
 </div>
 
 <script>
@@ -216,6 +218,46 @@ window.addEventListener('keydown', e => { keys[e.key] = true; if (e.key === 'c' 
 window.addEventListener('keyup', e => { keys[e.key] = false; });
 // Keep keyboard focus inside the simulator (iframe) on any interaction
 window.addEventListener('pointerdown', function(){ try { window.focus(); } catch (e) {} });
+
+// ===================== Gamepad (Xbox / PlayStation) support =====================
+let gpConnected = false;
+function updateGpIndicator() {
+  const el = document.getElementById('gp-indicator');
+  if (el) el.style.display = gpConnected ? 'block' : 'none';
+}
+window.addEventListener('gamepadconnected', function () { gpConnected = true; updateGpIndicator(); });
+window.addEventListener('gamepaddisconnected', function () { gpConnected = false; updateGpIndicator(); });
+
+const gpPrev = { cam: false, reset: false };
+function readGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+  if (!gp) return null;
+  if (!gpConnected) { gpConnected = true; updateGpIndicator(); }
+
+  const ax = gp.axes || [];
+  const dz = function (v) { v = v || 0; return Math.abs(v) < 0.12 ? 0 : v; };
+  const val = function (i) { return (gp.buttons && gp.buttons[i]) ? gp.buttons[i].value : 0; };
+  const pressed = function (i) { return !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed); };
+
+  // Camera toggle on Y (button 3), edge-triggered
+  const camNow = pressed(3);
+  if (camNow && !gpPrev.cam) cameraMode = (cameraMode + 1) % 2;
+  gpPrev.cam = camNow;
+  // Reset on Start (9) or Back (8), edge-triggered
+  const resetNow = pressed(9) || pressed(8);
+  const resetEdge = resetNow && !gpPrev.reset;
+  gpPrev.reset = resetNow;
+
+  return {
+    pitch: dz(ax[1]),                    // left stick back/down = nose up
+    roll:  dz(ax[0]),                    // left stick right = bank right
+    thr:   val(7) - val(6),              // RT throttle up, LT throttle down
+    airbrake: pressed(0) || pressed(1),  // A / B (or cross / circle)
+    reset: resetEdge
+  };
+}
 
 // ===================== Aircraft / aerodynamics model (SI) =====================
 // A nimble light jet. Real point-mass dynamics: lift, drag, thrust, weight.
@@ -363,19 +405,36 @@ function update(dt) {
   const bankRate = 75 * (0.4 + 0.6 * authority);
   const throttleRate = 35;
 
-  if (keys['ArrowUp']) state.pitch = Math.min(state.pitch + pitchRate * dt, 28);
-  if (keys['ArrowDown']) state.pitch = Math.max(state.pitch - pitchRate * dt, -22);
-  if (keys['ArrowLeft']) state.bank = Math.max(state.bank - bankRate * dt, -80);
-  if (keys['ArrowRight']) state.bank = Math.min(state.bank + bankRate * dt, 80);
-  if (keys['w'] || keys['W']) state.throttle = Math.min(state.throttle + throttleRate * dt, 100);
-  if (keys['s'] || keys['S']) state.throttle = Math.max(state.throttle - throttleRate * dt, 0);
-  if (keys['r'] || keys['R']) { resetState(); return; }
-  const airbrake = !!(keys['b'] || keys['B'] || keys[' ']);
+  // Combine keyboard + gamepad into analog axes in [-1, 1].
+  const gp = readGamepad();
 
-  // Roll stability: wings level themselves slowly with no aileron input (dihedral).
-  if (!keys['ArrowLeft'] && !keys['ArrowRight']) {
-    state.bank *= Math.pow(0.55, dt);
-    if (Math.abs(state.bank) < 0.4) state.bank = 0;
+  // Elevator: yoke convention — DOWN arrow / stick back = NOSE UP.
+  let pitchIn = 0;
+  if (keys['ArrowDown']) pitchIn += 1;
+  if (keys['ArrowUp']) pitchIn -= 1;
+  let rollIn = 0;
+  if (keys['ArrowRight']) rollIn += 1;
+  if (keys['ArrowLeft']) rollIn -= 1;
+  let thrIn = 0;
+  if (keys['w'] || keys['W']) thrIn += 1;
+  if (keys['s'] || keys['S']) thrIn -= 1;
+  if (gp) { pitchIn += gp.pitch; rollIn += gp.roll; thrIn += gp.thr; }
+  pitchIn = Math.max(-1, Math.min(1, pitchIn));
+  rollIn = Math.max(-1, Math.min(1, rollIn));
+  thrIn = Math.max(-1, Math.min(1, thrIn));
+
+  if (keys['r'] || keys['R'] || (gp && gp.reset)) { resetState(); return; }
+
+  state.pitch = Math.max(-22, Math.min(28, state.pitch + pitchIn * pitchRate * dt));
+  state.bank = Math.max(-80, Math.min(80, state.bank + rollIn * bankRate * dt));
+  state.throttle = Math.max(0, Math.min(100, state.throttle + thrIn * throttleRate * dt));
+  const airbrake = !!(keys['b'] || keys['B'] || keys[' '] || (gp && gp.airbrake));
+
+  // Roll stability: wings self-level only GENTLY with no aileron input, so it
+  // stays easy to establish and hold a turn.
+  if (Math.abs(rollIn) < 0.05) {
+    state.bank *= Math.pow(0.9, dt);
+    if (Math.abs(state.bank) < 0.2) state.bank = 0;
   }
 
   // Engine spool-up lag
