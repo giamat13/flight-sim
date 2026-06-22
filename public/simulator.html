@@ -42,6 +42,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .sys-val{font-size:11px;font-weight:600}
 .sys-ok{color:#00FF41}.sys-warn{color:#ffaa00}.sys-off{color:rgba(0,255,65,0.3)}.sys-red{color:#ff3030}
 #fire-warn{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:44px;font-weight:700;color:#ff3000;text-shadow:0 0 40px rgba(255,50,0,0.9);font-family:'JetBrains Mono',monospace;letter-spacing:5px;pointer-events:none;display:none}
+/* ===== Touch controls (mobile) ===== */
+#touch-controls{position:fixed;inset:0;z-index:25;pointer-events:none;display:none}
+#tc-top{position:absolute;top:12px;left:12px;display:flex;flex-wrap:wrap;gap:8px}
+#tc-right{position:absolute;right:14px;bottom:24px;display:flex;flex-direction:column;gap:10px;align-items:stretch}
+.tc-btn{pointer-events:auto;background:rgba(0,255,65,0.08);border:1px solid rgba(0,255,65,0.4);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;letter-spacing:1px;padding:12px 14px;border-radius:8px;min-width:60px;text-align:center;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none;backdrop-filter:blur(2px)}
+.tc-btn:active{background:rgba(0,255,65,0.25);border-color:#00FF41}
+.tc-big{font-size:16px;padding:18px 22px;min-width:96px}
+.tc-tilt.tc-on{background:rgba(80,180,255,0.22);border-color:#7fd0ff;color:#7fd0ff}
 #loc-label{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;color:rgba(0,255,65,0.45);font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;text-align:center}
 #loading{position:fixed;top:0;left:0;width:100%;height:100%;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0a0f;color:#00FF41;font-family:'JetBrains Mono',monospace;gap:14px}
 #loading .l-title{font-size:18px;letter-spacing:4px;text-shadow:0 0 10px rgba(0,255,65,0.4)}
@@ -122,6 +130,22 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <img id="mm-img" alt="">
   <canvas id="mm-cv" width="180" height="180"></canvas>
   <div id="mm-label">NAV MAP</div>
+</div>
+
+<!-- On-screen controls for touch devices (tilt to steer; buttons for the rest) -->
+<div id="touch-controls">
+  <div id="tc-top">
+    <button class="tc-btn tc-tilt" id="tc-tilt">📱 TILT</button>
+    <button class="tc-btn" id="tc-eng">ENG</button>
+    <button class="tc-btn" id="tc-flap">FLAP</button>
+    <button class="tc-btn" id="tc-gear">GEAR</button>
+    <button class="tc-btn" id="tc-cam">CAM</button>
+  </div>
+  <div id="tc-right">
+    <button class="tc-btn tc-big" id="tc-thrup">THR ▲</button>
+    <button class="tc-btn tc-big" id="tc-thrdn">THR ▼</button>
+    <button class="tc-btn" id="tc-brake">BRAKE</button>
+  </div>
 </div>
 
 <div id="loading" style="display:none">
@@ -304,21 +328,25 @@ function playStartupSound() {
 }
 
 // ===================== Keys =====================
+// Index keys by e.code (PHYSICAL key position) instead of e.key, so controls
+// work regardless of keyboard language/layout (Hebrew, AZERTY, etc.).
+const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1,
+  ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1 };
 const keys = {};
-const keysPrev = {};
 window.addEventListener('keydown', e => {
-  const wasDown = keys[e.key];
-  keys[e.key] = true;
+  const code = e.code;
+  const wasDown = keys[code];
+  keys[code] = true;
   if (!wasDown) {
     // edge-triggered actions
-    if (e.key === 'c' || e.key === 'C') cameraMode = (cameraMode + 1) % 2;
-    if (e.key === 'e' || e.key === 'E') handleEngineKey();
-    if (e.key === 'f' || e.key === 'F') cycleFlaps();
-    if (e.key === 'g' || e.key === 'G') toggleGear();
+    if (code === 'KeyC') cameraMode = (cameraMode + 1) % 2;
+    if (code === 'KeyE') handleEngineKey();
+    if (code === 'KeyF') cycleFlaps();
+    if (code === 'KeyG') toggleGear();
   }
-  e.preventDefault();
+  if (USED_CODES[code]) e.preventDefault();
 });
-window.addEventListener('keyup', e => { keys[e.key] = false; });
+window.addEventListener('keyup', e => { keys[e.code] = false; });
 // Keep keyboard focus inside the simulator (iframe) on any interaction
 window.addEventListener('pointerdown', function(){ ensureAudio(); try { window.focus(); } catch (e) {} });
 
@@ -352,16 +380,133 @@ function toggleGear() {
   state.gearDown = !state.gearDown;
 }
 
+// ===================== Phone tilt control (DeviceOrientation) =====================
+let tiltEnabled = false;
+let lastOrient = null;            // latest { beta, gamma }
+let neutralPitch = 0, neutralRoll = 0;
+
+function onDeviceOrientation(e) {
+  if (e.beta == null && e.gamma == null) return;
+  lastOrient = { beta: e.beta || 0, gamma: e.gamma || 0 };
+}
+
+// Map raw device angles to (pitchTilt, rollTilt) accounting for screen rotation.
+function computeTiltAngles() {
+  if (!lastOrient) return null;
+  const angle = (screen.orientation && typeof screen.orientation.angle === 'number')
+    ? screen.orientation.angle : (window.orientation || 0);
+  const b = lastOrient.beta, g = lastOrient.gamma;
+  if (angle === 90)  return { pitchTilt: g,  rollTilt: -b };
+  if (angle === 270 || angle === -90) return { pitchTilt: -g, rollTilt: b };
+  if (angle === 180) return { pitchTilt: -b, rollTilt: -g };
+  return { pitchTilt: b, rollTilt: g }; // portrait
+}
+
+function calibrateTilt() {
+  const a = computeTiltAngles();
+  if (a) { neutralPitch = a.pitchTilt; neutralRoll = a.rollTilt; }
+}
+
+function getTiltControl() {
+  if (!tiltEnabled) return null;
+  const a = computeTiltAngles();
+  if (!a) return null;
+  const span = 35, dead = 4;
+  const map = function (v) {
+    const s = Math.sign(v) * Math.max(0, Math.abs(v) - dead);
+    return Math.max(-1, Math.min(1, s / span));
+  };
+  // tilt phone toward you (pitchTilt up) = nose up; tilt right = bank right
+  return { pitch: map(a.pitchTilt - neutralPitch), roll: map(a.rollTilt - neutralRoll) };
+}
+
+function setTiltButton(label) {
+  const b = document.getElementById('tc-tilt');
+  if (b) { b.textContent = label || (tiltEnabled ? '📱 TILT ✓' : '📱 TILT'); b.classList.toggle('tc-on', tiltEnabled); }
+}
+
+function enableTilt() {
+  const grant = function () {
+    window.addEventListener('deviceorientation', onDeviceOrientation, true);
+    tiltEnabled = true;
+    setTimeout(calibrateTilt, 350); // calibrate once readings arrive
+    setTiltButton();
+  };
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then(function (res) { if (res === 'granted') grant(); else setTiltButton('📱 DENIED'); })
+      .catch(function () { setTiltButton('📱 ERR'); });
+  } else {
+    grant();
+  }
+}
+function disableTilt() {
+  tiltEnabled = false;
+  window.removeEventListener('deviceorientation', onDeviceOrientation, true);
+  setTiltButton();
+}
+function toggleTilt() { if (tiltEnabled) disableTilt(); else enableTilt(); }
+
+// ===================== Touch controls (mobile) =====================
+function wireHold(btn, code) {
+  if (!btn) return;
+  const down = function (e) { e.preventDefault(); keys[code] = true; ensureAudio(); };
+  const up = function (e) { e.preventDefault(); keys[code] = false; };
+  btn.addEventListener('touchstart', down, { passive: false });
+  btn.addEventListener('touchend', up, { passive: false });
+  btn.addEventListener('touchcancel', up, { passive: false });
+  btn.addEventListener('mousedown', down);
+  btn.addEventListener('mouseup', up);
+  btn.addEventListener('mouseleave', up);
+}
+function wireTap(btn, fn) {
+  if (!btn) return;
+  btn.addEventListener('click', function (e) { e.preventDefault(); ensureAudio(); fn(); });
+}
+
+function initTouchControls() {
+  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const tc = document.getElementById('touch-controls');
+  if (!tc) return;
+  if (!isTouch) { tc.style.display = 'none'; return; }
+  tc.style.display = 'block';
+  const hint = document.getElementById('controls-hint');
+  if (hint) hint.style.display = 'none'; // keyboard hint not useful on phones
+  wireHold(document.querySelector('#tc-thrup'), 'KeyW');
+  wireHold(document.querySelector('#tc-thrdn'), 'KeyS');
+  wireHold(document.querySelector('#tc-brake'), 'KeyB');
+  wireTap(document.getElementById('tc-tilt'), toggleTilt);
+  wireTap(document.getElementById('tc-eng'), handleEngineKey);
+  wireTap(document.getElementById('tc-flap'), cycleFlaps);
+  wireTap(document.getElementById('tc-gear'), toggleGear);
+  wireTap(document.getElementById('tc-cam'), function () { cameraMode = (cameraMode + 1) % 2; });
+}
+// Re-calibrate tilt neutral if the device rotates
+window.addEventListener('orientationchange', function () { if (tiltEnabled) setTimeout(calibrateTilt, 400); });
+
 // ===================== Gamepad (Xbox / PlayStation) support =====================
 let gpConnected = false;
+
+// Two versions of the on-screen control hint — keyboard vs. gamepad.
+const HINT_KEYBOARD =
+  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · R RESET<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
+const HINT_GAMEPAD =
+  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR<br>L-STICK PITCH/BANK<br>RT/LT THROTTLE<br>A AIRBRAKE<br>Y CAMERA · ☰ START RESET';
+
+function updateControlsHint() {
+  const el = document.getElementById('controls-hint');
+  if (el) el.innerHTML = gpConnected ? HINT_GAMEPAD : HINT_KEYBOARD;
+}
 function updateGpIndicator() {
   const el = document.getElementById('gp-indicator');
   if (el) el.style.display = gpConnected ? 'block' : 'none';
+  updateControlsHint();
 }
 window.addEventListener('gamepadconnected', function () { gpConnected = true; updateGpIndicator(); });
 window.addEventListener('gamepaddisconnected', function () { gpConnected = false; updateGpIndicator(); });
 
-const gpPrev = { cam: false, reset: false };
+const gpPrev = { cam: false, reset: false, eng: false, flap: false, gear: false };
 function readGamepad() {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   let gp = null;
@@ -374,12 +519,20 @@ function readGamepad() {
   const val = function (i) { return (gp.buttons && gp.buttons[i]) ? gp.buttons[i].value : 0; };
   const pressed = function (i) { return !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed); };
 
-  // Camera toggle on Y (button 3), edge-triggered
-  const camNow = pressed(3);
+  // Edge-triggered button actions (full parity with keyboard)
+  const camNow = pressed(3);                       // Y -> camera
   if (camNow && !gpPrev.cam) cameraMode = (cameraMode + 1) % 2;
   gpPrev.cam = camNow;
-  // Reset on Start (9) or Back (8), edge-triggered
-  const resetNow = pressed(9) || pressed(8);
+  const engNow = pressed(1);                       // B -> engine
+  if (engNow && !gpPrev.eng) handleEngineKey();
+  gpPrev.eng = engNow;
+  const flapNow = pressed(2);                      // X -> flaps
+  if (flapNow && !gpPrev.flap) cycleFlaps();
+  gpPrev.flap = flapNow;
+  const gearNow = pressed(4);                      // LB -> gear
+  if (gearNow && !gpPrev.gear) toggleGear();
+  gpPrev.gear = gearNow;
+  const resetNow = pressed(9) || pressed(8);       // Start/Back -> reset
   const resetEdge = resetNow && !gpPrev.reset;
   gpPrev.reset = resetNow;
 
@@ -387,7 +540,7 @@ function readGamepad() {
     pitch: dz(ax[1]),                    // left stick back/down = nose up
     roll:  dz(ax[0]),                    // left stick right = bank right
     thr:   val(7) - val(6),              // RT throttle up, LT throttle down
-    airbrake: pressed(0) || pressed(1),  // A / B (or cross / circle)
+    airbrake: pressed(0),                // A (cross)
     reset: resetEdge
   };
 }
@@ -553,19 +706,21 @@ function update(dt) {
   if (keys['ArrowRight']) rollIn += 1;
   if (keys['ArrowLeft']) rollIn -= 1;
   let thrIn = 0;
-  if (keys['w'] || keys['W']) thrIn += 1;
-  if (keys['s'] || keys['S']) thrIn -= 1;
+  if (keys['KeyW']) thrIn += 1;
+  if (keys['KeyS']) thrIn -= 1;
   if (gp) { pitchIn += gp.pitch; rollIn += gp.roll; thrIn += gp.thr; }
+  const tilt = getTiltControl();           // phone tilt (if enabled)
+  if (tilt) { pitchIn += tilt.pitch; rollIn += tilt.roll; }
   pitchIn = Math.max(-1, Math.min(1, pitchIn));
   rollIn = Math.max(-1, Math.min(1, rollIn));
   thrIn = Math.max(-1, Math.min(1, thrIn));
 
-  if (keys['r'] || keys['R'] || (gp && gp.reset)) { resetState(); return; }
+  if (keys['KeyR'] || (gp && gp.reset)) { resetState(); return; }
 
   state.pitch = Math.max(-22, Math.min(28, state.pitch + pitchIn * pitchRate * dt));
   state.bank = Math.max(-80, Math.min(80, state.bank + rollIn * bankRate * dt));
   state.throttle = Math.max(0, Math.min(100, state.throttle + thrIn * throttleRate * dt));
-  const airbrake = !!(keys['b'] || keys['B'] || keys[' '] || (gp && gp.airbrake));
+  const airbrake = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake));
 
   // Roll stability: wings self-level only GENTLY with no aileron input, so it
   // stays easy to establish and hold a turn.
@@ -1496,6 +1651,8 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
+updateControlsHint();
+initTouchControls();
 loop();
 })();
 </script>
