@@ -19,7 +19,6 @@ export default function FlightSimulator() {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flight Simulator</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:'JetBrains Mono',monospace;cursor:none}
@@ -370,7 +369,7 @@ function drawPitchLadder(bankRad) {
   const pixPerDeg = 6;
   ctx.strokeStyle = 'rgba(0,255,65,0.15)';
   ctx.fillStyle = 'rgba(0,255,65,0.3)';
-  ctx.font = '9px "JetBrains Mono"';
+  ctx.font = '9px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
   ctx.lineWidth = 1;
 
@@ -764,12 +763,12 @@ function drawCompass() {
 
     if (cardinals[deg]) {
       compassCtx.fillStyle = deg === 0 || deg === 360 ? '#00FF41' : 'rgba(0,255,65,0.6)';
-      compassCtx.font = '10px "JetBrains Mono"';
+      compassCtx.font = '10px "JetBrains Mono", monospace';
       compassCtx.textAlign = 'center';
       compassCtx.fillText(cardinals[deg], x, 12);
     } else if (deg % 30 === 0) {
       compassCtx.fillStyle = 'rgba(0,255,65,0.35)';
-      compassCtx.font = '8px "JetBrains Mono"';
+      compassCtx.font = '8px "JetBrains Mono", monospace';
       compassCtx.textAlign = 'center';
       compassCtx.fillText(deg.toString(), x, 11);
     }
@@ -806,7 +805,7 @@ function drawAltTape() {
   const pxPerFt = 0.4;
   const midY = y + tapeH / 2;
 
-  ctx.font = '9px "JetBrains Mono"';
+  ctx.font = '9px "JetBrains Mono", monospace';
   ctx.textAlign = 'right';
 
   for (let ft = Math.floor(alt / 100) * 100 - 500; ft <= alt + 500; ft += 100) {
@@ -834,13 +833,13 @@ function drawAltTape() {
   ctx.lineWidth = 1;
   ctx.strokeRect(x - 2, midY - 10, tapeW + 4, 20);
   ctx.fillStyle = '#00FF41';
-  ctx.font = '12px "JetBrains Mono"';
+  ctx.font = '12px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
   ctx.fillText(Math.round(alt).toString(), x + tapeW / 2, midY + 4);
 
   // Label
   ctx.fillStyle = 'rgba(0,255,65,0.3)';
-  ctx.font = '8px "JetBrains Mono"';
+  ctx.font = '8px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
   ctx.fillText('ALT', x + tapeW / 2, y - 6);
 }
@@ -866,7 +865,7 @@ function drawSpdTape() {
   const pxPerKt = 1.5;
   const midY = y + tapeH / 2;
 
-  ctx.font = '9px "JetBrains Mono"';
+  ctx.font = '9px "JetBrains Mono", monospace';
   ctx.textAlign = 'left';
 
   for (let kt = Math.floor(spd / 10) * 10 - 80; kt <= spd + 80; kt += 10) {
@@ -895,13 +894,13 @@ function drawSpdTape() {
   ctx.lineWidth = 1;
   ctx.strokeRect(x - 2, midY - 10, tapeW + 4, 20);
   ctx.fillStyle = spd < STALL_SPEED ? '#ff2020' : '#00FF41';
-  ctx.font = '12px "JetBrains Mono"';
+  ctx.font = '12px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
   ctx.fillText(Math.round(spd).toString(), x + tapeW / 2, midY + 4);
 
   // Label
   ctx.fillStyle = 'rgba(0,255,65,0.3)';
-  ctx.font = '8px "JetBrains Mono"';
+  ctx.font = '8px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
   ctx.fillText('KTS', x + tapeW / 2, y - 6);
 }
