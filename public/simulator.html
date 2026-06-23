@@ -33,6 +33,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #throttle-bar-bg{width:8px;height:140px;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.2);border-radius:4px;position:relative;overflow:hidden}
 #throttle-bar-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(0,255,65,0.5),rgba(0,255,65,0.2));border-radius:0 0 3px 3px;transition:height 0.15s}
 .thr-label{font-size:8px;color:rgba(0,255,65,0.4);letter-spacing:2px;font-family:'JetBrains Mono',monospace}
+#fuel-gauge-container{position:fixed;right:58px;top:50%;transform:translateY(-50%);z-index:20;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:4px}
+#fuel-bar-bg{width:8px;height:140px;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.2);border-radius:4px;position:relative;overflow:hidden}
+#fuel-bar-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(0,255,65,0.5),rgba(0,255,65,0.2));border-radius:0 0 3px 3px;transition:height 0.15s,background 0.3s}
+#fuel-bar-fill.fuel-warn{background:linear-gradient(to top,rgba(255,170,0,0.55),rgba(255,170,0,0.2))}
+#fuel-bar-fill.fuel-crit{background:linear-gradient(to top,rgba(255,40,40,0.65),rgba(255,40,40,0.25))}
+#fuel-pct{font-size:9px;color:rgba(0,255,65,0.55);letter-spacing:1px;font-family:'JetBrains Mono',monospace}
 #compass{position:fixed;top:140px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none}
 #compass-canvas{border:1px solid rgba(0,255,65,0.15);border-radius:4px;background:rgba(0,255,65,0.02)}
 #cam-label{position:fixed;top:16px;right:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.6);font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:4px 10px}
@@ -143,6 +149,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div id="throttle-bar-bg"><div id="throttle-bar-fill"></div></div>
 </div>
 
+<div id="fuel-gauge-container">
+  <span class="thr-label">FUEL</span>
+  <div id="fuel-bar-bg"><div id="fuel-bar-fill"></div></div>
+  <span id="fuel-pct">100%</span>
+</div>
+
 <div id="stall-warn" class="flashing">STALL</div>
 <div id="overspeed-warn" class="flashing">OVERSPEED</div>
 <div id="fire-warn" class="flashing">ENGINE FIRE</div>
@@ -151,6 +163,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <div id="sys-panel">
   <div class="sys-row"><span class="sys-key">ENG</span><span class="sys-val sys-off" id="sys-eng">OFF</span></div>
   <div class="sys-row"><span class="sys-key">RPM</span><span class="sys-val sys-off" id="sys-rpm">0%</span></div>
+  <div class="sys-row"><span class="sys-key">FUEL</span><span class="sys-val sys-ok" id="sys-fuel">100%</span></div>
   <div class="sys-row"><span class="sys-key">FLAP</span><span class="sys-val sys-ok" id="sys-flap">UP</span></div>
   <div class="sys-row"><span class="sys-key">GEAR</span><span class="sys-val sys-warn" id="sys-gear">DN</span></div>
 </div>
@@ -274,6 +287,8 @@ const stallWarn = document.getElementById('stall-warn');
 const overspeedWarn = document.getElementById('overspeed-warn');
 const terrainWarn = document.getElementById('terrain-warn');
 const thrFill = document.getElementById('throttle-bar-fill');
+const fuelFill = document.getElementById('fuel-bar-fill');
+const fuelPctEl = document.getElementById('fuel-pct');
 const loadingEl = document.getElementById('loading');
 
 let W, H;
@@ -313,7 +328,10 @@ let state = {
   // Flaps (0=up, 1=10°, 2=20°, 3=40°)
   flaps: 0,
   // Landing gear
-  gearDown: true
+  gearDown: true,
+  // Fuel (kg)
+  fuel: 800,
+  fuelMax: 800
 };
 
 function resetState() {
@@ -339,6 +357,7 @@ function resetState() {
   state.rpm = START.thr;
   state.flaps = 0;
   state.gearDown = false; // gear up after reset (airborne)
+  state.fuel = state.fuelMax;
   terrainWarn.style.display = 'none';
 }
 
@@ -448,6 +467,7 @@ window.addEventListener('pointerdown', function(){ ensureAudio(); try { window.f
 function handleEngineKey() {
   ensureAudio();
   if (state.engineState === 'off') {
+    if (state.fuel <= 0) return; // no fuel, won't start
     state.engineState = 'starting';
     state.engineTimer = 6.0; // 6-second startup sequence
     playStartupSound();
@@ -862,7 +882,9 @@ const AC = {
   Tmax: 52000,        // max thrust at sea level (N)
   rho0: 1.225,        // sea-level air density
   scaleH: 9200,       // density scale height (m)
-  Vne: 320            // never-exceed true airspeed (m/s) ~ 620 kt
+  Vne: 320,           // never-exceed true airspeed (m/s) ~ 620 kt
+  fuelFlowIdle: 0.025, // kg/sec burned at 0% thrust (engine just turning over)
+  fuelFlowMax: 0.55    // kg/sec burned at 100% thrust (full power)
 };
 const VNE_KTS = AC.Vne / 0.514444;
 
@@ -1132,6 +1154,21 @@ function update(dt) {
   const engRunning = state.engineState === 'running';
   const effectiveThr = engRunning ? state.throttle : 0;
   state.thrustPct += (effectiveThr - state.thrustPct) * Math.min(1, dt * 1.6);
+
+  // ---- Fuel ----
+  // Burns only while the engine is actually running, scaled by the real spooled
+  // thrust (not the raw throttle command) so spool-up/down lag is reflected too:
+  // idle/weak power sips fuel, full power gulps it.
+  if (engRunning && state.fuel > 0) {
+    const thrFrac = Math.max(0, Math.min(1, state.thrustPct / 100));
+    const flow = AC.fuelFlowIdle + (AC.fuelFlowMax - AC.fuelFlowIdle) * thrFrac;
+    state.fuel = Math.max(0, state.fuel - flow * dt);
+  }
+  // Flame-out: engine quits when the tank runs dry, just like a real fuel-starvation event.
+  if (state.fuel <= 0 && (state.engineState === 'running' || state.engineState === 'starting')) {
+    state.engineState = 'off';
+    state.engineTimer = 0;
+  }
 
   // ---- Aerodynamics (point-mass, SI units) ----
   const m = AC.m, g = AC.g, S = AC.S;
@@ -1905,6 +1942,15 @@ function render() {
   // Throttle bar
   thrFill.style.height = state.throttle + '%';
 
+  // Fuel gauge
+  if (fuelFill && fuelPctEl) {
+    const fuelPct = state.fuelMax > 0 ? (state.fuel / state.fuelMax) * 100 : 0;
+    fuelFill.style.height = Math.max(0, Math.min(100, fuelPct)) + '%';
+    fuelFill.classList.toggle('fuel-warn', fuelPct <= 25 && fuelPct > 10);
+    fuelFill.classList.toggle('fuel-crit', fuelPct <= 10);
+    fuelPctEl.textContent = Math.round(fuelPct) + '%';
+  }
+
   // Stall + overspeed + fire warnings
   stallWarn.style.display = state.stall && !state.terrainHit ? 'block' : 'none';
   if (overspeedWarn) overspeedWarn.style.display = state.overspeed && !state.terrainHit ? 'block' : 'none';
@@ -1930,6 +1976,12 @@ function render() {
     if (rpmEl) {
       rpmEl.textContent = Math.round(state.rpm) + '%';
       rpmEl.className = 'sys-val ' + (state.rpm > 95 ? 'sys-warn' : state.rpm > 5 ? 'sys-ok' : 'sys-off');
+    }
+    const fuelEl = document.getElementById('sys-fuel');
+    if (fuelEl) {
+      const fuelPct = state.fuelMax > 0 ? (state.fuel / state.fuelMax) * 100 : 0;
+      fuelEl.textContent = Math.round(fuelPct) + '%';
+      fuelEl.className = 'sys-val ' + (fuelPct <= 10 ? 'sys-red' : fuelPct <= 25 ? 'sys-warn' : 'sys-ok');
     }
     if (flapEl) {
       flapEl.textContent = FLAP_LABELS[state.flaps];
