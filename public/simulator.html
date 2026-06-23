@@ -175,7 +175,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="lp-title">LANDED ✓</div>
   <div class="lp-divider"></div>
   <div id="lp-rows"></div>
-  <div class="lp-hint" id="lp-hint">W=THR UP &nbsp;·&nbsp; B=BRAKE &nbsp;·&nbsp; ←→=STEER</div>
+  <div class="lp-hint" id="lp-hint">E=ENGINE &nbsp;·&nbsp; W=THR UP &nbsp;·&nbsp; B=BRAKE &nbsp;·&nbsp; ←→=STEER</div>
 </div>
 <div id="rotate-warn" class="flashing">ROTATE ↑</div>
 
@@ -273,7 +273,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="sm-btn" id="pm-resume">▶ Resume</button>
     <button class="sm-btn" id="pm-restart">↻ Restart Flight</button>
     <button class="sm-btn" id="pm-maps">🗺 Open in Google Maps</button>
-    <button class="sm-btn" id="pm-menu">☰ Main Menu</button>
   </div>
   <div class="sm-hint">P or ☰ to resume</div>
 </div>
@@ -319,7 +318,7 @@ resize();
 window.addEventListener('resize', resize);
 
 // === Starting position (chosen on the start menu; defaults to Grand Canyon) ===
-let START = { lat: 36.1069, lon: -112.1129, alt: 8000, hdg: 90, spd: 250, thr: 60 };
+let START = { lat: 36.1069, lon: -112.1129, alt: 6600, hdg: 90, spd: 0, thr: 0 };
 
 // Aircraft state. Units: altitude=feet, speed=knots(TAS), angles=degrees.
 let state = {
@@ -373,13 +372,14 @@ function resetState() {
   state.overspeed = false;
   state.terrainHit = false;
   state.terrainTimer = 0;
-  state.engineState = 'running'; // reset = back in the air, engine running
+  state.engineState = 'off'; // reset = back on the ground, engine off
   state.engineTimer = 0;
-  state.rpm = START.thr;
+  state.rpm = 0;
   state.flaps = 0;
-  state.gearDown = false; // gear up after reset (airborne)
+  state.gearDown = true; // gear down on the ground
   state.fuel = state.fuelMax;
-  state.onGround = false;
+  state.onGround = true;
+  state.pitch = 2.5;
   terrainWarn.style.display = 'none';
   const lp = document.getElementById('landing-panel'); if (lp) lp.style.display = 'none';
   const rw = document.getElementById('rotate-warn');   if (rw) rw.style.display = 'none';
@@ -2161,19 +2161,20 @@ function renderLandingPanel() {
   const spdOk   = spd >= ROTATION_KTS;
   const allSys  = engOk && fuelOk && flapsOk && gearOk;
 
+  const gp = gpConnected;
   const rows = [
     { key: 'ENG',
       cls: engOk ? 'lp-ok' : 'lp-err',
-      val: engOk ? 'ON ✓' : (state.engineState === 'starting' ? 'STARTING…' : 'OFF — press E') },
+      val: engOk ? 'ON ✓' : (state.engineState === 'starting' ? 'STARTING…' : 'OFF — press ' + (gp ? 'B' : 'E')) },
     { key: 'FUEL',
       cls: fuelOk ? 'lp-ok' : 'lp-err',
       val: fuelPct + '%' + (fuelOk ? '' : ' ✗') },
     { key: 'FLAP',
       cls: flapsOk ? 'lp-ok' : 'lp-warn',
-      val: FLAP_LABELS[state.flaps] + (flapsOk ? ' ✓' : ' — press F') },
+      val: FLAP_LABELS[state.flaps] + (flapsOk ? ' ✓' : ' — press ' + (gp ? 'X' : 'F')) },
     { key: 'GEAR',
       cls: gearOk ? 'lp-ok' : 'lp-err',
-      val: gearOk ? 'DN ✓' : 'UP — press G' },
+      val: gearOk ? 'DN ✓' : 'UP — press ' + (gp ? 'LB' : 'G') },
     { key: 'SPD',
       cls: spdOk ? 'lp-ok' : 'lp-warn',
       val: spd + 'kt' + (spdOk ? ' ✓' : ' / need ' + ROTATION_KTS) }
@@ -2192,10 +2193,10 @@ function renderLandingPanel() {
   const hintEl = document.getElementById('lp-hint');
   if (hintEl) {
     if (allSys && spdOk) {
-      hintEl.textContent = '↓ PULL BACK TO ROTATE';
+      hintEl.textContent = gp ? 'L-STICK BACK TO ROTATE' : '↓ PULL BACK TO ROTATE';
       hintEl.style.color = '#00FF41';
     } else if (allSys) {
-      hintEl.textContent = 'W=THR UP  ·  B=BRAKE  ·  ←→=STEER';
+      hintEl.textContent = gp ? 'RT=THR UP  ·  A=BRAKE  ·  L-STICK=STEER' : 'W=THR UP  ·  B=BRAKE  ·  ←→=STEER';
       hintEl.style.color = 'rgba(0,255,65,0.55)';
     } else {
       hintEl.textContent = 'CHECK SYSTEMS ABOVE';
@@ -2261,11 +2262,12 @@ function markReady() {
 }
 
 function beginFlight(loc) {
-  const aglFt = (loc.alt != null) ? loc.alt : 1500; // data-alt is height ABOVE GROUND
   START.lat = loc.lat;
   START.lon = loc.lon;
   START.hdg = (loc.hdg != null) ? loc.hdg : 90;
-  START.alt = aglFt + 2000; // safe placeholder until terrain is sampled
+  START.alt = 100; // safe placeholder until terrain is sampled
+  START.spd = 0;
+  START.thr = 0;
   resetState();
 
   const locLabel = document.getElementById('loc-label');
@@ -2280,14 +2282,19 @@ function beginFlight(loc) {
     if (sub) { sub.style.color = '#00FF41'; sub.classList.add('pulsing'); sub.textContent = 'LOADING EARTH...'; }
   }
 
-  // Spawn the aircraft aglFt feet ABOVE the real terrain at the chosen point.
+  // Spawn the aircraft ON the ground at the chosen point.
   spawnResolved = false;
   function spawnAt(groundM) {
-    const absFt = (groundM / FT_TO_M) + aglFt;
-    START.alt = absFt;
-    state.altitude = absFt;
+    const groundFt = groundM / FT_TO_M;
+    START.alt = groundFt;
+    state.altitude = groundFt + 10; // 10 ft above ground so terrain check lands cleanly
+    state.speed = 0;
+    state.throttle = 0;
+    state.thrustPct = 0;
     state.gamma = 0;
     state.vs = 0;
+    state.onGround = true;
+    state.pitch = 2.5;
     spawnResolved = true;
   }
   const carto = Cesium.Cartographic.fromDegrees(loc.lon, loc.lat);
