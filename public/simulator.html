@@ -1159,7 +1159,7 @@ function update(dt) {
     stalled = true;
     const sgn = aoaDeg > 0 ? 1 : -1;
     const over = Math.abs(aoaDeg) - AC.aStall;
-    CL = sgn * clMax * Math.max(0.45, 1 - over / 18);
+    CL = sgn * clMax * Math.max(0.1, 1 - over / 10);
   }
 
   const Cd = AC.Cd0 + AC.k * CL * CL + (airbrake ? 0.08 : 0) + flapCD + gearCD;
@@ -1175,6 +1175,9 @@ function update(dt) {
   const dV = (T - D - W * Math.sin(gam)) / m;
   let dGam = (L * Math.cos(phi) - W * Math.cos(gam)) / (m * Vsafe);
   let dPsi = (L * Math.sin(phi)) / (m * Vsafe);
+  // Feel multiplier: pitch changes translate to flight path faster (MSFS-like responsiveness).
+  // The equilibrium (dGam=0 at 1g level flight) is unchanged; only transient response speeds up.
+  dGam *= 2.0;
   dGam = Math.max(-1.6, Math.min(1.6, dGam));
   dPsi = Math.max(-1.6, Math.min(1.6, dPsi));
 
