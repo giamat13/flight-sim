@@ -61,6 +61,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #loading{position:fixed;top:0;left:0;width:100%;height:100%;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0a0f;color:#00FF41;font-family:'JetBrains Mono',monospace;gap:14px}
 #loading .l-title{font-size:18px;letter-spacing:4px;text-shadow:0 0 10px rgba(0,255,65,0.4)}
 #loading .l-sub{font-size:11px;opacity:0.5;letter-spacing:2px}
+#ap-indicator{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;display:none;color:#7fd0ff;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,160,255,0.10);border:1px solid rgba(80,180,255,0.55);border-radius:4px;padding:4px 14px;text-shadow:0 0 8px rgba(127,208,255,0.5)}
 @keyframes flash{0%,100%{opacity:1}50%{opacity:0}}
 .flashing{animation:flash 0.4s infinite}
 @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
@@ -189,6 +190,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 
 <div id="cam-label">COCKPIT</div>
 <div id="gp-indicator">🎮 CONTROLLER</div>
+<div id="ap-indicator">✈ AUTOPILOT</div>
 <div id="flight-btns">
   <button class="fb-btn" id="fb-pause" title="Pause (P)">⏸</button>
   <button class="fb-btn" id="fb-maps" title="Open current location in Google Maps">🗺</button>
@@ -451,7 +453,7 @@ function playStartupSound() {
 // ===================== Keys =====================
 // Index keys by e.code (PHYSICAL key position) instead of e.key, so controls
 // work regardless of keyboard language/layout (Hebrew, AZERTY, etc.).
-const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1,
+const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1, KeyA:1,
   ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1 };
 const keys = {};
 window.addEventListener('keydown', e => {
@@ -474,6 +476,7 @@ window.addEventListener('keydown', e => {
   if (!wasDown) {
     // edge-triggered actions
     if (code === 'KeyC') cameraMode = (cameraMode + 1) % 2;
+    if (code === 'KeyA') toggleAutopilot();
     if (code === 'KeyE') handleEngineKey();
     if (code === 'KeyF') cycleFlaps();
     if (code === 'KeyG') toggleGear();
@@ -733,9 +736,9 @@ let gpConnected = false;
 
 // Two versions of the on-screen control hint — keyboard vs. gamepad.
 const HINT_KEYBOARD =
-  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · P PAUSE<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
+  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
 const HINT_GAMEPAD =
-  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR<br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>A AIRBRAKE<br>Y CAMERA · ☰ PAUSE';
+  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>A AIRBRAKE<br>Y CAMERA · ☰ PAUSE';
 
 function updateControlsHint() {
   const el = document.getElementById('controls-hint');
@@ -749,7 +752,7 @@ function updateGpIndicator() {
 window.addEventListener('gamepadconnected', function () { gpConnected = true; updateGpIndicator(); });
 window.addEventListener('gamepaddisconnected', function () { gpConnected = false; updateGpIndicator(); });
 
-const gpPrev = { cam: false, reset: false, eng: false, flap: false, gear: false, pause: false };
+const gpPrev = { cam: false, reset: false, eng: false, flap: false, gear: false, ap: false, pause: false };
 function readGamepad() {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   let gp = null;
@@ -775,6 +778,9 @@ function readGamepad() {
   const gearNow = pressed(4);                      // LB -> gear
   if (gearNow && !gpPrev.gear) toggleGear();
   gpPrev.gear = gearNow;
+  const apNow = pressed(5);                         // RB -> autopilot
+  if (apNow && !gpPrev.ap) toggleAutopilot();
+  gpPrev.ap = apNow;
   const resetNow = pressed(8);                     // Back -> restart flight
   const resetEdge = resetNow && !gpPrev.reset;
   gpPrev.reset = resetNow;
@@ -1078,6 +1084,52 @@ function terrainHeightM() {
   } catch (e) { return 0; }
 }
 
+// ===================== Autopilot =====================
+const ap = {
+  on: false,
+  targetAlt: 0,    // MSL ft
+  targetSpd: 0,    // knots
+  altErr:    0,    // integrator
+  spdErr:    0     // integrator
+};
+
+function toggleAutopilot() {
+  if (!chosen || !simReady || state.onGround) return;
+  ap.on = !ap.on;
+  if (ap.on) {
+    ap.targetAlt = state.altitude;
+    ap.targetSpd = state.speed;
+    ap.altErr    = 0;
+    ap.spdErr    = 0;
+  }
+  const el = document.getElementById('ap-indicator');
+  if (el) el.style.display = ap.on ? 'block' : 'none';
+}
+
+// Returns { pitchCmd, thrCmd } in [-1,1] from autopilot PID
+function apControl(dt) {
+  if (!ap.on) return null;
+
+  // ---- Speed hold: throttle PID ----
+  const spdError = ap.targetSpd - state.speed;
+  ap.spdErr = Math.max(-30, Math.min(30, ap.spdErr + spdError * dt));
+  const thrCmd = Math.max(-1, Math.min(1,
+    spdError * 0.04 + ap.spdErr * 0.008));
+
+  // ---- Altitude hold: pitch PID ----
+  // Target a V/S proportional to altitude error, capped at ±1200 fpm
+  const altError  = ap.targetAlt - state.altitude;
+  const targetVS  = Math.max(-1200, Math.min(1200, altError * 4));
+  const vsError   = targetVS - state.vs;
+  ap.altErr = Math.max(-400, Math.min(400, ap.altErr + vsError * dt));
+  // Pitch command: positive = nose up
+  const pitchCmd = Math.max(-0.6, Math.min(0.6,
+    vsError * 0.0008 + ap.altErr * 0.0002));
+
+  // Disengage if pilot provides pitch or roll input
+  return { pitchCmd, thrCmd };
+}
+
 function update(dt) {
   if (state.terrainHit) {
     state.terrainTimer -= dt;
@@ -1126,6 +1178,21 @@ function update(dt) {
   pitchIn = Math.max(-1, Math.min(1, pitchIn));
   rollIn = Math.max(-1, Math.min(1, rollIn));
   thrIn = Math.max(-1, Math.min(1, thrIn));
+
+  // ---- Autopilot ----
+  const apOut = apControl(dt);
+  if (apOut) {
+    // Disengage if pilot overrides pitch/throttle significantly
+    const pilotOverride = Math.abs(pitchIn) > 0.15 || Math.abs(thrIn) > 0.15;
+    if (pilotOverride) {
+      ap.on = false;
+      const apEl = document.getElementById('ap-indicator');
+      if (apEl) apEl.style.display = 'none';
+    } else {
+      pitchIn = apOut.pitchCmd;
+      thrIn   = apOut.thrCmd;
+    }
+  }
 
   if (keys['KeyR'] || (gp && gp.reset)) { resetState(); return; }
 
