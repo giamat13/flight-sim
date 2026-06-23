@@ -745,14 +745,14 @@ const WEATHER_WIND = {
 function setWeatherWind(kind) {
   const cfg = WEATHER_WIND[kind] || WEATHER_WIND.clear;
   env.windState = {
-    active: cfg.speedKts > 0,
+    active: true,
     baseSpeedKts: cfg.speedKts,
     baseFromDeg: cfg.fromDeg,
     speedKts: cfg.speedKts,
     fromDeg: cfg.fromDeg,
     targetSpeedKts: cfg.speedKts,
     targetFromDeg: cfg.fromDeg,
-    timer: cfg.speedKts > 0 ? (2.5 + Math.random() * 3.5) : 0
+    timer: cfg.speedKts > 0 ? (2.5 + Math.random() * 3.5) : (4 + Math.random() * 10)
   };
   updateWindVector();
 }
@@ -781,14 +781,27 @@ function updateWind(dt) {
 
   ws.timer -= dt;
   if (ws.timer <= 0) {
-    ws.timer = 2.5 + Math.random() * 4.5;
-    const speedJitter = 0.65 + Math.random() * 0.7;
-    const dirJitter = (Math.random() - 0.5) * 50;
-    ws.targetSpeedKts = Math.max(0, ws.baseSpeedKts * speedJitter);
-    ws.targetFromDeg = wrap360(ws.baseFromDeg + dirJitter);
+    if (ws.baseSpeedKts <= 0) {
+      const breezeOn = Math.random() < 0.24;
+      if (breezeOn) {
+        ws.targetSpeedKts = 1 + Math.random() * 3;          // 1-4 kt, very weak
+        ws.targetFromDeg = Math.random() * 360;
+        ws.timer = 6 + Math.random() * 14;                  // brief breeze window
+      } else {
+        ws.targetSpeedKts = 0;
+        ws.targetFromDeg = ws.fromDeg;
+        ws.timer = 5 + Math.random() * 16;                  // mostly calm
+      }
+    } else {
+      ws.timer = 2.5 + Math.random() * 4.5;
+      const speedJitter = 0.65 + Math.random() * 0.7;
+      const dirJitter = (Math.random() - 0.5) * 50;
+      ws.targetSpeedKts = Math.max(0, ws.baseSpeedKts * speedJitter);
+      ws.targetFromDeg = wrap360(ws.baseFromDeg + dirJitter);
+    }
   }
 
-  const k = 1 - Math.exp(-dt * 0.45);
+  const k = 1 - Math.exp(-dt * (ws.baseSpeedKts <= 0 ? 0.28 : 0.45));
   ws.speedKts += (ws.targetSpeedKts - ws.speedKts) * k;
   const dirDelta = normDeg(ws.targetFromDeg - ws.fromDeg);
   ws.fromDeg = wrap360(ws.fromDeg + dirDelta * k);
