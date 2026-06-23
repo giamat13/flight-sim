@@ -62,6 +62,21 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #loading .l-title{font-size:18px;letter-spacing:4px;text-shadow:0 0 10px rgba(0,255,65,0.4)}
 #loading .l-sub{font-size:11px;opacity:0.5;letter-spacing:2px}
 #ap-indicator{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;display:none;color:#7fd0ff;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,160,255,0.10);border:1px solid rgba(80,180,255,0.55);border-radius:4px;padding:4px 14px;text-shadow:0 0 8px rgba(127,208,255,0.5)}
+/* ===== Autopilot control panel ===== */
+#ap-panel{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:25;display:none;flex-direction:column;align-items:center;gap:6px;background:rgba(0,12,30,0.88);border:1px solid rgba(80,180,255,0.45);border-radius:8px;padding:10px 16px 8px;font-family:'JetBrains Mono',monospace;backdrop-filter:blur(4px);pointer-events:auto}
+#ap-panel .ap-title{font-size:9px;letter-spacing:3px;color:rgba(80,180,255,0.7);margin-bottom:2px}
+#ap-panel .ap-rows{display:flex;gap:12px;align-items:center}
+.ap-knob{display:flex;flex-direction:column;align-items:center;gap:3px}
+.ap-knob .ak-label{font-size:8px;letter-spacing:2px;color:rgba(80,180,255,0.55)}
+.ap-knob .ak-val{font-size:16px;font-weight:600;color:#7fd0ff;letter-spacing:1px;min-width:52px;text-align:center;text-shadow:0 0 8px rgba(127,208,255,0.4)}
+.ap-knob .ak-btns{display:flex;gap:4px}
+.ak-btn{width:26px;height:22px;background:rgba(80,180,255,0.10);border:1px solid rgba(80,180,255,0.35);color:#7fd0ff;font-size:13px;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s;font-family:'JetBrains Mono',monospace;-webkit-user-select:none;user-select:none}
+.ak-btn:hover,.ak-btn:active{background:rgba(80,180,255,0.30);border-color:#7fd0ff}
+.ap-divider{width:1px;height:52px;background:rgba(80,180,255,0.2);margin:0 2px}
+.ap-econ-btn{font-size:9px;letter-spacing:2px;padding:4px 10px;background:rgba(255,224,102,0.08);border:1px solid rgba(255,224,102,0.4);color:#ffe066;border-radius:4px;cursor:pointer;font-family:'JetBrains Mono',monospace;transition:background .12s;-webkit-user-select:none;user-select:none}
+.ap-econ-btn.econ-on{background:rgba(255,224,102,0.22);border-color:#ffe066;box-shadow:0 0 8px rgba(255,224,102,0.2)}
+.ap-econ-btn:hover{background:rgba(255,224,102,0.25)}
+.ap-hint{font-size:8px;color:rgba(80,180,255,0.35);letter-spacing:1px;margin-top:2px}
 @keyframes flash{0%,100%{opacity:1}50%{opacity:0}}
 .flashing{animation:flash 0.4s infinite}
 @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
@@ -191,6 +206,45 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <div id="cam-label">COCKPIT</div>
 <div id="gp-indicator">🎮 CONTROLLER</div>
 <div id="ap-indicator">✈ AUTOPILOT</div>
+
+<!-- Autopilot control panel -->
+<div id="ap-panel">
+  <div class="ap-title">✈ AUTOPILOT</div>
+  <div class="ap-rows">
+    <div class="ap-knob">
+      <div class="ak-label">HDG</div>
+      <div class="ak-val" id="ap-hdg-val">360</div>
+      <div class="ak-btns">
+        <button class="ak-btn" id="ap-hdg-dn">◀</button>
+        <button class="ak-btn" id="ap-hdg-up">▶</button>
+      </div>
+    </div>
+    <div class="ap-divider"></div>
+    <div class="ap-knob">
+      <div class="ak-label">ALT ft</div>
+      <div class="ak-val" id="ap-alt-val">5000</div>
+      <div class="ak-btns">
+        <button class="ak-btn" id="ap-alt-dn">▼</button>
+        <button class="ak-btn" id="ap-alt-up">▲</button>
+      </div>
+    </div>
+    <div class="ap-divider"></div>
+    <div class="ap-knob">
+      <div class="ak-label">SPD kt</div>
+      <div class="ak-val" id="ap-spd-val">250</div>
+      <div class="ak-btns">
+        <button class="ak-btn" id="ap-spd-dn">▼</button>
+        <button class="ak-btn" id="ap-spd-up">▲</button>
+      </div>
+    </div>
+    <div class="ap-divider"></div>
+    <div class="ap-knob">
+      <div class="ak-label">MODE</div>
+      <button class="ap-econ-btn econ-on" id="ap-econ-btn">ECON</button>
+    </div>
+  </div>
+  <div class="ap-hint">[ / ] HDG &nbsp;·&nbsp; ; ' ALT &nbsp;·&nbsp; , . SPD &nbsp;·&nbsp; A OFF</div>
+</div>
 <div id="flight-btns">
   <button class="fb-btn" id="fb-pause" title="Pause (P)">⏸</button>
   <button class="fb-btn" id="fb-maps" title="Open current location in Google Maps">🗺</button>
@@ -454,6 +508,7 @@ function playStartupSound() {
 // Index keys by e.code (PHYSICAL key position) instead of e.key, so controls
 // work regardless of keyboard language/layout (Hebrew, AZERTY, etc.).
 const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1, KeyA:1,
+  BracketLeft:1, BracketRight:1, Semicolon:1, Quote:1, Comma:1, Period:1,
   ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1 };
 const keys = {};
 window.addEventListener('keydown', e => {
@@ -478,6 +533,15 @@ window.addEventListener('keydown', e => {
     if (code === 'KeyC') cameraMode = (cameraMode + 1) % 2;
     if (code === 'KeyA') toggleAutopilot();
     if (code === 'KeyE') handleEngineKey();
+    // AP knob shortcuts (only when AP is on)
+    if (ap.on) {
+      if (code === 'BracketLeft')  apAdjHdg(-5);
+      if (code === 'BracketRight') apAdjHdg(+5);
+      if (code === 'Semicolon')    apAdjAlt(-500);
+      if (code === 'Quote')        apAdjAlt(+500);
+      if (code === 'Comma')        apAdjSpd(-10);
+      if (code === 'Period')       apAdjSpd(+10);
+    }
     if (code === 'KeyF') cycleFlaps();
     if (code === 'KeyG') toggleGear();
     if (code === 'KeyP') togglePause();
@@ -736,9 +800,9 @@ let gpConnected = false;
 
 // Two versions of the on-screen control hint — keyboard vs. gamepad.
 const HINT_KEYBOARD =
-  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
+  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="color:rgba(127,208,255,0.6)">[/] HDG · ;/\' ALT · ,/. SPD</span><br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
 const HINT_GAMEPAD =
-  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>A AIRBRAKE<br>Y CAMERA · ☰ PAUSE';
+  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>A AIRBRAKE · Y CAMERA · ☰ PAUSE<br><span style="color:rgba(127,208,255,0.6)">AP: D-PAD HDG/ALT · R3+D-PAD SPD</span>';
 
 function updateControlsHint() {
   const el = document.getElementById('controls-hint');
@@ -1087,10 +1151,15 @@ function terrainHeightM() {
 // ===================== Autopilot =====================
 const ap = {
   on: false,
-  targetAlt: 0,    // MSL ft
-  targetSpd: 0,    // knots
-  altErr:    0,    // integrator
-  spdErr:    0     // integrator
+  targetAlt: 0,      // MSL ft
+  targetSpd: 0,      // knots
+  targetHdg: 0,      // degrees
+  econMode:  true,   // fuel-saving: find minimum throttle that holds speed
+  // PID integrators
+  altI: 0, spdI: 0, hdgI: 0,
+  // econ throttle search
+  econThr: 50,       // current econ throttle estimate
+  econTimer: 0       // time since last econ adjustment
 };
 
 function toggleAutopilot() {
@@ -1098,36 +1167,137 @@ function toggleAutopilot() {
   ap.on = !ap.on;
   if (ap.on) {
     ap.targetAlt = state.altitude;
-    ap.targetSpd = state.speed;
-    ap.altErr    = 0;
-    ap.spdErr    = 0;
+    ap.targetSpd = Math.max(stallSpeedKts() + 20, state.speed);
+    ap.targetHdg = state.heading;
+    ap.altI = 0; ap.spdI = 0; ap.hdgI = 0;
+    ap.econThr   = state.throttle;
+    ap.econTimer = 0;
   }
-  const el = document.getElementById('ap-indicator');
-  if (el) el.style.display = ap.on ? 'block' : 'none';
+  updateApPanel();
 }
 
-// Returns { pitchCmd, thrCmd } in [-1,1] from autopilot PID
+function apAdjHdg(delta) {
+  ap.targetHdg = ((ap.targetHdg + delta) % 360 + 360) % 360;
+  ap.hdgI = 0;
+  updateApPanel();
+}
+function apAdjAlt(delta) {
+  ap.targetAlt = Math.max(500, Math.round((ap.targetAlt + delta) / 100) * 100);
+  ap.altI = 0;
+  updateApPanel();
+}
+function apAdjSpd(delta) {
+  ap.targetSpd = Math.max(stallSpeedKts() + 15, Math.min(VNE_KTS - 20, ap.targetSpd + delta));
+  ap.spdI = 0;
+  updateApPanel();
+}
+function apToggleEcon() {
+  ap.econMode = !ap.econMode;
+  ap.spdI = 0; ap.econTimer = 0;
+  updateApPanel();
+}
+
+function updateApPanel() {
+  const indicator = document.getElementById('ap-indicator');
+  const panel     = document.getElementById('ap-panel');
+  if (!ap.on) {
+    if (indicator) indicator.style.display = 'none';
+    if (panel)     panel.style.display = 'none';
+    return;
+  }
+  const hdgStr = String(Math.round(ap.targetHdg) % 360 || 360).padStart(3,'0');
+  const altStr = Math.round(ap.targetAlt);
+  const spdStr = Math.round(ap.targetSpd);
+  if (indicator) {
+    indicator.innerHTML =
+      '✈ AP &nbsp;|&nbsp; HDG <b>' + hdgStr + '</b>' +
+      ' &nbsp;ALT <b>' + altStr + '</b>' +
+      ' &nbsp;SPD <b>' + spdStr + '</b>' +
+      (ap.econMode ? ' &nbsp;<span style="color:#ffe066">ECON</span>' : '');
+    indicator.style.display = 'block';
+  }
+  if (panel) {
+    panel.style.display = 'flex';
+    const hv = document.getElementById('ap-hdg-val'); if (hv) hv.textContent = hdgStr;
+    const av = document.getElementById('ap-alt-val'); if (av) av.textContent = altStr;
+    const sv = document.getElementById('ap-spd-val'); if (sv) sv.textContent = spdStr;
+    const eb = document.getElementById('ap-econ-btn');
+    if (eb) eb.classList.toggle('econ-on', ap.econMode);
+  }
+}
+
+// Wire AP panel buttons (runs once after DOM ready — called at end of script)
+function initApPanel() {
+  const wire = function(id, fn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('click', function(e) { e.stopPropagation(); if (ap.on) fn(); });
+  };
+  wire('ap-hdg-dn',  function(){ apAdjHdg(-5); });
+  wire('ap-hdg-up',  function(){ apAdjHdg(+5); });
+  wire('ap-alt-dn',  function(){ apAdjAlt(-500); });
+  wire('ap-alt-up',  function(){ apAdjAlt(+500); });
+  wire('ap-spd-dn',  function(){ apAdjSpd(-10); });
+  wire('ap-spd-up',  function(){ apAdjSpd(+10); });
+  wire('ap-econ-btn', apToggleEcon);
+}
+
+// Returns { pitchCmd, rollCmd, thrCmd } in [-1,1] from autopilot PID
 function apControl(dt) {
   if (!ap.on) return null;
 
-  // ---- Speed hold: throttle PID ----
-  const spdError = ap.targetSpd - state.speed;
-  ap.spdErr = Math.max(-30, Math.min(30, ap.spdErr + spdError * dt));
-  const thrCmd = Math.max(-1, Math.min(1,
-    spdError * 0.04 + ap.spdErr * 0.008));
+  // ---- Heading hold: roll PID ----
+  // Find shortest angular path to target heading
+  let hdgErr = ap.targetHdg - state.heading;
+  if (hdgErr > 180) hdgErr -= 360;
+  if (hdgErr < -180) hdgErr += 360;
+  ap.hdgI = Math.max(-20, Math.min(20, ap.hdgI + hdgErr * dt));
+  // Desired bank = proportional to heading error (max 25°)
+  const desiredBank = Math.max(-25, Math.min(25, hdgErr * 1.5 + ap.hdgI * 0.3));
+  // Roll command: drive bank toward desired bank
+  const bankErr = desiredBank - state.bank;
+  const rollCmd = Math.max(-0.7, Math.min(0.7, bankErr * 0.04));
 
   // ---- Altitude hold: pitch PID ----
-  // Target a V/S proportional to altitude error, capped at ±1200 fpm
-  const altError  = ap.targetAlt - state.altitude;
-  const targetVS  = Math.max(-1200, Math.min(1200, altError * 4));
-  const vsError   = targetVS - state.vs;
-  ap.altErr = Math.max(-400, Math.min(400, ap.altErr + vsError * dt));
-  // Pitch command: positive = nose up
-  const pitchCmd = Math.max(-0.6, Math.min(0.6,
-    vsError * 0.0008 + ap.altErr * 0.0002));
+  const altError = ap.targetAlt - state.altitude;
+  const targetVS = Math.max(-1500, Math.min(1500, altError * 5));
+  const vsError  = targetVS - state.vs;
+  ap.altI = Math.max(-500, Math.min(500, ap.altI + vsError * dt));
+  const pitchCmd = Math.max(-0.65, Math.min(0.65,
+    vsError * 0.0009 + ap.altI * 0.00018));
 
-  // Disengage if pilot provides pitch or roll input
-  return { pitchCmd, thrCmd };
+  // ---- Speed / ECON throttle ----
+  let thrCmd;
+  if (ap.econMode) {
+    // ECON: every 3s, nudge throttle by ±0.5% and check if speed is holding.
+    // Goal: find MINIMUM throttle that keeps target speed (best fuel efficiency).
+    ap.econTimer += dt;
+    const spdErr = ap.targetSpd - state.speed;
+    if (ap.econTimer > 2.5) {
+      ap.econTimer = 0;
+      if (Math.abs(spdErr) < 3) {
+        // Speed is stable — try reducing throttle a tiny bit
+        ap.econThr = Math.max(18, ap.econThr - 0.4);
+      } else if (spdErr > 0) {
+        // Too slow — add more throttle (bigger step to recover faster)
+        ap.econThr = Math.min(100, ap.econThr + Math.min(4, spdErr * 0.5));
+      } else {
+        // Too fast — reduce
+        ap.econThr = Math.max(18, ap.econThr + Math.max(-2, spdErr * 0.3));
+      }
+    }
+    // Rapid short-term correction on top of econ baseline
+    ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
+    const spdP = Math.max(-0.4, Math.min(0.4, spdErr * 0.025 + ap.spdI * 0.006));
+    thrCmd = Math.max(-1, Math.min(1, (ap.econThr - state.throttle) / 50 + spdP));
+  } else {
+    // Standard speed hold
+    const spdErr = ap.targetSpd - state.speed;
+    ap.spdI = Math.max(-30, Math.min(30, ap.spdI + spdErr * dt));
+    thrCmd = Math.max(-1, Math.min(1, spdErr * 0.04 + ap.spdI * 0.008));
+  }
+
+  return { pitchCmd, rollCmd, thrCmd };
 }
 
 function update(dt) {
@@ -1182,14 +1352,15 @@ function update(dt) {
   // ---- Autopilot ----
   const apOut = apControl(dt);
   if (apOut) {
-    // Disengage if pilot overrides pitch/throttle significantly
-    const pilotOverride = Math.abs(pitchIn) > 0.15 || Math.abs(thrIn) > 0.15;
+    // Disengage if pilot overrides pitch/roll/throttle significantly
+    const pilotOverride = Math.abs(pitchIn) > 0.15 || Math.abs(thrIn) > 0.15 || Math.abs(rollIn) > 0.15;
     if (pilotOverride) {
       ap.on = false;
       const apEl = document.getElementById('ap-indicator');
       if (apEl) apEl.style.display = 'none';
     } else {
       pitchIn = apOut.pitchCmd;
+      rollIn  = apOut.rollCmd;
       thrIn   = apOut.thrCmd;
     }
   }
@@ -2602,6 +2773,7 @@ function loop() {
   if (chosen && !simReady && !viewer && now - startTime > 4000) markReady();
 
   if (chosen && simReady) pollPauseGamepad();
+  if (chosen && simReady) pollApGamepad();
   if (simReady && !paused) update(dt);
   render();
   requestAnimationFrame(loop);
@@ -2609,6 +2781,31 @@ function loop() {
 
 updateControlsHint();
 initTouchControls();
+initApPanel();
+
+// Gamepad D-pad for AP knobs (when AP is on and not in pause menu)
+let apDpadPrev = { l:false, r:false, u:false, d:false };
+function pollApGamepad() {
+  if (!ap.on || paused) return;
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+  if (!gp) return;
+  const ax = gp.axes || [];
+  const pressed = function(i){ return !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed); };
+  // D-pad: left/right = HDG, up/down = ALT; hold RS-click (button 11) for SPD mode
+  const spdMode = pressed(11); // right-stick click
+  const l = pressed(14) || (ax[6] || 0) < -0.5;
+  const r = pressed(15) || (ax[6] || 0) > 0.5;
+  const u = pressed(12) || (ax[7] || 0) < -0.5;
+  const d = pressed(13) || (ax[7] || 0) > 0.5;
+  if (l && !apDpadPrev.l) { spdMode ? apAdjSpd(-10) : apAdjHdg(-5); }
+  if (r && !apDpadPrev.r) { spdMode ? apAdjSpd(+10) : apAdjHdg(+5); }
+  if (u && !apDpadPrev.u) apAdjAlt(+500);
+  if (d && !apDpadPrev.d) apAdjAlt(-500);
+  apDpadPrev = { l, r, u, d };
+}
+
 loop();
 })();
 </script>
