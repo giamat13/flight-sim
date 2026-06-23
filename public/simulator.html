@@ -1494,6 +1494,50 @@ function drawAirplane() {
   const lwTips = addWing(-1);
   const rwTips = addWing(1);
 
+  // Flaps — drawn only when deployed (state.flaps > 0)
+  // Each flap is a deflected panel hanging below/behind the wing trailing edge.
+  if (state.flaps > 0) {
+    const flapAngleDeg = [0, 12, 24, 42][state.flaps]; // physical deflection per notch
+    const flapAngle = flapAngleDeg * Math.PI / 180;
+    const flapLen = 0.55;  // chord of the flap surface
+    const flapCol = [0.18, 0.26, 0.38];
+    const flapColBot = [0.12, 0.17, 0.25];
+
+    // Each flap spans from 30% to 80% of the half-span, on each side
+    function addFlap(side) {
+      const s = side;
+      const yInner = Math.abs(s) * 0.55;
+      const yOuter = Math.abs(s) * 2.40;
+      // Hinge line sits at the wing trailing edge (z = -0.4 inboard, z=-0.65 midspan)
+      const zHingeInner = -0.38;
+      const zHingeOuter = -0.60;
+      const ft = 0.04; // flap thickness half
+
+      // Flap deflects down and aft from the hinge line
+      const dz = Math.sin(flapAngle) * flapLen;
+      const dy = -Math.cos(flapAngle) * flapLen;
+
+      // Four corners of the flap (top surface = hinge line, bottom = deflected edge)
+      const i0 = verts.length; verts.push([s * yInner,  ft, zHingeInner]);
+      const i1 = verts.length; verts.push([s * yOuter,  ft, zHingeOuter]);
+      const i2 = verts.length; verts.push([s * yOuter,  ft + dy, zHingeOuter - dz]);
+      const i3 = verts.length; verts.push([s * yInner,  ft + dy, zHingeInner - dz]);
+      // Bottom face
+      const i4 = verts.length; verts.push([s * yInner, -ft, zHingeInner]);
+      const i5 = verts.length; verts.push([s * yOuter, -ft, zHingeOuter]);
+      const i6 = verts.length; verts.push([s * yOuter, -ft + dy, zHingeOuter - dz]);
+      const i7 = verts.length; verts.push([s * yInner, -ft + dy, zHingeInner - dz]);
+
+      faces.push({ v: [i0, i1, i2, i3], c: flapCol });
+      faces.push({ v: [i4, i7, i6, i5], c: flapColBot });
+      faces.push({ v: [i0, i3, i7, i4], c: [flapCol[0]*0.7, flapCol[1]*0.7, flapCol[2]*0.7] });
+      faces.push({ v: [i1, i5, i6, i2], c: [flapCol[0]*0.7, flapCol[1]*0.7, flapCol[2]*0.7] });
+      faces.push({ v: [i3, i2, i6, i7], c: [flapCol[0]*0.85, flapCol[1]*0.85, flapCol[2]*0.85] });
+    }
+    addFlap(-1);
+    addFlap(1);
+  }
+
   // Horizontal stabilizer
   function addHS(side) {
     const s = side;
