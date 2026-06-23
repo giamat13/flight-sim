@@ -1465,30 +1465,52 @@ function apCruiseControl(dt) {
   const desiredBank = Math.max(-25, Math.min(25, hdgErr * 1.5 + ap.hdgI * 0.3));
   const rollCmd = Math.max(-0.7, Math.min(0.7, (desiredBank - state.bank) * 0.04));
 
-  // Altitude hold
-  const altError = ap.targetAlt - state.altitude;
+  // Altitude hold — tolerant: within ~200ft is "close enough", so don't fight for
+  // the exact number. The error is *softened*, not crushed: most of the band still
+  // produces a clearly visible (if gentle) climb/descend pitch, and only the last
+  // ~50ft right at the target flattens out — so the autopilot visibly moves the
+  // nose toward its target instead of barely twitching the whole way there.
+  const ALT_TOL = 200, ALT_DEAD = 50;
+  const altErrorRaw = ap.targetAlt - state.altitude;
+  const altAbs = Math.abs(altErrorRaw);
+  let altError;
+  if (altAbs < ALT_DEAD) altError = altErrorRaw * 0.2;                 // basically there: settle softly
+  else if (altAbs < ALT_TOL) altError = altErrorRaw * 0.7;             // still closing in, visibly but gently
+  else altError = altErrorRaw;                                        // far: full authority
   const targetVS = Math.max(-1500, Math.min(1500, altError * 5));
   const vsError  = targetVS - state.vs;
   ap.altI = Math.max(-500, Math.min(500, ap.altI + vsError * dt));
   const pitchCmd = Math.max(-0.65, Math.min(0.65,
     vsError * 0.0009 + ap.altI * 0.00018));
 
-  // Speed / ECON throttle
+  // Speed / ECON throttle — tolerant: within ~30kt, ease off rather than chase
+  // the exact number, but (as with altitude) keep the response visible across
+  // most of the band and only flatten out right near the target.
+  const SPD_TOL = 30, SPD_DEAD = 8;
   let thrCmd;
   if (ap.econMode) {
     ap.econTimer += dt;
-    const spdErr = ap.targetSpd - state.speed;
+    const spdErrRaw = ap.targetSpd - state.speed;
+    const spdAbs = Math.abs(spdErrRaw);
+    const spdErr = spdAbs < SPD_DEAD ? spdErrRaw * 0.25 : (spdAbs < SPD_TOL ? spdErrRaw * 0.7 : spdErrRaw);
     if (ap.econTimer > 2.5) {
       ap.econTimer = 0;
-      if (Math.abs(spdErr) < 3) ap.econThr = Math.max(18, ap.econThr - 0.4);
-      else if (spdErr > 0)      ap.econThr = Math.min(100, ap.econThr + Math.min(4, spdErr * 0.5));
-      else                      ap.econThr = Math.max(18, ap.econThr + Math.max(-2, spdErr * 0.3));
+      if (spdAbs < SPD_TOL) {
+        // Close enough: only keep trimming power down if we still have speed to
+        // spare (above target); if at/under target, hold steady instead of
+        // continuing to bleed power and risking falling further behind.
+        if (spdErrRaw < -5) ap.econThr = Math.max(18, ap.econThr - 0.8);
+      }
+      else if (spdErrRaw > 0)            ap.econThr = Math.min(100, ap.econThr + Math.min(4, spdErrRaw * 0.5));
+      else                                ap.econThr = Math.max(18, ap.econThr + Math.max(-2, spdErrRaw * 0.3));
     }
     ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
     const spdP = Math.max(-0.4, Math.min(0.4, spdErr * 0.025 + ap.spdI * 0.006));
     thrCmd = Math.max(-1, Math.min(1, (ap.econThr - state.throttle) / 50 + spdP));
   } else {
-    const spdErr = ap.targetSpd - state.speed;
+    const spdErrRaw = ap.targetSpd - state.speed;
+    const spdAbs = Math.abs(spdErrRaw);
+    const spdErr = spdAbs < SPD_DEAD ? spdErrRaw * 0.25 : (spdAbs < SPD_TOL ? spdErrRaw * 0.7 : spdErrRaw);
     ap.spdI = Math.max(-30, Math.min(30, ap.spdI + spdErr * dt));
     thrCmd = Math.max(-1, Math.min(1, spdErr * 0.04 + ap.spdI * 0.008));
   }
