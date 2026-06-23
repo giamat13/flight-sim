@@ -718,13 +718,13 @@ function readGamepad() {
   gpPrev.reset = resetNow;
 
   return {
-    pitch:     dz(ax[3]),                // right stick back/down = nose up
-    roll:      dz(ax[2]),                // right stick right = bank right
+    pitch:     dz(ax[1]),                // left stick back/down = nose up
+    roll:      dz(ax[0]),                // left stick right = bank right
     thr:       val(7) - val(6),          // RT throttle up, LT throttle down
     airbrake:  pressed(0),               // A (cross)
     reset:     resetEdge,
-    lookYaw:   dz(ax[0]),                // left stick left/right = look left/right
-    lookPitch: dz(ax[1])                 // left stick up/down = look up/down
+    lookYaw:   dz(ax[2]),                // right stick left/right = look left/right
+    lookPitch: dz(ax[3])                 // right stick up/down = look up/down
   };
 }
 
@@ -960,8 +960,8 @@ function updateCamera() {
   const buf = state.stall ? (Math.random() - 0.5) : 0;
 
   if (cameraMode === 0) {
-    // Cockpit: the camera IS the aircraft, looking out the nose. The left-stick
-    // "look" turns the head (camera only); the right stick flies the aircraft.
+    // Cockpit: the camera IS the aircraft, looking out the nose. The right-stick
+    // "look" turns the head (camera only); the left stick flies the aircraft.
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(lon, lat, h),
       orientation: {
@@ -1407,7 +1407,7 @@ function drawAirplane() {
   const bankRad = state.bank * Math.PI / 180;
   // Yaw the model within the frame by how far the aircraft's heading differs from
   // where the chase camera is pointing. When you bank into a turn the nose swings
-  // in view (the camera lags); when you "look" with the left stick the camera
+  // in view (the camera lags); when you "look" with the right stick the camera
   // orbits, so the model rotates to show its side — it never actually moves.
   const camAzim = (camFollowHeading === null ? state.heading : camFollowHeading) + lookYawOff;
   const yawRad = normDeg(state.heading - camAzim) * Math.PI / 180;
