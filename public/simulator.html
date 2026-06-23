@@ -1151,19 +1151,26 @@ function terrainHeightM() {
 // ===================== Autopilot =====================
 const ap = {
   on: false,
+  // Flight modes
+  mode: 'cruise',    // 'cruise' | 'land' | 'takeoff'
   targetAlt: 0,      // MSL ft
   targetSpd: 0,      // knots
   targetHdg: 0,      // degrees
-  econMode:  true,   // fuel-saving: find minimum throttle that holds speed
+  econMode:  true,
   // PID integrators
   altI: 0, spdI: 0, hdgI: 0,
   // econ throttle search
-  econThr: 50,       // current econ throttle estimate
-  econTimer: 0       // time since last econ adjustment
+  econThr: 50,
+  econTimer: 0,
+  // landing sequence state
+  landPhase: 0,      // 0=slowdown, 1=flaps, 2=descend, 3=touchdown, 4=rollout
+  landPhaseTimer: 0,
+  // takeoff sequence state
+  toPhase: 0         // 0=spool, 1=roll, 2=rotate, 3=climb, 4=gear/flaps cleanup
 };
 
 function toggleAutopilot() {
-  if (!chosen || !simReady || state.onGround) return;
+  if (!chosen || !simReady) return;
   ap.on = !ap.on;
   if (ap.on) {
     ap.targetAlt = state.altitude;
@@ -1172,29 +1179,39 @@ function toggleAutopilot() {
     ap.altI = 0; ap.spdI = 0; ap.hdgI = 0;
     ap.econThr   = state.throttle;
     ap.econTimer = 0;
+    ap.mode = state.onGround ? 'takeoff' : 'cruise';
+    ap.toPhase = 0;
+    ap.landPhase = 0;
+    ap.landPhaseTimer = 0;
   }
+  updateApPanel();
+}
+
+// Called when gear is toggled DOWN while AP is on and airborne — triggers landing sequence
+function apTriggerLanding() {
+  if (!ap.on || state.onGround) return;
+  ap.mode = 'land';
+  ap.landPhase = 0;
+  ap.landPhaseTimer = 0;
+  ap.altI = 0; ap.spdI = 0; ap.hdgI = 0;
   updateApPanel();
 }
 
 function apAdjHdg(delta) {
   ap.targetHdg = ((ap.targetHdg + delta) % 360 + 360) % 360;
-  ap.hdgI = 0;
-  updateApPanel();
+  ap.hdgI = 0; updateApPanel();
 }
 function apAdjAlt(delta) {
   ap.targetAlt = Math.max(500, Math.round((ap.targetAlt + delta) / 100) * 100);
-  ap.altI = 0;
-  updateApPanel();
+  ap.altI = 0; updateApPanel();
 }
 function apAdjSpd(delta) {
   ap.targetSpd = Math.max(stallSpeedKts() + 15, Math.min(VNE_KTS - 20, ap.targetSpd + delta));
-  ap.spdI = 0;
-  updateApPanel();
+  ap.spdI = 0; updateApPanel();
 }
 function apToggleEcon() {
   ap.econMode = !ap.econMode;
-  ap.spdI = 0; ap.econTimer = 0;
-  updateApPanel();
+  ap.spdI = 0; ap.econTimer = 0; updateApPanel();
 }
 
 function updateApPanel() {
@@ -1205,28 +1222,34 @@ function updateApPanel() {
     if (panel)     panel.style.display = 'none';
     return;
   }
+  const modeLabel = ap.mode === 'land' ? '🛬 LANDING' : ap.mode === 'takeoff' ? '🛫 TAKEOFF' : '✈ CRUISE';
+  const modeColor = ap.mode === 'land' ? '#ff9944' : ap.mode === 'takeoff' ? '#44ff88' : '#7fd0ff';
   const hdgStr = String(Math.round(ap.targetHdg) % 360 || 360).padStart(3,'0');
   const altStr = Math.round(ap.targetAlt);
   const spdStr = Math.round(ap.targetSpd);
   if (indicator) {
     indicator.innerHTML =
-      '✈ AP &nbsp;|&nbsp; HDG <b>' + hdgStr + '</b>' +
-      ' &nbsp;ALT <b>' + altStr + '</b>' +
-      ' &nbsp;SPD <b>' + spdStr + '</b>' +
-      (ap.econMode ? ' &nbsp;<span style="color:#ffe066">ECON</span>' : '');
+      '<span style="color:' + modeColor + '">' + modeLabel + '</span>' +
+      (ap.mode === 'cruise' ?
+        ' &nbsp;|&nbsp; HDG <b>' + hdgStr + '</b>' +
+        ' &nbsp;ALT <b>' + altStr + '</b>' +
+        ' &nbsp;SPD <b>' + spdStr + '</b>' +
+        (ap.econMode ? ' &nbsp;<span style="color:#ffe066">ECON</span>' : '') : '');
     indicator.style.display = 'block';
   }
   if (panel) {
-    panel.style.display = 'flex';
-    const hv = document.getElementById('ap-hdg-val'); if (hv) hv.textContent = hdgStr;
-    const av = document.getElementById('ap-alt-val'); if (av) av.textContent = altStr;
-    const sv = document.getElementById('ap-spd-val'); if (sv) sv.textContent = spdStr;
-    const eb = document.getElementById('ap-econ-btn');
-    if (eb) eb.classList.toggle('econ-on', ap.econMode);
+    const showCruise = ap.mode === 'cruise';
+    panel.style.display = showCruise ? 'flex' : 'none';
+    if (showCruise) {
+      const hv = document.getElementById('ap-hdg-val'); if (hv) hv.textContent = hdgStr;
+      const av = document.getElementById('ap-alt-val'); if (av) av.textContent = altStr;
+      const sv = document.getElementById('ap-spd-val'); if (sv) sv.textContent = spdStr;
+      const eb = document.getElementById('ap-econ-btn');
+      if (eb) eb.classList.toggle('econ-on', ap.econMode);
+    }
   }
 }
 
-// Wire AP panel buttons (runs once after DOM ready — called at end of script)
 function initApPanel() {
   const wire = function(id, fn) {
     const el = document.getElementById(id);
@@ -1242,23 +1265,180 @@ function initApPanel() {
   wire('ap-econ-btn', apToggleEcon);
 }
 
-// Returns { pitchCmd, rollCmd, thrCmd } in [-1,1] from autopilot PID
-function apControl(dt) {
-  if (!ap.on) return null;
+// ---- Landing sequence state machine ----
+// Phase 0: slow down to approach speed (160 kt), flaps 10°
+// Phase 1: deploy flaps 20°, continue slowing to 140 kt
+// Phase 2: flaps 40°, descend at -800 fpm toward terrain
+// Phase 3: touchdown — let physics handle ground contact
+// Phase 4: ground rollout — brakes until stopped
+function apLandingControl(dt) {
+  const groundFt = state.terrainHeightFt || 0;
+  const agl = state.altitude - groundFt - (3 / FT_TO_M);
+  const stallKt = stallSpeedKts();
+  const approachSpd = Math.max(stallKt + 30, 140); // safe approach speed
+  const finalSpd    = Math.max(stallKt + 20, 120);
 
-  // ---- Heading hold: roll PID ----
-  // Find shortest angular path to target heading
+  let pitchCmd = 0, rollCmd = 0, thrCmd = 0;
+  ap.landPhaseTimer += dt;
+
+  if (state.onGround) {
+    // ---- ROLLOUT ----
+    // Full brakes, retract flaps after slowing
+    if (state.speed < 5) {
+      // Stopped — switch to takeoff mode!
+      ap.mode = 'takeoff';
+      ap.toPhase = 0;
+      state.flaps = 0;
+      updateApPanel();
+      return { pitchCmd: 0, rollCmd: 0, thrCmd: -1, flapsCmd: null };
+    }
+    if (state.speed < 80 && state.flaps > 0) state.flaps = 0;
+    return { pitchCmd: 0, rollCmd: 0, thrCmd: -1, brakeCmd: true, flapsCmd: null };
+  }
+
+  // ---- Phase 0: slow down + flaps 10 ----
+  if (ap.landPhase === 0) {
+    if (state.flaps < 1) state.flaps = 1;
+    const spdErr = approachSpd - state.speed;
+    ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
+    thrCmd = Math.max(-0.5, Math.min(0.5, spdErr * 0.04 + ap.spdI * 0.01));
+    // HDG hold
+    const he = normDeg(ap.targetHdg - state.heading);
+    rollCmd = Math.max(-0.4, Math.min(0.4, (Math.max(-20, Math.min(20, he * 1.5)) - state.bank) * 0.04));
+    // Level flight while we slow
+    const vsErr = (0 - state.vs);
+    pitchCmd = Math.max(-0.3, Math.min(0.3, vsErr * 0.0005));
+    // Advance when slow enough and reasonably level
+    if (state.speed < approachSpd + 10 && ap.landPhaseTimer > 3) {
+      ap.landPhase = 1; ap.landPhaseTimer = 0; ap.spdI = 0;
+    }
+
+  // ---- Phase 1: flaps 20, slow to final ----
+  } else if (ap.landPhase === 1) {
+    if (state.flaps < 2) state.flaps = 2;
+    const spdErr = finalSpd - state.speed;
+    ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
+    thrCmd = Math.max(-0.5, Math.min(0.4, spdErr * 0.04 + ap.spdI * 0.01));
+    const he = normDeg(ap.targetHdg - state.heading);
+    rollCmd = Math.max(-0.4, Math.min(0.4, (Math.max(-20, Math.min(20, he * 1.5)) - state.bank) * 0.04));
+    const vsErr = (0 - state.vs);
+    pitchCmd = Math.max(-0.3, Math.min(0.3, vsErr * 0.0005));
+    if (state.speed < finalSpd + 15 && ap.landPhaseTimer > 3) {
+      ap.landPhase = 2; ap.landPhaseTimer = 0; ap.spdI = 0;
+    }
+
+  // ---- Phase 2: flaps 40, descend ----
+  } else if (ap.landPhase === 2) {
+    if (state.flaps < 3) state.flaps = 3;
+    // Target -700 fpm descent, tapering off as we get close to ground
+    const targetVS = agl > 200 ? -700 : Math.max(-300, -agl * 2.5);
+    const vsErr = targetVS - state.vs;
+    ap.altI = Math.max(-300, Math.min(300, ap.altI + vsErr * dt));
+    pitchCmd = Math.max(-0.5, Math.min(0.4, vsErr * 0.0008 + ap.altI * 0.00015));
+    // Speed: hold finalSpd
+    const spdErr = finalSpd - state.speed;
+    ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
+    thrCmd = Math.max(-0.3, Math.min(0.5, spdErr * 0.03 + ap.spdI * 0.008));
+    // HDG hold — tighter on final
+    const he = normDeg(ap.targetHdg - state.heading);
+    rollCmd = Math.max(-0.3, Math.min(0.3, (Math.max(-15, Math.min(15, he * 2)) - state.bank) * 0.05));
+    // Flare: when very close to ground, nose up gently
+    if (agl < 30) {
+      pitchCmd = Math.max(pitchCmd, 0.12);
+      thrCmd = Math.min(thrCmd, -0.2);
+    }
+  }
+
+  return { pitchCmd, rollCmd, thrCmd, flapsCmd: null };
+}
+
+// ---- Takeoff sequence state machine ----
+// Phase 0: start engine if needed, spool up
+// Phase 1: full throttle ground roll
+// Phase 2: rotate (pitch up)
+// Phase 3: climb to targetAlt
+// Phase 4: gear up, flaps up, level off
+function apTakeoffControl(dt) {
+  const groundFt = state.terrainHeightFt || 0;
+  const agl = Math.max(0, state.altitude - groundFt - (3 / FT_TO_M));
+  let pitchCmd = 0, rollCmd = 0, thrCmd = 0;
+
+  // Phase 0: ensure engine running
+  if (ap.toPhase === 0) {
+    if (state.engineState === 'off') handleEngineKey();
+    if (state.engineState === 'running' && state.rpm > 80) {
+      ap.toPhase = 1;
+      state.flaps = 1; // takeoff flaps
+    }
+    thrCmd = 0.3; // spin up
+    return { pitchCmd: 0, rollCmd: 0, thrCmd };
+  }
+
+  // Phase 1: full throttle roll
+  if (ap.toPhase === 1) {
+    thrCmd = 1;
+    if (state.speed > ROTATION_KTS) { ap.toPhase = 2; }
+    return { pitchCmd: 0, rollCmd: 0, thrCmd };
+  }
+
+  // Phase 2: rotate
+  if (ap.toPhase === 2) {
+    thrCmd = 1;
+    pitchCmd = 0.8; // pull up firmly
+    if (!state.onGround && agl > 50) { ap.toPhase = 3; }
+    return { pitchCmd, rollCmd: 0, thrCmd };
+  }
+
+  // Phase 3: climb to target altitude
+  if (ap.toPhase === 3) {
+    thrCmd = 1;
+    // Raise gear
+    if (state.gearDown && agl > 200) state.gearDown = false;
+    // Retract flaps progressively as we accelerate
+    if (state.speed > 170 && state.flaps > 1) state.flaps = 1;
+    if (state.speed > 190 && state.flaps > 0) state.flaps = 0;
+    // Pitch for ~1500 fpm climb or level off near target
+    const altErr = ap.targetAlt - state.altitude;
+    const targetVS = Math.max(0, Math.min(1500, altErr * 4));
+    const vsErr = targetVS - state.vs;
+    ap.altI = Math.max(-400, Math.min(400, ap.altI + vsErr * dt));
+    pitchCmd = Math.max(-0.3, Math.min(0.7, vsErr * 0.0008 + ap.altI * 0.00015));
+    // HDG hold
+    const he = normDeg(ap.targetHdg - state.heading);
+    rollCmd = Math.max(-0.5, Math.min(0.5, (Math.max(-25, Math.min(25, he * 1.5)) - state.bank) * 0.04));
+    // Advance when near target
+    if (altErr < 200 && state.speed > 160) { ap.toPhase = 4; ap.altI = 0; }
+    return { pitchCmd, rollCmd, thrCmd };
+  }
+
+  // Phase 4: level off, switch to cruise
+  if (ap.toPhase === 4) {
+    if (state.flaps > 0) state.flaps = 0;
+    if (state.gearDown) state.gearDown = false;
+    ap.mode = 'cruise';
+    ap.targetAlt = state.altitude;
+    ap.targetSpd = state.speed;
+    ap.targetHdg = state.heading;
+    ap.altI = 0; ap.spdI = 0; ap.hdgI = 0;
+    ap.econThr = state.throttle;
+    updateApPanel();
+    return null; // cruise takes over next frame
+  }
+
+  return { pitchCmd: 0, rollCmd: 0, thrCmd: 0 };
+}
+
+// ---- Cruise control (existing PID) ----
+function apCruiseControl(dt) {
+  // Heading hold
   let hdgErr = ap.targetHdg - state.heading;
   if (hdgErr > 180) hdgErr -= 360;
   if (hdgErr < -180) hdgErr += 360;
   ap.hdgI = Math.max(-20, Math.min(20, ap.hdgI + hdgErr * dt));
-  // Desired bank = proportional to heading error (max 25°)
   const desiredBank = Math.max(-25, Math.min(25, hdgErr * 1.5 + ap.hdgI * 0.3));
-  // Roll command: drive bank toward desired bank
-  const bankErr = desiredBank - state.bank;
-  const rollCmd = Math.max(-0.7, Math.min(0.7, bankErr * 0.04));
+  const rollCmd = Math.max(-0.7, Math.min(0.7, (desiredBank - state.bank) * 0.04));
 
-  // ---- Altitude hold: pitch PID ----
+  // Altitude hold
   const altError = ap.targetAlt - state.altitude;
   const targetVS = Math.max(-1500, Math.min(1500, altError * 5));
   const vsError  = targetVS - state.vs;
@@ -1266,38 +1446,35 @@ function apControl(dt) {
   const pitchCmd = Math.max(-0.65, Math.min(0.65,
     vsError * 0.0009 + ap.altI * 0.00018));
 
-  // ---- Speed / ECON throttle ----
+  // Speed / ECON throttle
   let thrCmd;
   if (ap.econMode) {
-    // ECON: every 3s, nudge throttle by ±0.5% and check if speed is holding.
-    // Goal: find MINIMUM throttle that keeps target speed (best fuel efficiency).
     ap.econTimer += dt;
     const spdErr = ap.targetSpd - state.speed;
     if (ap.econTimer > 2.5) {
       ap.econTimer = 0;
-      if (Math.abs(spdErr) < 3) {
-        // Speed is stable — try reducing throttle a tiny bit
-        ap.econThr = Math.max(18, ap.econThr - 0.4);
-      } else if (spdErr > 0) {
-        // Too slow — add more throttle (bigger step to recover faster)
-        ap.econThr = Math.min(100, ap.econThr + Math.min(4, spdErr * 0.5));
-      } else {
-        // Too fast — reduce
-        ap.econThr = Math.max(18, ap.econThr + Math.max(-2, spdErr * 0.3));
-      }
+      if (Math.abs(spdErr) < 3) ap.econThr = Math.max(18, ap.econThr - 0.4);
+      else if (spdErr > 0)      ap.econThr = Math.min(100, ap.econThr + Math.min(4, spdErr * 0.5));
+      else                      ap.econThr = Math.max(18, ap.econThr + Math.max(-2, spdErr * 0.3));
     }
-    // Rapid short-term correction on top of econ baseline
     ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
     const spdP = Math.max(-0.4, Math.min(0.4, spdErr * 0.025 + ap.spdI * 0.006));
     thrCmd = Math.max(-1, Math.min(1, (ap.econThr - state.throttle) / 50 + spdP));
   } else {
-    // Standard speed hold
     const spdErr = ap.targetSpd - state.speed;
     ap.spdI = Math.max(-30, Math.min(30, ap.spdI + spdErr * dt));
     thrCmd = Math.max(-1, Math.min(1, spdErr * 0.04 + ap.spdI * 0.008));
   }
 
   return { pitchCmd, rollCmd, thrCmd };
+}
+
+// Master AP dispatcher
+function apControl(dt) {
+  if (!ap.on) return null;
+  if (ap.mode === 'land')    return apLandingControl(dt);
+  if (ap.mode === 'takeoff') return apTakeoffControl(dt);
+  return apCruiseControl(dt);
 }
 
 function update(dt) {
