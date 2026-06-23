@@ -585,6 +585,11 @@ function toggleGear() {
   if (state.onGround) return;       // can't raise gear while rolling on the ground
   if (state.altitude < 100) return; // can't retract below 100 ft
   state.gearDown = !state.gearDown;
+  // Wheels just came DOWN while the autopilot is flying -> arm the auto-landing:
+  // the AP forgets its cruise targets, aligns on the current heading and lands itself.
+  if (state.gearDown && typeof ap !== 'undefined' && ap.on && !state.onGround) {
+    apTriggerLanding();
+  }
 }
 
 // Returns whether the current approach parameters allow a safe landing.
@@ -1137,15 +1142,35 @@ const DEG = Math.PI / 180;
 // Wrap an angle to (-180, 180] so attitude can rotate full circle (loops/rolls).
 function normDeg(a) { a = ((a + 180) % 360 + 360) % 360 - 180; return a; }
 
-// Sample real terrain height (m) under the aircraft, when tiles are loaded.
-function terrainHeightM() {
+// Sample real terrain height (m) at an arbitrary lat/lon, when tiles are loaded.
+function terrainHeightAtM(lat, lon) {
   if (!viewer) return 0;
   try {
-    const h = viewer.scene.globe.getHeight(
-      Cesium.Cartographic.fromDegrees(state.lon, state.lat)
-    );
+    const h = viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(lon, lat));
     return (typeof h === 'number' && isFinite(h)) ? h : 0;
   } catch (e) { return 0; }
+}
+
+// Sample real terrain height (m) under the aircraft, when tiles are loaded.
+function terrainHeightM() {
+  return terrainHeightAtM(state.lat, state.lon);
+}
+
+// Highest terrain (ft MSL) along the current flight path within lookAheadM metres.
+// Used by the autopilot to spot rising ground / obstacles before flying into them.
+function terrainAheadMaxFt(lookAheadM) {
+  const hr = state.heading * DEG;
+  const cosLat = Math.cos(state.lat * DEG) || 1e-6;
+  let maxM = -Infinity;
+  const steps = 6;
+  for (let i = 1; i <= steps; i++) {
+    const d = lookAheadM * (i / steps);
+    const lat = state.lat + (Math.cos(hr) * d) / M_PER_DEG_LAT;
+    const lon = state.lon + (Math.sin(hr) * d) / (M_PER_DEG_LAT * cosLat);
+    const h = terrainHeightAtM(lat, lon);
+    if (h > maxM) maxM = h;
+  }
+  return (maxM === -Infinity ? 0 : maxM) / FT_TO_M;
 }
 
 // ===================== Autopilot =====================
@@ -1191,6 +1216,8 @@ function toggleAutopilot() {
 function apTriggerLanding() {
   if (!ap.on || state.onGround) return;
   ap.mode = 'land';
+  ap.targetHdg = state.heading;   // lock a straight-in approach on the current track
+  ap.avoiding = false;            // landing is a deliberate descent — no terrain bail-out
   ap.landPhase = 0;
   ap.landPhaseTimer = 0;
   ap.altI = 0; ap.spdI = 0; ap.hdgI = 0;
@@ -1469,6 +1496,46 @@ function apCruiseControl(dt) {
   return { pitchCmd, rollCmd, thrCmd };
 }
 
+// ---- Terrain proximity beep ----
+// Checks terrain ahead and plays a short beep when clearance is low.
+// Does NOT steer the aircraft — pilot/AP remains in control.
+let terrainBeepTimer = 0;
+function checkTerrainBeep(dt) {
+  if (state.onGround || state.terrainHit) { terrainBeepTimer = 0; return; }
+  terrainBeepTimer -= dt;
+  if (terrainBeepTimer > 0) return;
+
+  const V = Math.max(state.speed * KTS_TO_MPS, 1);
+  const lookAheadM = Math.max(2500, Math.min(14000, V * 30));
+  const terrAheadFt = terrainAheadMaxFt(lookAheadM);
+  const clearanceFt = state.altitude - terrAheadFt;
+
+  if (clearanceFt < 1200) {
+    playTerrainBeep(clearanceFt < 600 ? 2 : 1); // faster double-beep when very close
+    terrainBeepTimer = clearanceFt < 600 ? 0.6 : 1.5;
+  } else {
+    terrainBeepTimer = 1.0; // check again in 1 s when clear
+  }
+}
+
+function playTerrainBeep(count) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  for (let i = 0; i < count; i++) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0, t + i * 0.22);
+    gain.gain.linearRampToValueAtTime(0.35, t + i * 0.22 + 0.02);
+    gain.gain.linearRampToValueAtTime(0, t + i * 0.22 + 0.18);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(t + i * 0.22);
+    osc.stop(t + i * 0.22 + 0.2);
+  }
+}
+
 // Master AP dispatcher
 function apControl(dt) {
   if (!ap.on) return null;
@@ -1485,6 +1552,8 @@ function update(dt) {
   }
   // clamp dt so a stutter can't explode the integrator
   dt = Math.min(dt, 0.05);
+
+  checkTerrainBeep(dt);
 
   // ---- Pilot inputs (elevator / aileron / throttle / airbrake) ----
   // Control authority scales with airspeed (sluggish when slow, like a real wing).
