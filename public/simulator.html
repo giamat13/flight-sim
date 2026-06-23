@@ -70,6 +70,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sm-geo{grid-column:1 / -1;background:rgba(0,160,255,0.06);border-color:rgba(80,180,255,0.45);color:#7fd0ff}
 #sm-geo:hover{background:rgba(0,160,255,0.18);border-color:#7fd0ff;box-shadow:0 0 14px rgba(80,180,255,0.3)}
 #startmenu .sm-hint{font-size:9px;opacity:0.4;letter-spacing:2px;margin-top:8px}
+/* In-flight buttons (pause / open in Google Maps) */
+#flight-btns{position:fixed;top:80px;right:16px;z-index:30;display:none;flex-direction:column;gap:8px}
+.fb-btn{width:40px;height:40px;font-size:18px;cursor:pointer;color:#00FF41;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.3);border-radius:6px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s}
+.fb-btn:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
+/* Pause overlay */
+#pausemenu{position:fixed;inset:0;z-index:55;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(8,10,14,0.86);backdrop-filter:blur(3px);color:#00FF41;font-family:'JetBrains Mono',monospace}
+#pausemenu .sm-title{font-size:28px;letter-spacing:8px;text-shadow:0 0 14px rgba(0,255,65,0.5)}
+#pausemenu .sm-hint{font-size:9px;opacity:0.4;letter-spacing:2px;margin-top:8px}
+#pause-grid{display:flex;flex-direction:column;gap:10px;width:280px;max-width:80%}
+#pause-grid .sm-btn{font-size:13px;padding:14px 10px}
 #sm-custom{display:flex;gap:8px;max-width:440px;width:92%;margin-top:4px}
 #sm-input{flex:1;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:12px;padding:11px 12px;border-radius:5px;outline:none}
 #sm-input::placeholder{color:rgba(0,255,65,0.35)}
@@ -147,6 +157,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 
 <div id="cam-label">COCKPIT</div>
 <div id="gp-indicator">🎮 CONTROLLER</div>
+<div id="flight-btns">
+  <button class="fb-btn" id="fb-pause" title="Pause (P)">⏸</button>
+  <button class="fb-btn" id="fb-maps" title="Open current location in Google Maps">🗺</button>
+</div>
 <div id="loc-label">GRAND CANYON, AZ</div>
 <div id="controls-hint">
   E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · R RESET<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>
@@ -218,7 +232,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="env-btn" data-env="weather" data-val="snow">❄ Snow</button>
     <button class="env-btn" data-env="weather" data-val="fog">🌫 Fog</button>
   </div>
-  <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C cam &nbsp;·&nbsp; R reset &nbsp;·&nbsp; 🎮 gamepad</div>
+  <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
+</div>
+
+<div id="pausemenu">
+  <div class="sm-title">PAUSED</div>
+  <div id="pause-grid">
+    <button class="sm-btn" id="pm-resume">▶ Resume</button>
+    <button class="sm-btn" id="pm-restart">↻ Restart Flight</button>
+    <button class="sm-btn" id="pm-maps">🗺 Open in Google Maps</button>
+    <button class="sm-btn" id="pm-menu">☰ Main Menu</button>
+  </div>
+  <div class="sm-hint">P or ☰ to resume</div>
 </div>
 
 <script>
@@ -383,7 +408,7 @@ function playStartupSound() {
 // ===================== Keys =====================
 // Index keys by e.code (PHYSICAL key position) instead of e.key, so controls
 // work regardless of keyboard language/layout (Hebrew, AZERTY, etc.).
-const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1,
+const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1,
   ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1 };
 const keys = {};
 window.addEventListener('keydown', e => {
@@ -409,6 +434,8 @@ window.addEventListener('keydown', e => {
     if (code === 'KeyE') handleEngineKey();
     if (code === 'KeyF') cycleFlaps();
     if (code === 'KeyG') toggleGear();
+    if (code === 'KeyP') togglePause();
+    if (code === 'Escape' && paused) setPaused(false);
   }
   // Only swallow the keys we actually use, and never when a modifier is held,
   // so browser shortcuts (F12 devtools, Ctrl+R, Ctrl+Shift+I, etc.) keep working.
@@ -644,9 +671,9 @@ let gpConnected = false;
 
 // Two versions of the on-screen control hint — keyboard vs. gamepad.
 const HINT_KEYBOARD =
-  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · R RESET<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
+  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · P PAUSE<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
 const HINT_GAMEPAD =
-  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR<br>L-STICK PITCH/BANK<br>RT/LT THROTTLE<br>A AIRBRAKE<br>Y CAMERA · ☰ START RESET';
+  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR<br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>A AIRBRAKE<br>Y CAMERA · ☰ PAUSE';
 
 function updateControlsHint() {
   const el = document.getElementById('controls-hint');
@@ -660,7 +687,7 @@ function updateGpIndicator() {
 window.addEventListener('gamepadconnected', function () { gpConnected = true; updateGpIndicator(); });
 window.addEventListener('gamepaddisconnected', function () { gpConnected = false; updateGpIndicator(); });
 
-const gpPrev = { cam: false, reset: false, eng: false, flap: false, gear: false };
+const gpPrev = { cam: false, reset: false, eng: false, flap: false, gear: false, pause: false };
 function readGamepad() {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   let gp = null;
@@ -686,7 +713,7 @@ function readGamepad() {
   const gearNow = pressed(4);                      // LB -> gear
   if (gearNow && !gpPrev.gear) toggleGear();
   gpPrev.gear = gearNow;
-  const resetNow = pressed(9) || pressed(8);       // Start/Back -> reset
+  const resetNow = pressed(8);                     // Back -> restart flight
   const resetEdge = resetNow && !gpPrev.reset;
   gpPrev.reset = resetNow;
 
@@ -848,9 +875,12 @@ function stallSpeedKts() {
 }
 
 let lastTime = performance.now();
-let cameraMode = 0; // 0=cockpit, 1=chase
+let cameraMode = 1; // 0=cockpit, 1=chase (default: 3rd-person so you see the plane)
 // Right-stick look offset (degrees). Decays back to centre when stick released.
 let lookYawOff = 0, lookPitchOff = 0;
+// Chase camera eases toward the aircraft heading so the LEFT stick visibly
+// maneuvers the model within the frame instead of rigidly dragging the view.
+let camFollowHeading = null;
 
 // ===================== CESIUM GLOBE (real world) =====================
 let viewer = null;
@@ -928,27 +958,42 @@ function updateCamera() {
   const h = Math.max(state.altitude, 0) * FT_TO_M;
   // Airframe buffet shake while stalled
   const buf = state.stall ? (Math.random() - 0.5) : 0;
-  const hdg = Cesium.Math.toRadians(state.heading + lookYawOff);
-  const pitch = Cesium.Math.toRadians(state.pitch + buf * 1.2 + lookPitchOff);
-  const roll = Cesium.Math.toRadians(state.bank + buf * 2.2);
 
   if (cameraMode === 0) {
-    // Cockpit: camera sits at the aircraft, looking out the nose
+    // Cockpit: the camera IS the aircraft, looking out the nose. The right-stick
+    // "look" turns the head (camera only); the left stick flies the aircraft.
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(lon, lat, h),
-      orientation: { heading: hdg, pitch: pitch, roll: roll }
+      orientation: {
+        heading: Cesium.Math.toRadians(state.heading + lookYawOff),
+        pitch: Cesium.Math.toRadians(state.pitch + buf * 1.2 + lookPitchOff),
+        roll: Cesium.Math.toRadians(state.bank + buf * 2.2)
+      }
     });
   } else {
-    // Chase: camera behind & above the aircraft; offset look position by yaw
-    const back = 90, up = 30;
-    const hr = state.heading * Math.PI / 180;
-    const dN = -Math.cos(hr) * back;
-    const dE = -Math.sin(hr) * back;
+    // Chase: a STABLE third-person rig. The camera follows the aircraft's position
+    // and stays behind it, but never rolls/pitches with the aircraft — so the LEFT
+    // stick visibly banks/pitches the MODEL without tipping the view. The RIGHT
+    // stick orbits the camera around the world-anchored aircraft (which does not
+    // move), springing back behind the tail when released.
+    if (camFollowHeading === null) camFollowHeading = state.heading;
+    const dh = normDeg(state.heading - camFollowHeading);
+    camFollowHeading = normDeg(camFollowHeading + dh * Math.min(1, (frameDt || 0.016) * 2.5));
+    const azimDeg = camFollowHeading + lookYawOff;
+    const azim = azimDeg * Math.PI / 180;
+    const back = 48, up = 13;
+    const dN = -Math.cos(azim) * back;
+    const dE = -Math.sin(azim) * back;
     const dLat = dN / M_PER_DEG_LAT;
     const dLon = dE / (M_PER_DEG_LAT * Math.cos(lat * Math.PI / 180));
+    const camH = h + up + lookPitchOff * 0.7;
     viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(lon + dLon, lat + dLat, h + up),
-      orientation: { heading: hdg, pitch: Cesium.Math.toRadians(state.pitch - 8 + lookPitchOff), roll: roll }
+      destination: Cesium.Cartesian3.fromDegrees(lon + dLon, lat + dLat, camH),
+      orientation: {
+        heading: Cesium.Math.toRadians(azimDeg),
+        pitch: Cesium.Math.toRadians(-9 + lookPitchOff * 0.5),
+        roll: 0
+      }
     });
   }
 }
@@ -1353,6 +1398,13 @@ function drawAirplane() {
   // === Transform & Project ===
   const pitchRad = state.pitch * Math.PI / 180;
   const bankRad = state.bank * Math.PI / 180;
+  // Yaw the model within the frame by how far the aircraft's heading differs from
+  // where the chase camera is pointing. When you bank into a turn the nose swings
+  // in view (the camera lags); when you "look" with the right stick the camera
+  // orbits, so the model rotates to show its side — it never actually moves.
+  const camAzim = (camFollowHeading === null ? state.heading : camFollowHeading) + lookYawOff;
+  const yawRad = normDeg(state.heading - camAzim) * Math.PI / 180;
+  const cyw = Math.cos(yawRad), syw = Math.sin(yawRad);
   const camY = 1.0, camZ = -7.5;
   const focal = Math.min(W, H) * 0.75;
   const scY = H * 0.52;
@@ -1366,7 +1418,11 @@ function drawAirplane() {
     const cb = Math.cos(bankRad), sb = Math.sin(bankRad);
     const nx = x * cb - y * sb;
     const nyy = x * sb + y * cb;
-    return [nx, nyy, z];
+    x = nx; y = nyy;
+    // yaw about the vertical axis (camera-relative azimuth)
+    const nx2 = x * cyw + z * syw;
+    const nz2 = -x * syw + z * cyw;
+    return [nx2, y, nz2];
   });
 
   const proj = tf.map(v => {
@@ -1897,6 +1953,8 @@ function beginFlight(loc) {
   if (locLabel) locLabel.textContent = loc.name || '';
   if (startMenu) startMenu.style.display = 'none';
   if (minimapEl) minimapEl.style.display = 'block';
+  var fbEl = document.getElementById('flight-btns');
+  if (fbEl) fbEl.style.display = 'flex';
   if (loadingEl) {
     loadingEl.style.display = 'flex';
     const sub = loadingEl.querySelector('.l-sub');
@@ -2054,6 +2112,81 @@ if (startMenu) {
   runSubmitCustom = submitCustom; // let the virtual keyboard's GO key submit too
 }
 
+// ===== Pause / Google Maps / return to menu =====
+let paused = false;
+const pauseMenu = document.getElementById('pausemenu');
+let pauseItems = [], pauseFocus = 0;
+const pausePrev = { u: false, d: false, a: false };
+
+function openGoogleMaps() {
+  const url = 'https://www.google.com/maps/@' +
+    state.lat.toFixed(6) + ',' + state.lon.toFixed(6) + ',13z';
+  try { window.open(url, '_blank', 'noopener'); } catch (e) {}
+}
+function setPauseFocus(i) {
+  if (!pauseItems.length) return;
+  pauseFocus = (i + pauseItems.length) % pauseItems.length;
+  pauseItems.forEach(function (el, k) { el.classList.toggle('sm-focus', k === pauseFocus); });
+}
+function setPaused(p) {
+  paused = p;
+  if (pauseMenu) pauseMenu.style.display = p ? 'flex' : 'none';
+  const fbp = document.getElementById('fb-pause');
+  if (fbp) fbp.textContent = p ? '▶' : '⏸';
+  if (p) {
+    pauseItems = pauseMenu ? Array.prototype.slice.call(pauseMenu.querySelectorAll('.sm-btn')) : [];
+    setPauseFocus(0);
+  } else {
+    lastTime = performance.now();            // avoid a dt spike on resume
+    try { window.focus(); } catch (e) {}
+  }
+}
+function togglePause() { if (chosen && simReady) setPaused(!paused); }
+function returnToMenu() {
+  setPaused(false);
+  chosen = false; simReady = false; spawnResolved = false;
+  if (startMenu) startMenu.style.display = 'flex';
+  if (minimapEl) minimapEl.style.display = 'none';
+  const fbEl = document.getElementById('flight-btns');
+  if (fbEl) fbEl.style.display = 'none';
+  refreshMenuItems(); setMenuFocus(0);
+}
+
+if (pauseMenu) {
+  const r  = document.getElementById('pm-resume');  if (r)  r.addEventListener('click', function () { setPaused(false); });
+  const rs = document.getElementById('pm-restart'); if (rs) rs.addEventListener('click', function () { setPaused(false); resetState(); });
+  const mp = document.getElementById('pm-maps');    if (mp) mp.addEventListener('click', openGoogleMaps);
+  const mn = document.getElementById('pm-menu');     if (mn) mn.addEventListener('click', returnToMenu);
+}
+{
+  const fbp = document.getElementById('fb-pause'); if (fbp) fbp.addEventListener('click', togglePause);
+  const fbm = document.getElementById('fb-maps');  if (fbm) fbm.addEventListener('click', openGoogleMaps);
+}
+
+// Poll the controller's Start button every frame — even while paused — so the
+// pad can resume; while paused it also navigates the pause menu (D-pad + A).
+function pollPauseGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+  if (!gp) return;
+  const b = function (i) { return !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed); };
+  const startNow = b(9);
+  if (startNow && !gpPrev.pause) togglePause();
+  gpPrev.pause = startNow;
+  if (!paused) return;
+  const ax = gp.axes || [];
+  const up = b(12) || (ax[1] || 0) < -0.5;
+  const dn = b(13) || (ax[1] || 0) > 0.5;
+  if (up && !pausePrev.u) setPauseFocus(pauseFocus - 1);
+  pausePrev.u = up;
+  if (dn && !pausePrev.d) setPauseFocus(pauseFocus + 1);
+  pausePrev.d = dn;
+  const a = b(0);
+  if (a && !pausePrev.a && pauseItems[pauseFocus]) pauseItems[pauseFocus].click();
+  pausePrev.a = a;
+}
+
 function loop() {
   const now = performance.now();
   const dt = Math.min((now - lastTime) / 1000, 0.05);
@@ -2071,7 +2204,8 @@ function loop() {
   }
   if (chosen && !simReady && !viewer && now - startTime > 4000) markReady();
 
-  if (simReady) update(dt);
+  if (chosen && simReady) pollPauseGamepad();
+  if (simReady && !paused) update(dt);
   render();
   requestAnimationFrame(loop);
 }
