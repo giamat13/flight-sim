@@ -1399,6 +1399,55 @@ function drawAirplane() {
   faces.push({ v: [cF, cFT, cBT, cB], c: [0.10, 0.20, 0.32] });
   faces.push({ v: [cF, cB, cBT, cFT], c: [0.07, 0.14, 0.24] });
 
+  // Landing gear (struts + wheels) — only modeled when the gear is down
+  if (state.gearDown) {
+    const strutCol = [0.30, 0.30, 0.30];
+    const wheelCol = [0.06, 0.06, 0.06];
+    const wheelHubCol = [0.45, 0.45, 0.45];
+    // A wheel is a short flattened octagonal "drum" facing sideways (axle along X)
+    function addWheel(cx, cy, cz, radius, width) {
+      const segs = 8;
+      const front = [], back = [];
+      for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        const dy = Math.cos(a) * radius, dz = Math.sin(a) * radius;
+        front.push(verts.length); verts.push([cx - width / 2, cy + dy, cz + dz]);
+        back.push(verts.length); verts.push([cx + width / 2, cy + dy, cz + dz]);
+      }
+      for (let i = 0; i < segs; i++) {
+        const ni = (i + 1) % segs;
+        faces.push({ v: [front[i], front[ni], back[ni], back[i]], c: wheelCol });
+      }
+      faces.push({ v: front.slice().reverse(), c: wheelHubCol });
+      faces.push({ v: back, c: wheelHubCol });
+    }
+    function addStrut(x, yTop, yBot, z, w) {
+      const a = verts.length; verts.push([x - w, yTop, z - w]);
+      const b = verts.length; verts.push([x + w, yTop, z - w]);
+      const c = verts.length; verts.push([x + w, yBot, z - w]);
+      const d = verts.length; verts.push([x - w, yBot, z - w]);
+      const e = verts.length; verts.push([x - w, yTop, z + w]);
+      const f = verts.length; verts.push([x + w, yTop, z + w]);
+      const g = verts.length; verts.push([x + w, yBot, z + w]);
+      const h = verts.length; verts.push([x - w, yBot, z + w]);
+      faces.push({ v: [a, b, c, d], c: strutCol });
+      faces.push({ v: [f, e, h, g], c: strutCol });
+      faces.push({ v: [e, a, d, h], c: [strutCol[0]*0.8, strutCol[1]*0.8, strutCol[2]*0.8] });
+      faces.push({ v: [b, f, g, c], c: [strutCol[0]*0.8, strutCol[1]*0.8, strutCol[2]*0.8] });
+    }
+    const wheelR = 0.16, wheelW = 0.10;
+    const gearTopY = -0.05;
+    const gearBotY = -0.55;
+    // Nose gear
+    addStrut(0, gearTopY, gearBotY, 1.6, 0.025);
+    addWheel(0, gearBotY, 1.6, wheelR, wheelW);
+    // Main gear (left/right, under the wing root)
+    [-1, 1].forEach(function (s) {
+      addStrut(s * 0.5, gearTopY, gearBotY, 0.2, 0.03);
+      addWheel(s * 0.5, gearBotY, 0.2, wheelR * 1.15, wheelW * 1.2);
+    });
+  }
+
   // === Transform & Project ===
   // Negated so a POSITIVE state.pitch (nose-up / climb in the physics) renders the
   // model nose-up on screen too — matching the AHI, the cockpit camera and the
@@ -1423,8 +1472,8 @@ function drawAirplane() {
     const nz = y * sp + z * cp;
     y = ny; z = nz;
     const cb = Math.cos(bankRad), sb = Math.sin(bankRad);
-    const nx = x * cb - y * sb;
-    const nyy = x * sb + y * cb;
+    const nx = x * cb + y * sb;
+    const nyy = -x * sb + y * cb;
     x = nx; y = nyy;
     // yaw about the vertical axis (camera-relative azimuth)
     const nx2 = x * cyw + z * syw;
@@ -1508,7 +1557,7 @@ function drawAirplane() {
       const ny = y * cp - z * sp; const nz = y * sp + z * cp;
       y = ny; z = nz;
       const cb = Math.cos(bankRad), sb = Math.sin(bankRad);
-      const nx = x * cb - y * sb; const nyy = x * sb + y * cb;
+      const nx = x * cb + y * sb; const nyy = -x * sb + y * cb;
       const vz = z - camZ;
       if (vz <= 0.1) return;
       const sx = (nx * focal) / vz + W / 2;
