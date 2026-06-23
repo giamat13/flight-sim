@@ -405,6 +405,7 @@ let state = {
   gearDown: true,
   // On-ground state (landing / ground roll / takeoff)
   onGround: false,
+  groundTimer: 0,  // seconds spent continuously on the ground (for refueling)
   // Fuel (kg)
   fuel: 800,
   fuelMax: 800
@@ -435,6 +436,7 @@ function resetState() {
   state.gearDown = true; // gear down on the ground
   state.fuel = state.fuelMax;
   state.onGround = true;
+  state.groundTimer = 0;
   state.pitch = 2.5;
   terrainWarn.style.display = 'none';
   const lp = document.getElementById('landing-panel'); if (lp) lp.style.display = 'none';
@@ -1726,6 +1728,21 @@ function update(dt) {
   if (state.fuel <= 0 && (state.engineState === 'running' || state.engineState === 'starting')) {
     state.engineState = 'off';
     state.engineTimer = 0;
+  }
+
+  // ---- Ground refueling ----
+  // Sit on the ground for 5 seconds and the tank starts filling; by 30 seconds
+  // total on the ground it's topped all the way up.
+  const REFUEL_START_S = 5;   // seconds on the ground before refueling kicks in
+  const REFUEL_FULL_S  = 30;  // seconds on the ground for a full tank
+  if (state.onGround) {
+    state.groundTimer += dt;
+    if (state.groundTimer >= REFUEL_START_S && state.fuel < state.fuelMax) {
+      const refuelRate = state.fuelMax / (REFUEL_FULL_S - REFUEL_START_S); // kg/sec
+      state.fuel = Math.min(state.fuelMax, state.fuel + refuelRate * dt);
+    }
+  } else {
+    state.groundTimer = 0;
   }
 
   // ---- Aerodynamics (point-mass, SI units) ----
