@@ -21,6 +21,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .hud-item{display:flex;flex-direction:column;align-items:center;gap:2px}
 .hud-label{font-size:9px;letter-spacing:2px;opacity:0.5;font-weight:300}
 .hud-value{font-size:18px;font-weight:500;letter-spacing:1px;text-shadow:0 0 8px rgba(0,255,65,0.4)}
+.hud-value-sm{font-size:14px;line-height:1.05;letter-spacing:0.5px}
 #ahi-container{position:fixed;top:16px;left:50%;transform:translateX(-50%);pointer-events:none;z-index:20}
 #ahi-canvas{border:1px solid rgba(0,255,65,0.3);border-radius:50%;background:rgba(0,255,65,0.03);box-shadow:0 0 20px rgba(0,255,65,0.06)}
 #stall-warn{position:fixed;top:42%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:48px;font-weight:700;color:#ff2020;text-shadow:0 0 30px rgba(255,0,0,0.6);font-family:'JetBrains Mono',monospace;letter-spacing:6px;pointer-events:none;display:none}
@@ -168,6 +169,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <div class="hud-item"><span class="hud-label">AOA</span><span class="hud-value" id="hud-aoa">0°</span></div>
     <div class="hud-item"><span class="hud-label">G</span><span class="hud-value" id="hud-g">1.0</span></div>
     <div class="hud-item"><span class="hud-label">THR</span><span class="hud-value" id="hud-thr">50%</span></div>
+    <div class="hud-item"><span class="hud-label">WIND</span><span class="hud-value hud-value-sm" id="hud-wind">CALM</span></div>
+    <div class="hud-item"><span class="hud-label">REL</span><span class="hud-value hud-value-sm" id="hud-wind-rel">HW 0 / X 0</span></div>
   </div>
 </div>
 
@@ -320,6 +323,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="env-btn" data-env="weather" data-val="snow">❄ Snow</button>
     <button class="env-btn" data-env="weather" data-val="fog">🌫 Fog</button>
   </div>
+  <div class="sm-hint">CLEAR = CALM AIR · OTHER WEATHER ADDS WIND</div>
   <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
 </div>
 
@@ -357,6 +361,8 @@ const hudVs = document.getElementById('hud-vs');
 const hudThr = document.getElementById('hud-thr');
 const hudAoa = document.getElementById('hud-aoa');
 const hudG = document.getElementById('hud-g');
+const hudWind = document.getElementById('hud-wind');
+const hudWindRel = document.getElementById('hud-wind-rel');
 const stallWarn = document.getElementById('stall-warn');
 const overspeedWarn = document.getElementById('overspeed-warn');
 const terrainWarn = document.getElementById('terrain-warn');
@@ -719,9 +725,75 @@ function initTouchControls() {
 window.addEventListener('orientationchange', function () { if (tiltEnabled) setTimeout(calibrateTilt, 400); });
 
 // ===================== Time of day & weather =====================
-let env = { time: 'day', weather: 'clear' };
+let env = {
+  time: 'day',
+  weather: 'clear',
+  wind: { speedKts: 0, fromDeg: 0, toDeg: 0, n: 0, e: 0 },
+  windState: { active: false, baseSpeedKts: 0, baseFromDeg: 0, speedKts: 0, fromDeg: 0, targetSpeedKts: 0, targetFromDeg: 0, timer: 0 }
+};
 let frameDt = 0.016;
 let wxParticles = [];
+
+const WEATHER_WIND = {
+  clear:  { speedKts: 0,  fromDeg: 0 },
+  clouds: { speedKts: 12, fromDeg: 260 },
+  rain:   { speedKts: 18, fromDeg: 300 },
+  snow:   { speedKts: 14, fromDeg: 40 },
+  fog:    { speedKts: 8,  fromDeg: 190 }
+};
+
+function setWeatherWind(kind) {
+  const cfg = WEATHER_WIND[kind] || WEATHER_WIND.clear;
+  env.windState = {
+    active: cfg.speedKts > 0,
+    baseSpeedKts: cfg.speedKts,
+    baseFromDeg: cfg.fromDeg,
+    speedKts: cfg.speedKts,
+    fromDeg: cfg.fromDeg,
+    targetSpeedKts: cfg.speedKts,
+    targetFromDeg: cfg.fromDeg,
+    timer: cfg.speedKts > 0 ? (2.5 + Math.random() * 3.5) : 0
+  };
+  updateWindVector();
+}
+
+function getWindVector() {
+  return env.wind || { speedKts: 0, fromDeg: 0, toDeg: 0, n: 0, e: 0 };
+}
+
+function updateWindVector() {
+  const ws = env.windState || {};
+  const toDeg = wrap360((ws.fromDeg || 0) + 180);
+  const speedMps = (ws.speedKts || 0) * KTS_TO_MPS;
+  const rad = toDeg * DEG;
+  env.wind = {
+    speedKts: ws.speedKts || 0,
+    fromDeg: ws.fromDeg || 0,
+    toDeg: toDeg,
+    n: Math.cos(rad) * speedMps,
+    e: Math.sin(rad) * speedMps
+  };
+}
+
+function updateWind(dt) {
+  const ws = env.windState;
+  if (!ws || !ws.active) return;
+
+  ws.timer -= dt;
+  if (ws.timer <= 0) {
+    ws.timer = 2.5 + Math.random() * 4.5;
+    const speedJitter = 0.65 + Math.random() * 0.7;
+    const dirJitter = (Math.random() - 0.5) * 50;
+    ws.targetSpeedKts = Math.max(0, ws.baseSpeedKts * speedJitter);
+    ws.targetFromDeg = wrap360(ws.baseFromDeg + dirJitter);
+  }
+
+  const k = 1 - Math.exp(-dt * 0.45);
+  ws.speedKts += (ws.targetSpeedKts - ws.speedKts) * k;
+  const dirDelta = normDeg(ws.targetFromDeg - ws.fromDeg);
+  ws.fromDeg = wrap360(ws.fromDeg + dirDelta * k);
+  updateWindVector();
+}
 
 function initWeatherParticles() {
   wxParticles = [];
@@ -742,19 +814,21 @@ function initWeatherParticles() {
 function drawWeather() {
   if (env.weather !== 'rain' && env.weather !== 'snow') return;
   const dt = Math.min(frameDt, 0.05);
+  const wind = getWindVector();
+  const windDrift = (wind.e || 0) * 0.02;
   ctx.save();
   if (env.weather === 'rain') {
     ctx.strokeStyle = 'rgba(180,205,235,0.35)';
     ctx.lineWidth = 1.1;
     for (const p of wxParticles) {
-      p.y += p.v * dt; p.x += p.drift * dt;
+      p.y += p.v * dt; p.x += (p.drift * dt) + (windDrift * dt);
       if (p.y > H) { p.y = -p.len; p.x = Math.random() * W; }
       ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.drift * 0.03, p.y + p.len); ctx.stroke();
     }
   } else { // snow
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     for (const p of wxParticles) {
-      p.y += p.v * dt; p.x += Math.sin(p.y * 0.02) * 18 * dt + p.drift * dt * 0.3;
+      p.y += p.v * dt; p.x += Math.sin(p.y * 0.02) * 18 * dt + p.drift * dt * 0.3 + windDrift * dt * 0.5;
       if (p.y > H) { p.y = -2; p.x = Math.random() * W; }
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.3); ctx.fill();
     }
@@ -780,6 +854,7 @@ function applyEnvironment() {
   };
   if (te) te.style.background = timeBg[env.time] || 'none';
   if (we) we.style.background = wxBg[env.weather] || 'none';
+  setWeatherWind(env.weather);
   if (viewer) {
     const w = env.weather;
     try {
@@ -1152,6 +1227,46 @@ function updateCamera() {
 const DEG = Math.PI / 180;
 // Wrap an angle to (-180, 180] so attitude can rotate full circle (loops/rolls).
 function normDeg(a) { a = ((a + 180) % 360 + 360) % 360 - 180; return a; }
+function wrap360(a) { a = ((a % 360) + 360) % 360; return a; }
+
+function groundVectorFromHeading(headingDeg, airspeedMps) {
+  const wind = getWindVector();
+  const hr = headingDeg * DEG;
+  return {
+    n: Math.cos(hr) * airspeedMps + wind.n,
+    e: Math.sin(hr) * airspeedMps + wind.e
+  };
+}
+
+function groundTrackDeg(headingDeg, airspeedMps) {
+  const v = groundVectorFromHeading(headingDeg, airspeedMps);
+  if (Math.abs(v.n) < 1e-6 && Math.abs(v.e) < 1e-6) return wrap360(headingDeg);
+  return wrap360(Math.atan2(v.e, v.n) / DEG);
+}
+
+function windCorrectionDeg(trackDeg, airspeedMps) {
+  const wind = getWindVector();
+  if (airspeedMps <= 0.5) return 0;
+  const tr = trackDeg * DEG;
+  const cross = -wind.n * Math.sin(tr) + wind.e * Math.cos(tr);
+  const ratio = Math.max(-0.95, Math.min(0.95, cross / Math.max(airspeedMps, 0.5)));
+  return -Math.asin(ratio) / DEG;
+}
+
+function headingForTrack(trackDeg, airspeedMps) {
+  return wrap360(trackDeg + windCorrectionDeg(trackDeg, airspeedMps));
+}
+
+function currentTrackDeg() {
+  const airspeedMps = Math.max(state.speed * KTS_TO_MPS, 0);
+  if (airspeedMps < 1) return wrap360(state.heading);
+  return groundTrackDeg(state.heading, airspeedMps);
+}
+
+function windArrowForDeg(deg) {
+  const dirs = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+  return dirs[Math.round(wrap360(deg) / 45) % 8];
+}
 
 // Sample real terrain height (m) at an arbitrary lat/lon, when tiles are loaded.
 function terrainHeightAtM(lat, lon) {
@@ -1211,7 +1326,7 @@ function toggleAutopilot() {
   if (ap.on) {
     ap.targetAlt = state.altitude;
     ap.targetSpd = Math.max(stallSpeedKts() + 20, state.speed);
-    ap.targetHdg = state.heading;
+    ap.targetHdg = currentTrackDeg();
     ap.altI = 0; ap.spdI = 0; ap.hdgI = 0;
     ap.econThr   = state.throttle;
     ap.econTimer = 0;
@@ -1227,7 +1342,7 @@ function toggleAutopilot() {
 function apTriggerLanding() {
   if (!ap.on || state.onGround) return;
   ap.mode = 'land';
-  ap.targetHdg = state.heading;   // lock a straight-in approach on the current track
+  ap.targetHdg = currentTrackDeg();   // lock a straight-in approach on the current track
   ap.avoiding = false;            // landing is a deliberate descent — no terrain bail-out
   ap.landPhase = 0;
   ap.landPhaseTimer = 0;
@@ -1236,7 +1351,7 @@ function apTriggerLanding() {
 }
 
 function apAdjHdg(delta) {
-  ap.targetHdg = ((ap.targetHdg + delta) % 360 + 360) % 360;
+  ap.targetHdg = wrap360(ap.targetHdg + delta);
   ap.hdgI = 0; updateApPanel();
 }
 function apAdjAlt(delta) {
@@ -1341,7 +1456,7 @@ function apLandingControl(dt) {
     ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
     thrCmd = Math.max(-0.5, Math.min(0.5, spdErr * 0.04 + ap.spdI * 0.01));
     // HDG hold
-    const he = normDeg(ap.targetHdg - state.heading);
+    const he = normDeg(headingForTrack(ap.targetHdg, Math.max(state.speed * KTS_TO_MPS, 1)) - state.heading);
     rollCmd = Math.max(-0.4, Math.min(0.4, (Math.max(-20, Math.min(20, he * 1.5)) - state.bank) * 0.04));
     // Level flight while we slow
     const vsErr = (0 - state.vs);
@@ -1357,7 +1472,7 @@ function apLandingControl(dt) {
     const spdErr = finalSpd - state.speed;
     ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
     thrCmd = Math.max(-0.5, Math.min(0.4, spdErr * 0.04 + ap.spdI * 0.01));
-    const he = normDeg(ap.targetHdg - state.heading);
+    const he = normDeg(headingForTrack(ap.targetHdg, Math.max(state.speed * KTS_TO_MPS, 1)) - state.heading);
     rollCmd = Math.max(-0.4, Math.min(0.4, (Math.max(-20, Math.min(20, he * 1.5)) - state.bank) * 0.04));
     const vsErr = (0 - state.vs);
     pitchCmd = Math.max(-0.3, Math.min(0.3, vsErr * 0.0005));
@@ -1378,7 +1493,7 @@ function apLandingControl(dt) {
     ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
     thrCmd = Math.max(-0.3, Math.min(0.5, spdErr * 0.03 + ap.spdI * 0.008));
     // HDG hold — tighter on final
-    const he = normDeg(ap.targetHdg - state.heading);
+    const he = normDeg(headingForTrack(ap.targetHdg, Math.max(state.speed * KTS_TO_MPS, 1)) - state.heading);
     rollCmd = Math.max(-0.3, Math.min(0.3, (Math.max(-15, Math.min(15, he * 2)) - state.bank) * 0.05));
     // Flare: when very close to ground, nose up gently
     if (agl < 30) {
@@ -1442,7 +1557,7 @@ function apTakeoffControl(dt) {
     ap.altI = Math.max(-400, Math.min(400, ap.altI + vsErr * dt));
     pitchCmd = Math.max(-0.3, Math.min(0.7, vsErr * 0.0008 + ap.altI * 0.00015));
     // HDG hold
-    const he = normDeg(ap.targetHdg - state.heading);
+    const he = normDeg(headingForTrack(ap.targetHdg, Math.max(state.speed * KTS_TO_MPS, 1)) - state.heading);
     rollCmd = Math.max(-0.5, Math.min(0.5, (Math.max(-25, Math.min(25, he * 1.5)) - state.bank) * 0.04));
     // Advance when near target
     if (altErr < 200 && state.speed > 160) { ap.toPhase = 4; ap.altI = 0; }
@@ -1469,7 +1584,7 @@ function apTakeoffControl(dt) {
 // ---- Cruise control (existing PID) ----
 function apCruiseControl(dt) {
   // Heading hold
-  let hdgErr = ap.targetHdg - state.heading;
+  let hdgErr = headingForTrack(ap.targetHdg, Math.max(state.speed * KTS_TO_MPS, 1)) - state.heading;
   if (hdgErr > 180) hdgErr -= 360;
   if (hdgErr < -180) hdgErr += 360;
   ap.hdgI = Math.max(-20, Math.min(20, ap.hdgI + hdgErr * dt));
@@ -1586,6 +1701,7 @@ function update(dt) {
   // clamp dt so a stutter can't explode the integrator
   dt = Math.min(dt, 0.05);
 
+  updateWind(dt);
   checkTerrainBeep(dt);
 
   // ---- Pilot inputs (elevator / aileron / throttle / airbrake) ----
@@ -1828,7 +1944,9 @@ function update(dt) {
   const n = L / W;
 
   let climbRate = V * Math.sin(gamma * DEG);
-  let groundSpeed = V * Math.cos(gamma * DEG);
+  const horizontalAirspeed = V * Math.cos(gamma * DEG);
+  const groundVec = groundVectorFromHeading(state.heading, horizontalAirspeed);
+  let groundSpeed = Math.sqrt(groundVec.n * groundVec.n + groundVec.e * groundVec.e);
   let newAltM = altM + climbRate * dt;
 
   // ---- Terrain / ground collision & landing ----
@@ -1865,7 +1983,7 @@ function update(dt) {
     }
 
     climbRate = 0;
-    groundSpeed = V;
+    groundSpeed = Math.sqrt(groundVec.n * groundVec.n + groundVec.e * groundVec.e);
 
   } else if (newAltM <= groundM + 3) {
     // ===== FIRST GROUND CONTACT =====
@@ -1876,7 +1994,7 @@ function update(dt) {
       newAltM = groundM + 3;
       gamma = 0;
       climbRate = 0;
-      groundSpeed = V;
+      groundSpeed = Math.sqrt(groundVec.n * groundVec.n + groundVec.e * groundVec.e);
     } else {
       // ---- CRASH (bad approach) ----
       newAltM = groundM + 3;
@@ -1897,10 +2015,8 @@ function update(dt) {
   state.overspeed = V > AC.Vne;
 
   // Advance position across the real globe
-  const dist = groundSpeed * dt;
-  const hr = state.heading * DEG;
-  const dN = Math.cos(hr) * dist;
-  const dE = Math.sin(hr) * dist;
+  const dN = groundVec.n * dt;
+  const dE = groundVec.e * dt;
   state.lat += dN / M_PER_DEG_LAT;
   state.lon += dE / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
   if (state.lon > 180) state.lon -= 360;
@@ -2629,6 +2745,35 @@ function render() {
     hudG.textContent = state.gforce.toFixed(1);
     hudG.style.color = (state.gforce > 5 || state.gforce < -1.5) ? '#ff2020'
       : (state.gforce > 3.5 || state.gforce < -0.5) ? '#ffaa00' : '#00FF41';
+  }
+  if (hudWind || hudWindRel) {
+    const wind = getWindVector();
+    const windSpeed = Math.round(wind.speedKts || 0);
+    const windFrom = wrap360(Math.round(wind.fromDeg || 0));
+    const windTo = wrap360(Math.round(wind.toDeg != null ? wind.toDeg : windFrom + 180));
+    const windTrack = currentTrackDeg();
+    const windRad = windTo * DEG;
+    const trackRad = windTrack * DEG;
+    const along = (wind.n * Math.cos(trackRad)) + (wind.e * Math.sin(trackRad));
+    const cross = (-wind.n * Math.sin(trackRad)) + (wind.e * Math.cos(trackRad));
+    const headwind = Math.max(0, -along / KTS_TO_MPS);
+    const tailwind = Math.max(0, along / KTS_TO_MPS);
+    const crosswind = Math.abs(cross / KTS_TO_MPS);
+    const windText = windSpeed <= 0 ? 'CALM' : (windArrowForDeg(windTo) + ' ' + windSpeed + 'KT');
+    const relText = windSpeed <= 0
+      ? 'HW 0 / X 0'
+      : ((headwind >= tailwind ? 'HW ' + Math.round(headwind) : 'TW ' + Math.round(tailwind)) +
+         ' / X ' + Math.round(crosswind));
+    if (hudWind) {
+      hudWind.textContent = windText;
+      hudWind.style.color = windSpeed <= 0 ? '#00FF41' : '#7fd0ff';
+      hudWind.title = 'FROM ' + String(windFrom).padStart(3, '0') + '°';
+    }
+    if (hudWindRel) {
+      hudWindRel.textContent = relText;
+      hudWindRel.style.color = crosswind > 15 ? '#ffaa00' : '#00FF41';
+      hudWindRel.title = 'TRACK ' + String(Math.round(windTrack)).padStart(3, '0') + '°';
+    }
   }
 
   // Throttle bar
