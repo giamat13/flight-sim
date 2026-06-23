@@ -1041,7 +1041,13 @@ function initCesium() {
       baseLayer: new Cesium.ImageryLayer(
         new Cesium.UrlTemplateImageryProvider({
           url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-          maximumLevel: 18,
+          // Esri's World_Imagery server only has high-zoom (16-18) tiles over cities and
+          // a handful of well-mapped areas. Anywhere else it returns a literal
+          // "Map data not yet available" tile instead of failing gracefully — that's
+          // what showed up whenever you flew away from a well-covered spot. Level 15
+          // has near-universal global coverage, so capping there trades a bit of
+          // close-up crispness over cities for imagery that's actually there everywhere.
+          maximumLevel: 15,
           credit: 'Imagery © Esri, Maxar, Earthstar Geographics'
         })
       ),
