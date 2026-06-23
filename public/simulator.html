@@ -145,7 +145,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 
 <div id="hud">
   <div class="hud-panel">
-    <div class="hud-item"><span class="hud-label">ALT</span><span class="hud-value" id="hud-alt">1000</span></div>
+    <div class="hud-item"><span class="hud-label">AGL</span><span class="hud-value" id="hud-alt">1000</span></div>
     <div class="hud-item"><span class="hud-label">SPD</span><span class="hud-value" id="hud-spd">120</span></div>
     <div class="hud-item"><span class="hud-label">HDG</span><span class="hud-value" id="hud-hdg">360</span></div>
     <div class="hud-item"><span class="hud-label">V/S</span><span class="hud-value" id="hud-vs">+0</span></div>
@@ -1282,6 +1282,7 @@ function update(dt) {
 
   // ---- Terrain / ground collision & landing ----
   const groundM = terrainHeightM();
+  state.terrainHeightFt = groundM / FT_TO_M; // store for AGL display
 
   if (state.onGround) {
     // ===== GROUND ROLL =====
@@ -1930,16 +1931,16 @@ function drawAltTape() {
   ctx.rect(x, y, tapeW, tapeH);
   ctx.clip();
 
-  const alt = state.altitude;
+  const agl = Math.max(0, state.altitude - (state.terrainHeightFt || 0));
   const pxPerFt = 0.4;
   const midY = y + tapeH / 2;
 
   ctx.font = '9px "JetBrains Mono", monospace';
   ctx.textAlign = 'right';
 
-  for (let ft = Math.floor(alt / 100) * 100 - 500; ft <= alt + 500; ft += 100) {
+  for (let ft = Math.floor(agl / 100) * 100 - 500; ft <= agl + 500; ft += 100) {
     if (ft < 0) continue;
-    const dy = (alt - ft) * pxPerFt;
+    const dy = (agl - ft) * pxPerFt;
     const ty = midY + dy;
 
     if (ty < y - 10 || ty > y + tapeH + 10) continue;
@@ -1964,13 +1965,13 @@ function drawAltTape() {
   ctx.fillStyle = '#00FF41';
   ctx.font = '12px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(Math.round(alt).toString(), x + tapeW / 2, midY + 4);
+  ctx.fillText(Math.round(agl).toString(), x + tapeW / 2, midY + 4);
 
   // Label
   ctx.fillStyle = 'rgba(0,255,65,0.3)';
   ctx.font = '8px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('ALT', x + tapeW / 2, y - 6);
+  ctx.fillText('AGL', x + tapeW / 2, y - 6);
 }
 
 function drawSpdTape() {
@@ -2059,7 +2060,8 @@ function render() {
   document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : 'CHASE';
 
   // Update HUD
-  hudAlt.textContent = Math.round(state.altitude);
+  const aglFt = Math.max(0, Math.round(state.altitude - (state.terrainHeightFt || 0)));
+  hudAlt.textContent = aglFt;
   hudSpd.textContent = Math.round(state.speed);
   const hdgDisplay = Math.round(state.heading) % 360;
   hudHdg.textContent = hdgDisplay === 0 ? '360' : hdgDisplay.toString().padStart(3, '0');
