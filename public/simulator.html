@@ -1086,13 +1086,14 @@ function update(dt) {
     state.pitch = normDeg(state.pitch + normDeg(targetPitch - state.pitch) * k);
   }
 
-  // Soft deep-stall guard: allow brief excursions past stall, but never let the
-  // nose run away from the flight path (which would lock the sim into a 90° AoA
-  // deep stall). This pulls gently — it never snaps the nose back.
-  const aMax = 24;
+  // Soft deep-stall guard: cap how far the nose can sit ABOVE the flight path
+  // (high positive AoA -> deep stall). The DOWN side is left wide open so that
+  // pointing the nose below the horizon genuinely develops a dive/descent.
+  const aMaxUp = 24;     // nose above flight path -> protected against deep stall
+  const aMaxDown = 55;   // nose below flight path -> free to dive steeply
   const aoaNow = normDeg(state.pitch - state.gamma + AC.incidence);
-  if (aoaNow > aMax) state.pitch = normDeg(state.pitch - (aoaNow - aMax) * Math.min(1, dt * 3));
-  else if (aoaNow < -aMax) state.pitch = normDeg(state.pitch - (aoaNow + aMax) * Math.min(1, dt * 3));
+  if (aoaNow > aMaxUp) state.pitch = normDeg(state.pitch - (aoaNow - aMaxUp) * Math.min(1, dt * 3));
+  else if (aoaNow < -aMaxDown) state.pitch = normDeg(state.pitch - (aoaNow + aMaxDown) * Math.min(1, dt * 3));
 
   const airbrake = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake));
 
@@ -1399,7 +1400,10 @@ function drawAirplane() {
   faces.push({ v: [cF, cB, cBT, cFT], c: [0.07, 0.14, 0.24] });
 
   // === Transform & Project ===
-  const pitchRad = state.pitch * Math.PI / 180;
+  // Negated so a POSITIVE state.pitch (nose-up / climb in the physics) renders the
+  // model nose-up on screen too — matching the AHI, the cockpit camera and the
+  // climb direction. Without this the model is visually inverted vs. everything else.
+  const pitchRad = -state.pitch * Math.PI / 180;
   const bankRad = state.bank * Math.PI / 180;
   // Yaw the model within the frame by how far the aircraft's heading differs from
   // where the chase camera is pointing. When you bank into a turn the nose swings
