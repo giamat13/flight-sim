@@ -718,13 +718,13 @@ function readGamepad() {
   gpPrev.reset = resetNow;
 
   return {
-    pitch:     dz(ax[1]),                // left stick back/down = nose up
-    roll:      dz(ax[0]),                // left stick right = bank right
+    pitch:     dz(ax[3]),                // right stick back/down = nose up
+    roll:      dz(ax[2]),                // right stick right = bank right
     thr:       val(7) - val(6),          // RT throttle up, LT throttle down
     airbrake:  pressed(0),               // A (cross)
     reset:     resetEdge,
-    lookYaw:   dz(ax[2]),                // right stick left/right = look left/right
-    lookPitch: dz(ax[3])                 // right stick up/down = look up/down
+    lookYaw:   dz(ax[0]),                // left stick left/right = look left/right
+    lookPitch: dz(ax[1])                 // left stick up/down = look up/down
   };
 }
 
