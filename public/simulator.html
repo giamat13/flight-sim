@@ -114,6 +114,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #mm-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.92}
 #mm-cv{position:absolute;inset:0;width:100%;height:100%}
 #mm-label{position:absolute;top:7px;left:0;right:0;text-align:center;font-size:8px;letter-spacing:2px;color:rgba(0,255,65,0.7);font-family:'JetBrains Mono',monospace;text-shadow:0 0 4px #000}
+/* ===== Landing panel ===== */
+#landing-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:30;display:none;flex-direction:column;align-items:center;gap:5px;background:rgba(0,18,4,0.92);border:1px solid rgba(0,255,65,0.45);border-radius:6px;padding:14px 22px 12px;font-family:'JetBrains Mono',monospace;color:#00FF41;text-align:left;pointer-events:none;backdrop-filter:blur(3px)}
+#landing-panel .lp-title{font-size:20px;letter-spacing:5px;text-shadow:0 0 14px rgba(0,255,65,0.5);text-align:center;width:100%}
+#landing-panel .lp-divider{width:100%;height:1px;background:rgba(0,255,65,0.22);margin:5px 0}
+#landing-panel .lp-row{font-size:11px;letter-spacing:1px;display:flex;gap:14px;justify-content:space-between;width:100%}
+#landing-panel .lp-key{opacity:0.45;text-align:right;min-width:38px;font-size:10px}
+#landing-panel .lp-ok{color:#00FF41}
+#landing-panel .lp-warn{color:#ffaa00}
+#landing-panel .lp-err{color:#ff4040}
+#landing-panel .lp-hint{font-size:9px;opacity:0.55;letter-spacing:2px;margin-top:5px;text-align:center;width:100%}
+#rotate-warn{position:fixed;top:32%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:44px;font-weight:700;color:#00FF41;text-shadow:0 0 30px rgba(0,255,65,0.7);font-family:'JetBrains Mono',monospace;letter-spacing:6px;pointer-events:none;display:none}
 </style>
 </head>
 <body>
@@ -159,6 +170,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <div id="overspeed-warn" class="flashing">OVERSPEED</div>
 <div id="fire-warn" class="flashing">ENGINE FIRE</div>
 <div id="terrain-warn"><div class="tw-main">TERRAIN</div><div class="tw-sub">PULL UP</div></div>
+
+<div id="landing-panel">
+  <div class="lp-title">LANDED ✓</div>
+  <div class="lp-divider"></div>
+  <div id="lp-rows"></div>
+  <div class="lp-hint" id="lp-hint">W=THR UP &nbsp;·&nbsp; B=BRAKE &nbsp;·&nbsp; ←→=STEER</div>
+</div>
+<div id="rotate-warn" class="flashing">ROTATE ↑</div>
 
 <div id="sys-panel">
   <div class="sys-row"><span class="sys-key">ENG</span><span class="sys-val sys-off" id="sys-eng">OFF</span></div>
@@ -329,6 +348,8 @@ let state = {
   flaps: 0,
   // Landing gear
   gearDown: true,
+  // On-ground state (landing / ground roll / takeoff)
+  onGround: false,
   // Fuel (kg)
   fuel: 800,
   fuelMax: 800
@@ -358,7 +379,10 @@ function resetState() {
   state.flaps = 0;
   state.gearDown = false; // gear up after reset (airborne)
   state.fuel = state.fuelMax;
+  state.onGround = false;
   terrainWarn.style.display = 'none';
+  const lp = document.getElementById('landing-panel'); if (lp) lp.style.display = 'none';
+  const rw = document.getElementById('rotate-warn');   if (rw) rw.style.display = 'none';
 }
 
 // ===================== Web Audio — engine sounds (no external files) =====================
@@ -491,8 +515,26 @@ function cycleFlaps() {
 }
 
 function toggleGear() {
-  if (state.altitude < 100) return; // can't retract on ground
+  if (state.onGround) return;       // can't raise gear while rolling on the ground
+  if (state.altitude < 100) return; // can't retract below 100 ft
   state.gearDown = !state.gearDown;
+}
+
+// Returns whether the current approach parameters allow a safe landing.
+function checkLandingConditions() {
+  const gearOk  = state.gearDown;                           // wheels must be deployed
+  const flapsOk = state.flaps >= 1;                         // at least 10° of flap
+  const bankOk  = Math.abs(state.bank) < 22;                // wings roughly level
+  const angleOk = state.gamma > -13 && state.gamma < 4;     // gentle descent angle
+  const speedOk = state.speed > 25 && state.speed < 185;    // sane approach speed
+  return {
+    ok:    gearOk && flapsOk && bankOk && angleOk && speedOk,
+    gear:  gearOk,
+    flaps: flapsOk,
+    bank:  bankOk,
+    angle: angleOk,
+    speed: speedOk
+  };
 }
 
 // ===================== Phone tilt control (DeviceOrientation) =====================
@@ -887,6 +929,7 @@ const AC = {
   fuelFlowMax: 0.55    // kg/sec burned at 100% thrust (full power)
 };
 const VNE_KTS = AC.Vne / 0.514444;
+const ROTATION_KTS = 130;   // ground-roll takeoff rotation speed (knots)
 
 // Current 1g stall speed (knots) at the present altitude — rises with altitude.
 function stallSpeedKts() {
@@ -1096,7 +1139,8 @@ function update(dt) {
   // that trims for 1g, so level flight is STABLE and the aircraft doesn't wander
   // on its own. With active elevator input you keep FULL authority to pitch the
   // nose anywhere — steep climbs, dives, inverted flight and loops.
-  if (Math.abs(pitchIn) < 0.05) {
+  if (!state.onGround && Math.abs(pitchIn) < 0.05) {
+    // In the air: gently trim pitch to the 1-g flight path (stable, hands-off flight).
     const Vtrim = Math.max(state.speed * KTS_TO_MPS, 1);
     const rhoTrim = AC.rho0 * Math.exp(-Math.max(0, state.altitude * FT_TO_M) / AC.scaleH);
     const qTrim = 0.5 * rhoTrim * Vtrim * Vtrim;
@@ -1106,6 +1150,9 @@ function update(dt) {
     const targetPitch = normDeg(state.gamma + aoaTrim - AC.incidence);
     const k = 1 - Math.exp(-1.8 * dt);                 // smooth relaxation
     state.pitch = normDeg(state.pitch + normDeg(targetPitch - state.pitch) * k);
+  } else if (state.onGround && Math.abs(pitchIn) < 0.05) {
+    // On the ground: relax pitch to a natural ground-roll attitude (~2.5°).
+    state.pitch = state.pitch + (2.5 - state.pitch) * Math.min(1, dt * 1.6);
   }
 
   // Soft deep-stall guard: cap how far the nose can sit ABOVE the flight path
@@ -1172,7 +1219,8 @@ function update(dt) {
 
   // ---- Aerodynamics (point-mass, SI units) ----
   const m = AC.m, g = AC.g, S = AC.S;
-  let V = Math.max(state.speed * KTS_TO_MPS, 1);
+  // On the ground speed can genuinely reach 0; only enforce the minimum of 1 m/s when airborne
+  let V = Math.max(state.speed * KTS_TO_MPS, state.onGround ? 0 : 1);
   const altM = state.altitude * FT_TO_M;
   const rho = AC.rho0 * Math.exp(-Math.max(0, altM) / AC.scaleH);
   const q = 0.5 * rho * V * V;                        // dynamic pressure
@@ -1228,17 +1276,62 @@ function update(dt) {
 
   const n = L / W;
 
-  const climbRate = V * Math.sin(gamma * DEG);
-  const groundSpeed = V * Math.cos(gamma * DEG);
+  let climbRate = V * Math.sin(gamma * DEG);
+  let groundSpeed = V * Math.cos(gamma * DEG);
   let newAltM = altM + climbRate * dt;
 
-  // ---- Terrain / ground collision ----
+  // ---- Terrain / ground collision & landing ----
   const groundM = terrainHeightM();
-  if (newAltM <= groundM + 3) {
+
+  if (state.onGround) {
+    // ===== GROUND ROLL =====
     newAltM = groundM + 3;
-    state.terrainHit = true;
-    state.terrainTimer = 2.2;
-    terrainWarn.style.display = 'block';
+    gamma = 0;
+
+    // Rolling friction (brakes give ~12× more deceleration)
+    const braking = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake));
+    const frictionDecel = braking ? 5.5 : 0.45;   // m/s²
+    V = Math.max(0, V - frictionDecel * dt);
+
+    // Nose-wheel steering: bank keys steer left/right while rolling
+    if (V > 1.5 && Math.abs(rollIn) > 0.05) {
+      state.heading = normDeg(state.heading + rollIn * 28 * dt * Math.min(1, V / 30));
+    }
+    // Squash any residual bank angle
+    state.bank *= Math.pow(0.04, dt);
+    if (Math.abs(state.bank) < 0.2) state.bank = 0;
+
+    // ---- TAKEOFF CHECK ----
+    // Need: rotation speed + engine running + gear down + pilot pulling up
+    if (V / KTS_TO_MPS > ROTATION_KTS &&
+        state.engineState === 'running' &&
+        state.gearDown &&
+        state.pitch > 6) {
+      state.onGround = false;
+      gamma = 3.0;
+      newAltM = groundM + 14;   // small jump so ground check doesn't re-trigger next frame
+    }
+
+    climbRate = 0;
+    groundSpeed = V;
+
+  } else if (newAltM <= groundM + 3) {
+    // ===== FIRST GROUND CONTACT =====
+    const lc = checkLandingConditions();
+    if (lc.ok) {
+      // ---- GOOD LANDING ----
+      state.onGround = true;
+      newAltM = groundM + 3;
+      gamma = 0;
+      climbRate = 0;
+      groundSpeed = V;
+    } else {
+      // ---- CRASH (bad approach) ----
+      newAltM = groundM + 3;
+      state.terrainHit = true;
+      state.terrainTimer = 2.2;
+      terrainWarn.style.display = 'block';
+    }
   }
 
   // ---- Commit state ----
@@ -1951,9 +2044,9 @@ function render() {
     fuelPctEl.textContent = Math.round(fuelPct) + '%';
   }
 
-  // Stall + overspeed + fire warnings
-  stallWarn.style.display = state.stall && !state.terrainHit ? 'block' : 'none';
-  if (overspeedWarn) overspeedWarn.style.display = state.overspeed && !state.terrainHit ? 'block' : 'none';
+  // Stall + overspeed + fire warnings (suppressed on the ground)
+  stallWarn.style.display = state.stall && !state.terrainHit && !state.onGround ? 'block' : 'none';
+  if (overspeedWarn) overspeedWarn.style.display = state.overspeed && !state.terrainHit && !state.onGround ? 'block' : 'none';
   const fireEl = document.getElementById('fire-warn');
   if (fireEl) fireEl.style.display = state.engineState === 'fire' ? 'block' : 'none';
 
@@ -1993,9 +2086,83 @@ function render() {
     }
   }
 
+  // Landing panel (shown while on the ground)
+  renderLandingPanel();
+
   // Minimap + drive the real-world camera
   updateMinimap();
   updateCamera();
+}
+
+// ===== Landing / ground-roll HUD panel =====
+function renderLandingPanel() {
+  const panel    = document.getElementById('landing-panel');
+  const rotateEl = document.getElementById('rotate-warn');
+  if (!panel) return;
+
+  if (!state.onGround) {
+    panel.style.display    = 'none';
+    if (rotateEl) rotateEl.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = 'flex';
+
+  const fuelPct = state.fuelMax > 0 ? Math.round(state.fuel / state.fuelMax * 100) : 0;
+  const spd     = Math.round(state.speed);
+  const engOk   = state.engineState === 'running';
+  const fuelOk  = fuelPct > 5;
+  const flapsOk = state.flaps >= 1;
+  const gearOk  = state.gearDown;
+  const spdOk   = spd >= ROTATION_KTS;
+  const allSys  = engOk && fuelOk && flapsOk && gearOk;
+
+  const rows = [
+    { key: 'ENG',
+      cls: engOk ? 'lp-ok' : 'lp-err',
+      val: engOk ? 'ON ✓' : (state.engineState === 'starting' ? 'STARTING…' : 'OFF — press E') },
+    { key: 'FUEL',
+      cls: fuelOk ? 'lp-ok' : 'lp-err',
+      val: fuelPct + '%' + (fuelOk ? '' : ' ✗') },
+    { key: 'FLAP',
+      cls: flapsOk ? 'lp-ok' : 'lp-warn',
+      val: FLAP_LABELS[state.flaps] + (flapsOk ? ' ✓' : ' — press F') },
+    { key: 'GEAR',
+      cls: gearOk ? 'lp-ok' : 'lp-err',
+      val: gearOk ? 'DN ✓' : 'UP — press G' },
+    { key: 'SPD',
+      cls: spdOk ? 'lp-ok' : 'lp-warn',
+      val: spd + 'kt' + (spdOk ? ' ✓' : ' / need ' + ROTATION_KTS) }
+  ];
+
+  const rowsEl = document.getElementById('lp-rows');
+  if (rowsEl) {
+    rowsEl.innerHTML = rows.map(function (r) {
+      return '<div class="lp-row">' +
+             '<span class="lp-key">' + r.key + '</span>' +
+             '<span class="' + r.cls + '">' + r.val + '</span>' +
+             '</div>';
+    }).join('');
+  }
+
+  const hintEl = document.getElementById('lp-hint');
+  if (hintEl) {
+    if (allSys && spdOk) {
+      hintEl.textContent = '↓ PULL BACK TO ROTATE';
+      hintEl.style.color = '#00FF41';
+    } else if (allSys) {
+      hintEl.textContent = 'W=THR UP  ·  B=BRAKE  ·  ←→=STEER';
+      hintEl.style.color = 'rgba(0,255,65,0.55)';
+    } else {
+      hintEl.textContent = 'CHECK SYSTEMS ABOVE';
+      hintEl.style.color = '#ffaa00';
+    }
+  }
+
+  // ROTATE! flash once all systems ready and at rotation speed
+  if (rotateEl) {
+    rotateEl.style.display = (allSys && spdOk) ? 'block' : 'none';
+  }
 }
 
 // ===== Minimap (north-up satellite tile + heading-rotated marker) =====
