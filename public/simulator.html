@@ -1045,10 +1045,10 @@ function update(dt) {
     lookPitchOff = Math.abs(lookPitchOff) < 0.5 ? 0 : lookPitchOff * decay;
   }
 
-  // Elevator: yoke convention — DOWN arrow / stick back = NOSE UP.
+  // MSFS keyboard convention — UP arrow / stick back = NOSE UP.
   let pitchIn = 0;
-  if (keys['ArrowDown']) pitchIn += 1;
-  if (keys['ArrowUp']) pitchIn -= 1;
+  if (keys['ArrowUp']) pitchIn += 1;
+  if (keys['ArrowDown']) pitchIn -= 1;
   let rollIn = 0;
   if (keys['ArrowRight']) rollIn += 1;
   if (keys['ArrowLeft']) rollIn -= 1;
