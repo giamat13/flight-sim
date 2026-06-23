@@ -1597,6 +1597,7 @@ function update(dt) {
 
   // ---- Autopilot ----
   const apOut = apControl(dt);
+  let apFlying = false;
   if (apOut) {
     // Disengage if pilot overrides pitch/roll/throttle significantly
     const pilotOverride = Math.abs(pitchIn) > 0.15 || Math.abs(thrIn) > 0.15 || Math.abs(rollIn) > 0.15;
@@ -1608,6 +1609,7 @@ function update(dt) {
       pitchIn = apOut.pitchCmd;
       rollIn  = apOut.rollCmd;
       thrIn   = apOut.thrCmd;
+      apFlying = true;
     }
   }
 
@@ -1623,8 +1625,11 @@ function update(dt) {
   // that trims for 1g, so level flight is STABLE and the aircraft doesn't wander
   // on its own. With active elevator input you keep FULL authority to pitch the
   // nose anywhere — steep climbs, dives, inverted flight and loops.
-  if (!state.onGround && Math.abs(pitchIn) < 0.05) {
-    // In the air: gently trim pitch to the 1-g flight path (stable, hands-off flight).
+  if (!state.onGround && !apFlying && Math.abs(pitchIn) < 0.05) {
+    // In the air, no autopilot: gently trim pitch to the 1-g flight path (stable, hands-off flight).
+    // Skipped while the autopilot is flying — the AP's own (often small) pitch command must be
+    // free to raise/lower the nose toward its altitude/speed/heading targets without this
+    // relaxation pulling it back to level flight in between.
     const Vtrim = Math.max(state.speed * KTS_TO_MPS, 1);
     const rhoTrim = AC.rho0 * Math.exp(-Math.max(0, state.altitude * FT_TO_M) / AC.scaleH);
     const qTrim = 0.5 * rhoTrim * Vtrim * Vtrim;
