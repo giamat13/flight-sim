@@ -2607,7 +2607,9 @@ function apNavControl(dt) {
 
   const db = navDistanceBearing();
   const activeAglFt = state.altitude - ap.nav.activeGroundFt;
-  if (db.dist > 600) ap.targetHdg = db.brg;     // steer at the target; freeze heading right over it
+  // During final landing don't steer back at the destination — lock the approach heading.
+  // If the plane overshoots, it should keep flying straight and land wherever the terrain is.
+  if (ap.nav.phase !== 'land' && db.dist > 600) ap.targetHdg = db.brg;
 
   // Hard gear protection, every airborne phase: if the wheels are down and the
   // speed is climbing toward the limit, retract them so an over-speed can never
