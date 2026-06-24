@@ -80,6 +80,41 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .ap-econ-btn.econ-on{background:rgba(255,224,102,0.22);border-color:#ffe066;box-shadow:0 0 8px rgba(255,224,102,0.2)}
 .ap-econ-btn:hover{background:rgba(255,224,102,0.25)}
 .ap-hint{font-size:8px;color:rgba(80,180,255,0.35);letter-spacing:1px;margin-top:2px}
+/* ===== Advanced autopilot: in-flight nav status banner ===== */
+#nav-hud{position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:21;pointer-events:none;display:none;color:#7fd0ff;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(0,160,255,0.08);border:1px solid rgba(80,180,255,0.4);border-radius:4px;padding:3px 12px;text-align:center;text-shadow:0 0 6px rgba(127,208,255,0.4);white-space:nowrap}
+#nav-hud b{color:#bfe6ff;font-weight:600}
+#nav-hud .nh-mode{color:#ffe066}
+#nav-hud .nh-fuel-lo{color:#ff8844}
+/* ===== Advanced autopilot: destination picker (slippy map) ===== */
+#nav-map{position:fixed;inset:0;z-index:58;display:none;background:#06080c;cursor:crosshair;font-family:'JetBrains Mono',monospace;color:#00FF41;-webkit-user-select:none;user-select:none}
+#nm-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#nm-cross{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;pointer-events:none;width:46px;height:46px}
+#nm-cross::before,#nm-cross::after{content:'';position:absolute;background:rgba(0,255,65,0.9);box-shadow:0 0 6px rgba(0,255,65,0.7)}
+#nm-cross::before{left:50%;top:0;width:2px;height:100%;transform:translateX(-50%)}
+#nm-cross::after{top:50%;left:0;height:2px;width:100%;transform:translateY(-50%)}
+#nm-pin{position:absolute;top:50%;left:50%;transform:translate(-50%,-100%);z-index:2;pointer-events:none;font-size:26px;line-height:1;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8))}
+#nm-top{position:absolute;top:14px;left:0;right:0;z-index:3;display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none}
+#nm-title{font-size:14px;letter-spacing:5px;text-shadow:0 0 12px rgba(0,255,65,0.5)}
+#nm-info{font-size:10px;letter-spacing:1px;color:rgba(0,255,65,0.8);background:rgba(6,12,8,0.7);border:1px solid rgba(0,255,65,0.25);border-radius:4px;padding:4px 12px;text-align:center;max-width:92%}
+#nm-info .nm-water{color:#ff8844}
+#nm-info .nm-plan{color:#ffe066}
+#nm-search{position:absolute;top:74px;left:50%;transform:translateX(-50%);z-index:4;display:flex;gap:6px;width:min(440px,90%)}
+#nm-input{flex:1;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:inherit;font-size:12px;padding:9px 11px;border-radius:5px;outline:none}
+#nm-input::placeholder{color:rgba(0,255,65,0.35)}
+#nm-input:focus{border-color:#00FF41;box-shadow:0 0 10px rgba(0,255,65,0.2)}
+#nm-find{cursor:pointer;background:rgba(0,255,65,0.12);border:1px solid rgba(0,255,65,0.4);color:#00FF41;font-family:inherit;font-size:12px;font-weight:600;padding:9px 14px;border-radius:5px}
+#nm-find:hover{background:rgba(0,255,65,0.22)}
+#nm-zoom{position:absolute;right:18px;top:50%;transform:translateY(-50%);z-index:4;display:flex;flex-direction:column;gap:8px}
+.nm-zbtn{width:46px;height:46px;font-size:24px;cursor:pointer;color:#00FF41;background:rgba(6,12,8,0.8);border:1px solid rgba(0,255,65,0.4);border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:inherit}
+.nm-zbtn:hover{background:rgba(0,255,65,0.2);border-color:#00FF41}
+#nm-actions{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);z-index:4;display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.nm-act{cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;letter-spacing:1px;padding:12px 20px;border-radius:6px;background:rgba(6,12,8,0.85);border:1px solid rgba(0,255,65,0.35);color:#00FF41}
+.nm-act:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
+.nm-act.nm-go{background:rgba(0,255,65,0.18);border-color:#00FF41;box-shadow:0 0 14px rgba(0,255,65,0.25)}
+.nm-act.nm-resume{background:rgba(80,180,255,0.14);border-color:rgba(80,180,255,0.55);color:#7fd0ff}
+.nm-act.nm-resume:hover{background:rgba(80,180,255,0.28)}
+.nm-act.nm-focus{outline:2px solid #ffe066;outline-offset:2px}
+#nm-hint{position:absolute;bottom:2px;left:0;right:0;z-index:4;text-align:center;font-size:8px;letter-spacing:1px;color:rgba(0,255,65,0.4);pointer-events:none;padding:0 8px}
 @keyframes flash{0%,100%{opacity:1}50%{opacity:0}}
 .flashing{animation:flash 0.4s infinite}
 @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
@@ -212,6 +247,33 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <div id="cam-label">COCKPIT</div>
 <div id="gp-indicator">🎮 CONTROLLER</div>
 <div id="ap-indicator">✈ AUTOPILOT</div>
+<div id="nav-hud"></div>
+
+<!-- Advanced autopilot: full-screen destination picker -->
+<div id="nav-map">
+  <canvas id="nm-canvas"></canvas>
+  <div id="nm-pin">📍</div>
+  <div id="nm-cross"></div>
+  <div id="nm-top">
+    <div id="nm-title">SELECT DESTINATION</div>
+    <div id="nm-info">—</div>
+  </div>
+  <div id="nm-search">
+    <input id="nm-input" type="text" autocomplete="off" spellcheck="false"
+           placeholder="City · lat,lon · or Google Maps link…" />
+    <button id="nm-find">FIND</button>
+  </div>
+  <div id="nm-zoom">
+    <button class="nm-zbtn" id="nm-zin">+</button>
+    <button class="nm-zbtn" id="nm-zout">−</button>
+  </div>
+  <div id="nm-actions">
+    <button class="nm-act nm-resume" id="nm-resume">▶ RESUME</button>
+    <button class="nm-act nm-go" id="nm-fly">✈ FLY HERE</button>
+    <button class="nm-act" id="nm-cancel">✕ CANCEL</button>
+  </div>
+  <div id="nm-hint">DRAG / ARROWS = PAN &nbsp;·&nbsp; WHEEL / ± = ZOOM &nbsp;·&nbsp; CLICK = SET &nbsp;·&nbsp; 🎮 L-STICK PAN · RT/LT ZOOM · A FLY · B CANCEL</div>
+</div>
 
 <!-- Autopilot control panel -->
 <div id="ap-panel">
@@ -275,6 +337,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="tc-btn" id="tc-flap">FLAP</button>
     <button class="tc-btn" id="tc-gear">GEAR</button>
     <button class="tc-btn" id="tc-cam">CAM</button>
+    <button class="tc-btn" id="tc-ap" title="Tap = autopilot · Double-tap = nav-to-point">AP</button>
   </div>
   <div id="tc-right">
     <button class="tc-btn tc-big" id="tc-thrup">THR ▲</button>
@@ -542,13 +605,25 @@ window.addEventListener('keydown', e => {
   // Don't hijack typing in text inputs (custom location field, etc.)
   const tag = e.target && e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+  // Advanced AP destination picker: arrows pan, +/- zoom, Enter fly, Esc cancel.
+  if (typeof navPickerOpen !== 'undefined' && navPickerOpen) {
+    if (e.key === 'ArrowUp')    { nmPanPixels(0, -100); e.preventDefault(); return; }
+    if (e.key === 'ArrowDown')  { nmPanPixels(0,  100); e.preventDefault(); return; }
+    if (e.key === 'ArrowLeft')  { nmPanPixels(-100, 0); e.preventDefault(); return; }
+    if (e.key === 'ArrowRight') { nmPanPixels( 100, 0); e.preventDefault(); return; }
+    if (e.key === '+' || e.key === '=') { nmZoom(1);  e.preventDefault(); return; }
+    if (e.key === '-' || e.key === '_') { nmZoom(-1); e.preventDefault(); return; }
+    if (e.key === 'Enter')  { nmFly();          e.preventDefault(); return; }
+    if (e.key === 'Escape') { closeNavPicker(); e.preventDefault(); return; }
+    return;
+  }
   const code = e.code;
   const wasDown = keys[code];
   keys[code] = true;
   if (!wasDown) {
     // edge-triggered actions
     if (code === 'KeyC') cameraMode = (cameraMode + 1) % 2;
-    if (code === 'KeyA') toggleAutopilot();
+    if (code === 'KeyA') onApButtonPress();
     if (code === 'KeyE') handleEngineKey();
     // AP knob shortcuts (only when AP is on)
     if (ap.on) {
@@ -728,6 +803,7 @@ function initTouchControls() {
   wireTap(document.getElementById('tc-flap'), cycleFlaps);
   wireTap(document.getElementById('tc-gear'), toggleGear);
   wireTap(document.getElementById('tc-cam'), function () { cameraMode = (cameraMode + 1) % 2; });
+  wireTap(document.getElementById('tc-ap'), onApButtonPress);
 }
 // Re-calibrate tilt neutral if the device rotates
 window.addEventListener('orientationchange', function () { if (tiltEnabled) setTimeout(calibrateTilt, 400); });
@@ -905,9 +981,9 @@ let gpConnected = false;
 
 // Two versions of the on-screen control hint — keyboard vs. gamepad.
 const HINT_KEYBOARD =
-  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="color:rgba(127,208,255,0.6)">[/] HDG · ;/\' ALT · ,/. SPD</span><br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
+  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="color:#ffe066">A·A NAV-TO-POINT</span><br><span style="color:rgba(127,208,255,0.6)">[/] HDG · ;/\' ALT · ,/. SPD</span><br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
 const HINT_GAMEPAD =
-  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>A AIRBRAKE · Y CAMERA · ☰ PAUSE<br><span style="color:rgba(127,208,255,0.6)">AP: D-PAD HDG/ALT · R3+D-PAD SPD</span>';
+  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br><span style="color:#ffe066">RB·RB NAV-TO-POINT</span><br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>A AIRBRAKE · Y CAMERA · ☰ PAUSE<br><span style="color:rgba(127,208,255,0.6)">AP: D-PAD HDG/ALT · R3+D-PAD SPD</span>';
 
 function updateControlsHint() {
   const el = document.getElementById('controls-hint');
@@ -947,8 +1023,8 @@ function readGamepad() {
   const gearNow = pressed(4);                      // LB -> gear
   if (gearNow && !gpPrev.gear) toggleGear();
   gpPrev.gear = gearNow;
-  const apNow = pressed(5);                         // RB -> autopilot
-  if (apNow && !gpPrev.ap) toggleAutopilot();
+  const apNow = pressed(5);                         // RB -> autopilot (double-tap = nav-to-point)
+  if (apNow && !gpPrev.ap) onApButtonPress();
   gpPrev.ap = apNow;
   const resetNow = pressed(8);                     // Back -> restart flight
   const resetEdge = resetNow && !gpPrev.reset;
@@ -1183,21 +1259,6 @@ function initCesium() {
       'https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer'
     ).then(function(t){ viewer.terrainProvider = t; }).catch(function(){ /* keep ellipsoid */ });
 
-    // 3D buildings (Cesium OSM Buildings global tileset) -- the MSFS-style
-    // extruded-building look you get from real geometry instead of a flat
-    // satellite texture. This streams from Cesium ion (createOsmBuildings
-    // was removed in newer CesiumJS, so we use the async tileset loader).
-    // It works out of the box with Cesium's bundled evaluation ion token,
-    // but that token is rate-limited -- for real use, sign up free at
-    // https://ion.cesium.com/tokens and set Cesium.Ion.defaultAccessToken
-    // (see the commented line near the top of this script).
-    Cesium.createOsmBuildingsAsync().then(function (osmBuildings) {
-      // Same memory/perf reasoning as the globe settings above: cap detail
-      // and tile memory so buildings don't blow the GPU budget.
-      osmBuildings.maximumScreenSpaceError = 32;
-      osmBuildings.maximumMemoryUsage = 256;
-      viewer.scene.primitives.add(osmBuildings);
-    }).catch(function (e) { console.warn('OSM Buildings failed to load', e); });
   } catch (e) {
     console.warn('Cesium init failed', e);
     if (loadingEl) loadingEl.querySelector('.l-sub').textContent = 'EARTH FAILED TO LOAD';
@@ -1765,6 +1826,7 @@ const ap = {
 
 function toggleAutopilot() {
   if (!chosen || !simReady) return;
+  const wasNav = (ap.mode === 'nav');
   ap.on = !ap.on;
   if (ap.on) {
     ap.targetAlt = state.altitude;
@@ -1777,6 +1839,8 @@ function toggleAutopilot() {
     ap.toPhase = 0;
     ap.landPhase = 0;
     ap.landPhaseTimer = 0;
+  } else if (wasNav) {
+    navOnDisengage();   // turning the advanced nav AP off: tidy up + remember the route
   }
   updateApPanel();
 }
@@ -1816,6 +1880,13 @@ function updateApPanel() {
   if (!ap.on) {
     if (indicator) indicator.style.display = 'none';
     if (panel)     panel.style.display = 'none';
+    const nh = document.getElementById('nav-hud'); if (nh && ap.mode !== 'nav') nh.style.display = 'none';
+    return;
+  }
+  // Advanced nav AP owns its own indicator + status banner (no manual knob panel).
+  if (ap.mode === 'nav') {
+    if (panel) panel.style.display = 'none';
+    navUpdateHud();
     return;
   }
   const modeLabel = ap.mode === 'land' ? '🛬 LANDING' : ap.mode === 'takeoff' ? '🛫 TAKEOFF' : '✈ CRUISE';
@@ -1989,7 +2060,7 @@ function apTakeoffControl(dt) {
   if (ap.toPhase === 3) {
     thrCmd = 1;
     // Raise gear
-    if (state.gearDown && agl > 200) state.gearDown = false;
+    if (state.gearDown && agl > 100) state.gearDown = false;
     // Retract flaps progressively as we accelerate
     if (state.speed > 170 && state.flaps > 1) state.flaps = 1;
     if (state.speed > 190 && state.flaps > 0) state.flaps = 0;
@@ -2136,9 +2207,471 @@ function playTerrainBeep(count) {
 // Master AP dispatcher
 function apControl(dt) {
   if (!ap.on) return null;
+  if (ap.mode === 'nav')     return apNavControl(dt);
   if (ap.mode === 'land')    return apLandingControl(dt);
   if (ap.mode === 'takeoff') return apTakeoffControl(dt);
   return apCruiseControl(dt);
+}
+
+// ===================== Advanced autopilot (nav-to-point) =====================
+// Engaged by DOUBLE-pressing the autopilot button (A+A / RB+RB / double-tap on
+// phone). You pick a spot on the map and it flies the whole trip itself:
+//   takeoff (if parked) -> climb -> terrain-following cruise -> descent -> land.
+// It plans a speed that arrives with >=10% fuel where possible (fastest if fuel
+// is plentiful, most-efficient if tight), and makes auto refuel stops when the
+// destination is beyond range even flown economically.
+const NAV_CEIL_FT   = 37000;   // planning altitude ceiling
+const NAV_CLEAR_FT  = 1700;    // vertical clearance held above terrain en route
+const NAV_GLIDE_DEG = 3.0;     // descent/approach glide angle
+const NAV_RESERVE   = 0.10;    // fuel fraction we aim to still have on arrival
+// The gear tears off above 250 kt (GEAR_SAFE_KTS in update). We keep a big margin:
+// only deploy below 200, airbrake hard if it's out above 210, and force it back up
+// before 235 — so the speed never gets within ~15 kt of the failure threshold.
+const NAV_GEAR_DOWN_KTS  = 200;   // deploy the gear only below this
+const NAV_GEAR_BRAKE_KTS = 210;   // gear out and faster than this -> airbrake to bleed speed
+const NAV_GEAR_PANIC_KTS = 235;   // gear out and faster than this -> retract to protect it
+const NAV_FLAPS_KTS      = 200;
+let navLastDest = null;        // {lat,lon,name} of the last route, for RESUME
+
+// --- One AP-button press: single = plain autopilot, double = open the picker ---
+let apPressLast = 0, apPressTimer = null;
+function onApButtonPress() {
+  if (!chosen || !simReady) return;
+  const now = performance.now();
+  if (now - apPressLast < 350) {        // second press within the window -> double
+    apPressLast = 0;
+    if (apPressTimer) { clearTimeout(apPressTimer); apPressTimer = null; }
+    openNavPicker();
+  } else {                               // first press -> wait for a possible second one
+    apPressLast = now;
+    if (apPressTimer) clearTimeout(apPressTimer);
+    // Delay (360ms) must exceed the 350ms double-press window so a double never
+    // also fires a single toggle.
+    apPressTimer = setTimeout(function () { apPressTimer = null; toggleAutopilot(); }, 360);
+  }
+}
+
+// Straight-line distance (m) + initial bearing (deg) from the aircraft to a point.
+function navBearingTo(lat, lon) {
+  const dN = (lat - state.lat) * M_PER_DEG_LAT;
+  const dE = (lon - state.lon) * (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+  return { dist: Math.hypot(dN, dE), brg: wrap360(Math.atan2(dE, dN) / DEG) };
+}
+// Distance/bearing to the CURRENT leg target (destination, or a refuel diversion).
+function navDistanceBearing() { return navBearingTo(ap.nav.activeLat, ap.nav.activeLon); }
+// Distance (m) to the FINAL destination (used for the plan + ETA readout).
+function distToDestM() { return navBearingTo(ap.nav.destLat, ap.nav.destLon).dist; }
+
+// Highest terrain (ft MSL) on the straight line toward a point, out to lookM metres.
+function terrainTowardMaxFt(tLat, tLon, lookM) {
+  const dN = (tLat - state.lat) * M_PER_DEG_LAT;
+  const dE = (tLon - state.lon) * (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+  const tot = Math.hypot(dN, dE) || 1;
+  const f = Math.min(1, lookM / tot);
+  let maxM = -Infinity;
+  const steps = 8;
+  for (let i = 1; i <= steps; i++) {
+    const fr = f * (i / steps);
+    const lat = state.lat + (dN * fr) / M_PER_DEG_LAT;
+    const lon = state.lon + (dE * fr) / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+    const h = terrainHeightAtM(lat, lon);
+    if (h > maxM) maxM = h;
+  }
+  return (maxM === -Infinity ? 0 : maxM) / FT_TO_M;
+}
+
+// Steady-cruise fuel cost at a given true airspeed + altitude. Returns fuel burned
+// per metre travelled (kg/m), the equilibrium throttle fraction, and whether the
+// aircraft can actually hold that speed up there (thrust >= drag).
+function cruiseFuelPerMeter(Vkts, altFt) {
+  const V = Math.max(Vkts * KTS_TO_MPS, 1);
+  const altM = Math.max(0, altFt) * FT_TO_M;
+  const rho = AC.rho0 * Math.exp(-altM / AC.scaleH);
+  const q = 0.5 * rho * V * V;
+  const CL = (AC.m * AC.g) / Math.max(q * AC.S, 1e-3);
+  const Cd = AC.Cd0 + AC.k * CL * CL;
+  const D = q * AC.S * Cd;
+  const Tavail = AC.Tmax * (rho / AC.rho0);
+  const thr = Math.max(0, Math.min(1, D / Tavail));
+  const flow = AC.fuelFlowIdle + (AC.fuelFlowMax - AC.fuelFlowIdle) * thr; // kg/s
+  return { perM: flow / V, thr: thr, feasible: D <= Tavail * 0.95 };
+}
+
+// Work out the trip: fastest speed that still lands with >=10% fuel; if that's
+// impossible even flown for best economy, flag a refuel stop.
+function planNavRoute(distM, altFt) {
+  const reserve = NAV_RESERVE * state.fuelMax;
+  const avail = Math.max(0, state.fuel - reserve);
+  const Vlo = Math.round(stallSpeedKts() + 60);
+  const Vhi = Math.min(VNE_KTS - 30, 430);
+  const OVERHEAD = 1.18;                 // climb/descent/maneuvering vs. ideal cruise
+  const CLIMB_KG = state.onGround ? 14 : 4; // extra for an initial climb from the ground
+  const tripFuel = function (V) { return distM * cruiseFuelPerMeter(V, altFt).perM * OVERHEAD + CLIMB_KG; };
+
+  // Best-economy (minimum fuel-per-metre) speed, used as the floor when fuel is tight.
+  let econV = Vlo, econPerM = Infinity;
+  for (let v = Vlo; v <= Vhi; v += 5) {
+    const c = cruiseFuelPerMeter(v, altFt);
+    if (c.feasible && c.perM < econPerM) { econPerM = c.perM; econV = v; }
+  }
+  // Fastest speed whose trip fuel still fits inside the available fuel.
+  let fastV = null;
+  for (let v = Vhi; v >= Vlo; v -= 5) {
+    if (cruiseFuelPerMeter(v, altFt).feasible && tripFuel(v) <= avail) { fastV = v; break; }
+  }
+
+  let mode, cruiseSpd;
+  if (fastV === null)      { mode = 'refuel'; cruiseSpd = econV; }   // can't make it -> refuel en route
+  else if (fastV >= Vhi)   { mode = 'fast';   cruiseSpd = Vhi; }     // fuel to spare -> just go fast
+  else                     { mode = 'optimal';cruiseSpd = fastV; }   // fastest that still keeps reserve
+
+  const fuelUse = tripFuel(cruiseSpd);
+  return {
+    mode: mode,
+    cruiseSpd: cruiseSpd,
+    etaSec: distM / Math.max(cruiseSpd * KTS_TO_MPS, 1),
+    arriveFrac: (state.fuel - fuelUse) / Math.max(state.fuelMax, 1)
+  };
+}
+
+function clampNavSpd(v) { return Math.max(stallSpeedKts() + 15, Math.min(VNE_KTS - 20, v)); }
+
+// Belt-and-braces gear safety on any leg where the wheels are out: airbrake to
+// hold the speed well clear of the limit, and as a last resort retract the gear
+// before it can fail. Called in addition to the hard guard at the top of the
+// controller, and applied to whatever control object the inner loop returned.
+function navProtectGear(out, aglFt) {
+  if (!state.onGround && state.gearDown && !state.gearBroken) {
+    if (out && state.speed > NAV_GEAR_BRAKE_KTS) out.brakeCmd = true;
+    if (state.speed > NAV_GEAR_PANIC_KTS) state.gearDown = false; // safe at any height; flare is slow so this won't fire there
+  }
+  return out;
+}
+
+// Descent/approach speed recovery. On this airframe, when it gets slow the
+// throttle-for-speed loop just balloons into a climb, which bleeds even more
+// speed — a slow/fast porpoise. So if we're below the approach reference speed,
+// lower the NOSE (trade height for speed / let it glide down) on top of whatever
+// the inner loop commanded. Backs off near the ground so it never noses into the
+// flare. refSpd = the speed we're trying to hold on this leg.
+function navSpeedTradeAltitude(out, aglFt, refSpd) {
+  if (!out || aglFt < 130) return out;
+  const deficit = refSpd - state.speed;
+  if (deficit > 6) {
+    const bias = -Math.min(0.45, (deficit - 6) * 0.014);   // nose-down, capped
+    out.pitchCmd = Math.max(-0.8, Math.min(0.7, (out.pitchCmd || 0) + bias));
+  }
+  return out;
+}
+
+// Best-effort terrain elevation for a point: precise async sample when available,
+// otherwise whatever the loaded globe can give us right now.
+function sampleGroundFt(lat, lon, cb) {
+  try {
+    if (viewer && viewer.terrainProvider && Cesium.sampleTerrainMostDetailed) {
+      const carto = Cesium.Cartographic.fromDegrees(lon, lat);
+      Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [carto])
+        .then(function (r) { cb((r && r[0] && isFinite(r[0].height)) ? r[0].height / FT_TO_M : terrainHeightAtM(lat, lon) / FT_TO_M); })
+        .catch(function () { cb(terrainHeightAtM(lat, lon) / FT_TO_M); });
+    } else { cb(terrainHeightAtM(lat, lon) / FT_TO_M); }
+  } catch (e) { cb(0); }
+}
+
+function navRecomputePlan() {
+  if (!ap.nav) return;
+  const planAlt = Math.min(Math.max(ap.nav.smoothAlt, 6000), 28000);
+  ap.nav.plan = planNavRoute(distToDestM(), planAlt);
+  ap.nav.refuelNeeded = (ap.nav.plan.mode === 'refuel');
+}
+
+// Engage the advanced autopilot toward dest = {lat, lon, name}.
+function navEngage(dest) {
+  if (!chosen || !simReady) return;
+  ap.on = true;
+  ap.mode = 'nav';
+  ap.econMode = false;
+  ap.altI = 0; ap.spdI = 0; ap.hdgI = 0; ap.econTimer = 0;
+  ap.econThr = state.throttle;
+  ap.toPhase = 0; ap.landPhase = 0; ap.landPhaseTimer = 0;
+  ap.nav = {
+    destLat: dest.lat, destLon: dest.lon, destName: dest.name || '',
+    destGroundFt: terrainHeightAtM(dest.lat, dest.lon) / FT_TO_M,
+    activeLat: dest.lat, activeLon: dest.lon, activeGroundFt: 0,
+    leg: 'dest',
+    phase: state.onGround ? 'takeoff' : 'cruise',
+    smoothAlt: Math.max(state.altitude, 1000),
+    plan: null, planTimer: 0, refuelNeeded: false, doneTimer: 0
+  };
+  ap.nav.activeGroundFt = ap.nav.destGroundFt;
+  navLastDest = { lat: dest.lat, lon: dest.lon, name: dest.name || '' };
+  // Refine the destination (and current leg) ground elevation precisely.
+  sampleGroundFt(dest.lat, dest.lon, function (ft) {
+    if (!ap.nav) return;
+    ap.nav.destGroundFt = ft;
+    if (ap.nav.leg === 'dest') ap.nav.activeGroundFt = ft;
+  });
+  // Make sure we actually have power to fly.
+  if (!state.onGround && state.engineState === 'off' && state.fuel > 0) handleEngineKey();
+  // If we're handed a fast aircraft with the gear hanging out, tuck it away now so
+  // it's never exposed to an over-speed even for a frame.
+  if (!state.onGround && state.gearDown && !state.gearBroken && state.speed > NAV_GEAR_DOWN_KTS) state.gearDown = false;
+  navRecomputePlan();
+  updateApPanel();
+  navUpdateHud();
+}
+
+// Disengaged by the pilot (manual override / single-press off): remember the
+// destination so RESUME can pick it back up, and tidy the nav UI.
+function navOnDisengage() {
+  if (ap.nav && ap.nav.destLat != null) {
+    navLastDest = { lat: ap.nav.destLat, lon: ap.nav.destLon, name: ap.nav.destName };
+  }
+  ap.mode = 'cruise';
+  ap.nav = null;
+  const nh = document.getElementById('nav-hud'); if (nh) nh.style.display = 'none';
+}
+
+// Reached the destination: shut the autopilot down and flash an "arrived" note.
+function navArrive() {
+  navLastDest = null;
+  const nh = document.getElementById('nav-hud');
+  if (nh) {
+    nh.innerHTML = '✓ <b>ARRIVED</b> · ' + (ap.nav && ap.nav.destName ? ap.nav.destName : 'DESTINATION');
+    nh.style.display = 'block';
+    setTimeout(function () { if (ap.mode !== 'nav') nh.style.display = 'none'; }, 5000);
+  }
+  ap.on = false;
+  ap.mode = 'cruise';
+  ap.nav = null;
+  const ind = document.getElementById('ap-indicator'); if (ind) ind.style.display = 'none';
+}
+
+// On the ground & stopped at a leg target: refuel (if this was a diversion) or
+// finish the trip (if this was the destination).
+function navGroundArrive() {
+  if (ap.nav.leg === 'divert') { ap.nav.phase = 'refuel'; }
+  else { navArrive(); }
+}
+
+// Out of range: pick a dry spot ahead, descend and land there to refuel.
+function startDivert() {
+  const brg = navBearingTo(ap.nav.destLat, ap.nav.destLon).brg;
+  const hereGroundFt = terrainHeightAtM(state.lat, state.lon) / FT_TO_M;
+  const altDropFt = Math.max(800, state.altitude - hereGroundFt);
+  const baseM = Math.max(7000, altDropFt * FT_TO_M / Math.tan(NAV_GLIDE_DEG * DEG) + 3500);
+  let best = null;
+  for (let ring = 0; ring < 6 && !best; ring++) {
+    const d = baseM * (1 - ring * 0.12);
+    const offs = [0, 12, -12, 25, -25];
+    for (let k = 0; k < offs.length; k++) {
+      const b = (brg + offs[k]) * DEG;
+      const lat = state.lat + (Math.cos(b) * d) / M_PER_DEG_LAT;
+      const lon = state.lon + (Math.sin(b) * d) / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+      const h = terrainHeightAtM(lat, lon);
+      if (h > 1) { best = { lat: lat, lon: lon, ft: h / FT_TO_M }; break; } // dry land
+    }
+  }
+  if (!best) {
+    const b = brg * DEG;
+    const lat = state.lat + (Math.cos(b) * baseM) / M_PER_DEG_LAT;
+    const lon = state.lon + (Math.sin(b) * baseM) / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+    best = { lat: lat, lon: lon, ft: Math.max(0, terrainHeightAtM(lat, lon) / FT_TO_M) };
+  }
+  ap.nav.leg = 'divert';
+  ap.nav.activeLat = best.lat; ap.nav.activeLon = best.lon; ap.nav.activeGroundFt = best.ft;
+  ap.nav.phase = 'descent';
+}
+
+// Terrain-following cruise altitude toward the active target (climbs over rising
+// ground, settles back down once it's clear — within the planning ceiling).
+function navSetCruiseAlt(dt, db) {
+  const V = Math.max(state.speed * KTS_TO_MPS, 30);
+  const lookM = Math.min(db.dist, Math.max(5000, V * 50));     // ~50 s ahead, not past the target
+  const terrFt = terrainTowardMaxFt(ap.nav.activeLat, ap.nav.activeLon, lookM);
+  let cAlt = Math.max(terrFt + NAV_CLEAR_FT, ap.nav.activeGroundFt + NAV_CLEAR_FT);
+  cAlt = Math.max(1200, Math.min(NAV_CEIL_FT, cAlt));
+  ap.nav.smoothAlt += (cAlt - ap.nav.smoothAlt) * Math.min(1, dt * 0.6);
+  ap.targetAlt = ap.nav.smoothAlt;
+}
+
+// Takeoff leg: reuse the standard takeoff sequence, but hand back to nav cruise
+// (not plain cruise) when it completes.
+function apNavTakeoff(dt) {
+  const db = navBearingTo(ap.nav.activeLat, ap.nav.activeLon);
+  ap.targetHdg = db.brg;
+  // Fixed initial climb altitude (not relative to current alt, or it'd never level off).
+  ap.targetAlt = Math.max(ap.nav.activeGroundFt, terrainHeightAtM(state.lat, state.lon) / FT_TO_M) + 4000;
+  const out = apTakeoffControl(dt);
+  // Retract gear as soon as we're safely airborne (100 ft AGL), independent of phase.
+  if (!state.onGround && !state.gearBroken) {
+    const aglFt = Math.max(0, state.altitude - (state.terrainHeightFt || 0));
+    if (state.gearDown && aglFt > 100) state.gearDown = false;
+  }
+  if (out === null) {                 // climb-out done -> nav cruise takes over
+    ap.mode = 'nav';
+    ap.nav.phase = 'cruise';
+    ap.nav.planTimer = 0;
+    ap.nav.smoothAlt = state.altitude;
+    navRecomputePlan();
+    return apNavControl(dt);
+  }
+  return out;
+}
+
+function apNavControl(dt) {
+  if (!ap.nav) { ap.mode = 'cruise'; return apCruiseControl(dt); }
+  ap.nav.planTimer -= dt;
+
+  // ---- Takeoff leg (only when parked) ----
+  if (ap.nav.phase === 'takeoff') {
+    if (state.onGround) { const o = apNavTakeoff(dt); navUpdateHud(); return o; }
+    ap.nav.phase = 'cruise';
+  }
+
+  const db = navDistanceBearing();
+  const activeAglFt = state.altitude - ap.nav.activeGroundFt;
+  if (db.dist > 600) ap.targetHdg = db.brg;     // steer at the target; freeze heading right over it
+
+  // Hard gear protection, every airborne phase: if the wheels are down and the
+  // speed is climbing toward the limit, retract them so an over-speed can never
+  // tear them off. Raising the gear is safe at ANY height/speed, so this is gated
+  // purely on speed (no AGL term — activeAglFt is height above the DESTINATION,
+  // which is unreliable during the climb-out). The flare is naturally safe: there
+  // the speed is ~120 kt, far below the panic threshold, so this never fires then.
+  // The cruise/descent logic re-deploys once it's slow enough to be safe.
+  if (!state.onGround && state.gearDown && !state.gearBroken &&
+      state.speed > NAV_GEAR_PANIC_KTS) {
+    state.gearDown = false;
+  }
+
+  // ---- Cruise leg: plan upkeep, terrain following, descent/refuel triggers ----
+  if (ap.nav.phase === 'cruise') {
+    if (ap.nav.planTimer <= 0) { navRecomputePlan(); ap.nav.planTimer = 4; }
+    if (ap.nav.refuelNeeded && state.fuel < 0.16 * state.fuelMax) {
+      startDivert();
+    } else {
+      const descHorizM = Math.max(0, activeAglFt) * FT_TO_M / Math.tan(NAV_GLIDE_DEG * DEG);
+      if (db.dist <= descHorizM + 5000) ap.nav.phase = 'descent';
+    }
+  }
+
+  if (ap.nav.phase === 'cruise') {
+    // Clean configuration for cruise: gear UP (so over-speed can never snap it off)
+    // and flaps retracted once we're flying fast. Raising the gear is safe at any
+    // height/speed, so do it the moment we're airborne — never gate this on AGL,
+    // or a high climb-out can accelerate past the gear limit with the wheels still
+    // down (which is exactly how they got torn off on the climb-out).
+    if (!state.onGround && state.gearDown && !state.gearBroken) state.gearDown = false;
+    if (state.flaps > 0 && state.speed > NAV_FLAPS_KTS) state.flaps = 0;
+    navSetCruiseAlt(dt, db);
+    ap.targetSpd = clampNavSpd(ap.nav.plan ? ap.nav.plan.cruiseSpd : 250);
+    ap.econMode = false;
+    navUpdateHud();
+    return apCruiseControl(dt);
+  }
+
+  // ---- Descent leg: ride a glideslope onto the target, configure to land ----
+  if (ap.nav.phase === 'descent') {
+    // Configure to land, but ONLY once slow enough — dropping the gear above its
+    // limit speed would rip it off, so wait for the speed to bleed down first.
+    if (activeAglFt < 3000 && state.speed < NAV_FLAPS_KTS && state.flaps < 1) state.flaps = 1;
+    if (activeAglFt < 2500 && state.speed < NAV_GEAR_DOWN_KTS && !state.gearDown && !state.gearBroken && state.altitude > 130) state.gearDown = true;
+    const gsFt = ap.nav.activeGroundFt + Math.max(150, Math.tan(NAV_GLIDE_DEG * DEG) * db.dist / FT_TO_M);
+    // Never command a climb on the approach — if we're below the glideslope just
+    // hold level and let speed build, rather than ballooning back up to it.
+    ap.targetAlt = Math.min(gsFt, state.altitude + 60);
+    ap.nav.smoothAlt = Math.min(ap.nav.smoothAlt, gsFt + 200);
+    ap.targetSpd = clampNavSpd(Math.max(stallSpeedKts() + 35, 165));
+    ap.econMode = false;
+    if (activeAglFt < 900 || db.dist < 2500) {
+      ap.nav.phase = 'land';
+      ap.landPhase = 0; ap.landPhaseTimer = 0;
+      if (!state.gearBroken && state.speed < NAV_GEAR_DOWN_KTS) state.gearDown = true;
+      if (state.speed < NAV_FLAPS_KTS && state.flaps < 1) state.flaps = 1;
+    }
+    navUpdateHud();
+    const out = apCruiseControl(dt);
+    if (out && state.speed > ap.targetSpd + 40) out.brakeCmd = true; // airbrake to bleed speed on the way down
+    navSpeedTradeAltitude(out, activeAglFt, ap.targetSpd);           // glide down to hold speed if slow
+    return navProtectGear(out, activeAglFt);                          // keep the gear clear of its limit
+  }
+
+  // ---- Final approach + touchdown + rollout ----
+  if (ap.nav.phase === 'land') {
+    if (state.onGround) {
+      navUpdateHud();
+      if (state.speed < 4) { navGroundArrive(); return { pitchCmd: 0, rollCmd: 0, thrCmd: -1 }; }
+      if (state.speed < 80 && state.flaps > 0) state.flaps = 0;
+      return { pitchCmd: 0, rollCmd: 0, thrCmd: -1, brakeCmd: true };
+    }
+    // apLandingControl slows to approach speed before descending; lower the gear
+    // as soon as that's safe so it's down well before the flare (never above its
+    // limit speed, so it can't be torn off).
+    if (!state.gearBroken && state.speed < NAV_GEAR_DOWN_KTS) state.gearDown = true;
+    navUpdateHud();
+    const o = apLandingControl(dt);   // handles slow-down, flaps, descent and flare
+    // While actually descending (phase 2+), recover speed with the nose so it
+    // doesn't porpoise; matches apLandingControl's own final approach speed.
+    if (ap.landPhase >= 2) navSpeedTradeAltitude(o, activeAglFt, Math.max(stallSpeedKts() + 20, 120));
+    return navProtectGear(o, activeAglFt);
+  }
+
+  // ---- Refuel stop: sit on the ground until the tank is full, then continue ----
+  if (ap.nav.phase === 'refuel') {
+    navUpdateHud();
+    if (!state.onGround) { ap.nav.phase = 'cruise'; return apCruiseControl(dt); }
+    if (state.fuel >= 0.92 * state.fuelMax) {
+      ap.nav.leg = 'dest';
+      ap.nav.activeLat = ap.nav.destLat; ap.nav.activeLon = ap.nav.destLon;
+      ap.nav.activeGroundFt = ap.nav.destGroundFt;
+      ap.nav.phase = 'takeoff'; ap.toPhase = 0;
+      navRecomputePlan();
+      return apNavTakeoff(dt);
+    }
+    if (state.speed < 80 && state.flaps > 0) state.flaps = 0;
+    return { pitchCmd: 0, rollCmd: 0, thrCmd: -1, brakeCmd: true };
+  }
+
+  return null;
+}
+
+// "1h 23m" / "23m 05s" / "40s" — time-to-go in hours+minutes (seconds when short).
+function fmtEtaHM(sec) {
+  if (!isFinite(sec) || sec < 0) return '--';
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  if (h > 0) return h + 'h ' + String(m).padStart(2, '0') + 'm';
+  if (m > 0) return m + 'm ' + String(s).padStart(2, '0') + 's';
+  return s + 's';
+}
+
+// In-flight nav status banner + autopilot indicator text.
+function navUpdateHud() {
+  const hud = document.getElementById('nav-hud');
+  const ind = document.getElementById('ap-indicator');
+  if (!ap.nav) { if (hud) hud.style.display = 'none'; return; }
+  const dDest = distToDestM();
+  const nm = dDest / 1852;
+  const plan = ap.nav.plan || {};
+  const phaseLabel = { takeoff: 'TAKEOFF', cruise: 'EN ROUTE', descent: 'DESCENT', land: 'LANDING', refuel: 'REFUELING' }[ap.nav.phase] || ap.nav.phase;
+  const modeTag = plan.mode === 'fast' ? 'MAX SPEED' : plan.mode === 'refuel' ? 'REFUEL PLAN' : plan.mode === 'optimal' ? 'OPTIMAL' : '';
+  const eta = (plan.cruiseSpd ? dDest / (plan.cruiseSpd * KTS_TO_MPS) : 0);
+  const arrPct = (plan.arriveFrac != null) ? Math.round(plan.arriveFrac * 100) : null;
+  const arrCls = (arrPct != null && arrPct < 10) ? ' class="nh-fuel-lo"' : '';
+  const distStr = nm >= 1 ? (nm < 10 ? nm.toFixed(1) : Math.round(nm)) + ' nm' : Math.round(dDest) + ' m';
+  if (ind) {
+    ind.innerHTML = '<span style="color:#ffe066">✈ AUTO-NAV</span> &nbsp;' + phaseLabel +
+      (ap.nav.destName ? ' &nbsp;→ ' + ap.nav.destName : '');
+    ind.style.display = 'block';
+  }
+  if (hud) {
+    let html = '<b>' + distStr + '</b> &nbsp;·&nbsp; ETA <b>' + fmtEtaHM(eta) + '</b>';
+    if (arrPct != null) html += ' &nbsp;·&nbsp; FUEL@ARR <span' + arrCls + '>' + arrPct + '%</span>';
+    if (modeTag) html += ' &nbsp;·&nbsp; <span class="nh-mode">' + modeTag + '</span>';
+    if (ap.nav.phase === 'refuel') html += ' &nbsp;·&nbsp; <span class="nh-mode">FILLING TANK…</span>';
+    hud.innerHTML = html;
+    hud.style.display = 'block';
+  }
 }
 
 function update(dt) {
@@ -2197,17 +2730,21 @@ function update(dt) {
   // ---- Autopilot ----
   const apOut = apControl(dt);
   let apFlying = false;
+  let apBrakeCmd = false;
   if (apOut) {
     // Disengage if pilot overrides pitch/roll/throttle significantly
     const pilotOverride = Math.abs(pitchIn) > 0.15 || Math.abs(thrIn) > 0.15 || Math.abs(rollIn) > 0.15;
     if (pilotOverride) {
+      const wasNav = (ap.mode === 'nav');
       ap.on = false;
       const apEl = document.getElementById('ap-indicator');
       if (apEl) apEl.style.display = 'none';
+      if (wasNav) navOnDisengage();
     } else {
       pitchIn = apOut.pitchCmd;
       rollIn  = apOut.rollCmd;
       thrIn   = apOut.thrCmd;
+      apBrakeCmd = !!apOut.brakeCmd;   // AP-commanded wheel braking (auto rollout)
       apFlying = true;
     }
   }
@@ -2266,7 +2803,7 @@ function update(dt) {
   if (aoaNow > aMaxUp) state.pitch = normDeg(state.pitch - (aoaNow - aMaxUp) * Math.min(1, dt * 3));
   else if (aoaNow < -aMaxDown) state.pitch = normDeg(state.pitch - (aoaNow + aMaxDown) * Math.min(1, dt * 3));
 
-  const airbrake = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake));
+  const airbrake = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake) || apBrakeCmd);
 
   // Roll stability: wings self-level only GENTLY with no aileron input, so it
   // stays easy to establish and hold a turn.
@@ -2424,7 +2961,7 @@ function update(dt) {
     gamma = 0;
 
     // Rolling friction (brakes give ~12× more deceleration)
-    const braking = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake));
+    const braking = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake) || apBrakeCmd);
     const frictionDecel = braking ? 5.5 : 0.45;   // m/s²
     V = Math.max(0, V - frictionDecel * dt);
 
@@ -3608,6 +4145,32 @@ function updateMinimap() {
   mmCtx.stroke();
   mmCtx.restore();
 
+  // Advanced-AP route: a dashed line toward the destination and a marker for it.
+  // The destination is usually well outside the tiny map window, so it's clamped
+  // to the rim as a direction-to-go pointer; it slides inward as we close in.
+  if (ap.on && ap.mode === 'nav' && ap.nav) {
+    const d = 0.035;
+    mmCtx.save();
+    mmCtx.translate(s / 2, s / 2);
+    mmCtx.rotate(state.heading * Math.PI / 180);
+    const dLat = ap.nav.destLat - state.lat;
+    const dLon = (ap.nav.destLon - state.lon) * Math.cos(state.lat * Math.PI / 180);
+    let px, py;
+    if (Math.abs(dLat) <= d && Math.abs(dLon) <= d) {
+      px = (dLon / d) * (s / 2); py = -(dLat / d) * (s / 2);   // in view: real position
+    } else {
+      const mag = Math.hypot(dLon, dLat) || 1, R = s / 2 - 10;
+      px = (dLon / mag) * R; py = -(dLat / mag) * R;            // off-map: pin to the rim
+    }
+    mmCtx.strokeStyle = 'rgba(255,210,90,0.85)'; mmCtx.lineWidth = 2; mmCtx.setLineDash([5, 4]);
+    mmCtx.beginPath(); mmCtx.moveTo(0, 0); mmCtx.lineTo(px, py); mmCtx.stroke(); mmCtx.setLineDash([]);
+    mmCtx.fillStyle = '#ffd24a'; mmCtx.strokeStyle = 'rgba(0,0,0,0.75)'; mmCtx.lineWidth = 1.5;
+    mmCtx.beginPath();
+    mmCtx.moveTo(px, py - 5); mmCtx.lineTo(px + 5, py); mmCtx.lineTo(px, py + 5); mmCtx.lineTo(px - 5, py);
+    mmCtx.closePath(); mmCtx.fill(); mmCtx.stroke();
+    mmCtx.restore();
+  }
+
   // Refresh the satellite tile as we move (throttled)
   const now = performance.now();
   if (now - mmLast > 1500) {
@@ -3887,11 +4450,267 @@ function pollPauseGamepad() {
   pausePrev.a = a;
 }
 
+// ===================== Advanced AP destination picker (slippy map) =====================
+// A self-contained pan/zoom satellite map (Esri World Imagery XYZ tiles, same
+// source as the globe). The centre crosshair is the destination; FLY HERE engages
+// the advanced autopilot. Works with mouse/keyboard, touch (drag + pinch) and a
+// controller (left stick pans, triggers zoom, A flies, B cancels).
+let navPickerOpen = false;
+let nmInit = false;
+let nmCanvas = null, nmCtx = null;
+let nmView = { lat: 0, lon: 0, zoom: 9 };
+const nmTiles = {};
+let nmDestName = null;
+let nmElevFt = null, nmElevWater = false, nmElevKey = '', nmElevTimer = null;
+
+function lon2tileX(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
+function lat2tileY(lat, z) { const r = lat * DEG; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z); }
+function tileX2lon(x, z) { return x / Math.pow(2, z) * 360 - 180; }
+function tileY2lat(y, z) { const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z); return Math.atan(Math.sinh(n)) / DEG; }
+function nmClampLat(l) { return Math.max(-85, Math.min(85, l)); }
+
+function nmGetTile(z, x, y) {
+  const key = z + '/' + x + '/' + y;
+  let img = nmTiles[key];
+  if (!img) {
+    img = new Image();
+    img.src = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
+    nmTiles[key] = img;
+  }
+  return img;
+}
+
+function nmPanPixels(dx, dy) {
+  const z = nmView.zoom;
+  const cgx = lon2tileX(nmView.lon, z) * 256 + dx;
+  const cgy = lat2tileY(nmView.lat, z) * 256 + dy;
+  nmView.lon = tileX2lon(cgx / 256, z);
+  nmView.lat = nmClampLat(tileY2lat(cgy / 256, z));
+}
+function nmZoom(dir) { nmView.zoom = Math.max(2, Math.min(15, nmView.zoom + dir)); }
+function nmRecenterToScreen(sx, sy) {
+  const z = nmView.zoom, cw = nmCanvas.width, ch = nmCanvas.height;
+  const gx = lon2tileX(nmView.lon, z) * 256 - cw / 2 + sx;
+  const gy = lat2tileY(nmView.lat, z) * 256 - ch / 2 + sy;
+  nmView.lon = tileX2lon(gx / 256, z);
+  nmView.lat = nmClampLat(tileY2lat(gy / 256, z));
+}
+
+function drawNavMap() {
+  const cv = nmCanvas; if (!cv) return;
+  if (cv.width !== cv.clientWidth || cv.height !== cv.clientHeight) {
+    cv.width = cv.clientWidth || window.innerWidth;
+    cv.height = cv.clientHeight || window.innerHeight;
+  }
+  const ctx = nmCtx, cw = cv.width, ch = cv.height, z = nmView.zoom;
+  const nTiles = Math.pow(2, z);
+  ctx.fillStyle = '#06080c'; ctx.fillRect(0, 0, cw, ch);
+  const cgx = lon2tileX(nmView.lon, z) * 256, cgy = lat2tileY(nmView.lat, z) * 256;
+  const originX = cgx - cw / 2, originY = cgy - ch / 2;
+  const tx0 = Math.floor(originX / 256), ty0 = Math.floor(originY / 256);
+  for (let tx = tx0; tx * 256 < originX + cw; tx++) {
+    for (let ty = ty0; ty * 256 < originY + ch; ty++) {
+      const dx = tx * 256 - originX, dy = ty * 256 - originY;
+      if (ty < 0 || ty >= nTiles) { ctx.fillStyle = '#06080c'; ctx.fillRect(dx, dy, 256, 256); continue; }
+      const wx = ((tx % nTiles) + nTiles) % nTiles;
+      const img = nmGetTile(z, wx, ty);
+      if (img.complete && img.naturalWidth) ctx.drawImage(img, dx, dy, 256, 256);
+      else { ctx.fillStyle = 'rgba(0,40,10,0.3)'; ctx.fillRect(dx, dy, 256, 256); }
+    }
+  }
+  // Aircraft marker + a dashed line to the chosen point (canvas centre).
+  const apx = lon2tileX(state.lon, z) * 256 - originX;
+  const apy = lat2tileY(state.lat, z) * 256 - originY;
+  ctx.strokeStyle = 'rgba(0,255,65,0.5)'; ctx.lineWidth = 2; ctx.setLineDash([7, 6]);
+  ctx.beginPath(); ctx.moveTo(apx, apy); ctx.lineTo(cw / 2, ch / 2); ctx.stroke(); ctx.setLineDash([]);
+  if (apx > -30 && apx < cw + 30 && apy > -30 && apy < ch + 30) {
+    ctx.save(); ctx.translate(apx, apy); ctx.rotate(state.heading * DEG);
+    ctx.fillStyle = '#00FF41'; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(8, 9); ctx.lineTo(0, 4); ctx.lineTo(-8, 9); ctx.closePath();
+    ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  navPickerUpdateInfo();
+}
+
+// Precise (async) elevation/water for the selected point, debounced while panning.
+function navPickerSampleElev() {
+  const key = nmView.lat.toFixed(3) + ',' + nmView.lon.toFixed(3);
+  if (key === nmElevKey) return;
+  nmElevKey = key;
+  if (nmElevTimer) clearTimeout(nmElevTimer);
+  nmElevTimer = setTimeout(function () {
+    sampleGroundFt(nmView.lat, nmView.lon, function (ft) {
+      if (nmView.lat.toFixed(3) + ',' + nmView.lon.toFixed(3) !== key) return; // moved on
+      nmElevFt = ft; nmElevWater = ft <= 0.5;
+    });
+  }, 280);
+}
+
+function navPickerUpdateInfo() {
+  const info = document.getElementById('nm-info'); if (!info) return;
+  navPickerSampleElev();
+  const db = navBearingTo(nmView.lat, nmView.lon);
+  const nm = db.dist / 1852, km = db.dist / 1000;
+  let html = 'LAT ' + nmView.lat.toFixed(4) + '  LON ' + nmView.lon.toFixed(4);
+  html += ' &nbsp;·&nbsp; ' + (nm >= 1 ? nm.toFixed(0) + ' nm' : Math.round(db.dist) + ' m') +
+          ' / ' + (km >= 1 ? km.toFixed(0) + ' km' : Math.round(db.dist) + ' m');
+  html += ' &nbsp;·&nbsp; BRG ' + String(Math.round(db.brg) % 360 || 360).toString().padStart(3, '0');
+  if (nmElevFt == null) html += ' &nbsp;·&nbsp; ELEV …';
+  else if (nmElevWater) html += ' &nbsp;·&nbsp; <span class="nm-water">⚠ WATER — pick land</span>';
+  else html += ' &nbsp;·&nbsp; ELEV ' + Math.round(nmElevFt) + ' ft';
+  info.innerHTML = html;
+}
+
+function openNavPicker() {
+  if (!chosen || !simReady) return;
+  const ov = document.getElementById('nav-map'); if (!ov) return;
+  initNavPicker();
+  navPickerOpen = true;
+  ov.style.display = 'block';
+  document.body.style.cursor = 'crosshair';
+  nmView.lat = state.lat; nmView.lon = state.lon; nmView.zoom = state.onGround ? 11 : 9;
+  nmDestName = null; nmElevFt = null; nmElevKey = '';
+  const rb = document.getElementById('nm-resume');
+  if (rb) {
+    if (navLastDest) { rb.style.display = 'block'; rb.textContent = '▶ RESUME: ' + (navLastDest.name || (navLastDest.lat.toFixed(2) + ',' + navLastDest.lon.toFixed(2))); }
+    else rb.style.display = 'none';
+  }
+  drawNavMap();
+}
+function closeNavPicker() {
+  navPickerOpen = false;
+  const ov = document.getElementById('nav-map'); if (ov) ov.style.display = 'none';
+  document.body.style.cursor = 'none';
+  lastTime = performance.now();
+  try { window.focus(); } catch (e) {}
+}
+function nmFly() {
+  const lat = nmView.lat, lon = nmView.lon;
+  const name = nmDestName || ('DEST ' + lat.toFixed(2) + ',' + lon.toFixed(2));
+  closeNavPicker();
+  navEngage({ lat: lat, lon: lon, name: name });
+}
+function nmResume() {
+  if (!navLastDest) return;
+  const d = navLastDest;
+  closeNavPicker();
+  navEngage({ lat: d.lat, lon: d.lon, name: d.name });
+}
+
+// ----- Picker search box: city name / coordinates / Google Maps link -----
+function nmParseLoc(t) {
+  let m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);                 if (m) return { lat: +m[1], lon: +m[2] };
+  m = t.match(/[?&](?:q|query|ll|center|destination|sll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/); if (m) return { lat: +m[1], lon: +m[2] };
+  m = t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);                 if (m) return { lat: +m[1], lon: +m[2] };
+  m = t.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+  if (m) { const la = +m[1], lo = +m[2]; if (la >= -90 && la <= 90 && lo >= -180 && lo <= 180) return { lat: la, lon: lo }; }
+  return null;
+}
+function nmSearch() {
+  const input = document.getElementById('nm-input');
+  const raw = (input && input.value || '').trim();
+  if (!raw) return;
+  const c = nmParseLoc(raw);
+  if (c) { nmView.lat = nmClampLat(c.lat); nmView.lon = c.lon; nmView.zoom = Math.max(nmView.zoom, 10); nmDestName = raw.toUpperCase(); nmElevKey = ''; return; }
+  const info = document.getElementById('nm-info'); if (info) info.textContent = 'SEARCHING “' + raw + '”…';
+  fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(raw), { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d && d[0]) {
+        nmView.lat = nmClampLat(+d[0].lat); nmView.lon = +d[0].lon; nmView.zoom = Math.max(nmView.zoom, 10);
+        nmDestName = String(d[0].display_name || raw).split(',')[0].toUpperCase(); nmElevKey = '';
+      } else if (info) { info.textContent = 'No match for “' + raw + '”'; }
+    })
+    .catch(function () { if (info) info.textContent = 'Search failed — check connection'; });
+}
+
+// Pointer (mouse + touch) panning, click-to-set and pinch-zoom.
+let nmPointers = {}, nmDragId = null, nmDragMoved = 0, nmLast = { x: 0, y: 0 }, nmPinchStart = 0;
+function nmPointerDist() {
+  const ids = Object.keys(nmPointers);
+  if (ids.length < 2) return 0;
+  const a = nmPointers[ids[0]], b = nmPointers[ids[1]];
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+const nmPad = { a: false, b: false, zin: false, zout: false, start: false };
+function pollNavPickerGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+  if (!gp) return;
+  const ax = gp.axes || [];
+  const pr = function (i) { return !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed); };
+  const dz = function (v) { v = v || 0; return Math.abs(v) < 0.18 ? 0 : v; };
+  const lx = dz(ax[0]), ly = dz(ax[1]);
+  if (lx || ly) { const spd = 480 * (frameDt || 0.016); nmPanPixels(lx * spd, ly * spd); }
+  const a = pr(0);    if (a && !nmPad.a) nmFly();           nmPad.a = a;
+  const b = pr(1);    if (b && !nmPad.b) closeNavPicker();  nmPad.b = b;
+  const zin = pr(7) || pr(5) || ((ax[7] || 0) < -0.5);  if (zin && !nmPad.zin) nmZoom(1);    nmPad.zin = zin;
+  const zout = pr(6) || pr(4) || ((ax[7] || 0) > 0.5);  if (zout && !nmPad.zout) nmZoom(-1); nmPad.zout = zout;
+  const st = pr(9);   if (st && !nmPad.start) closeNavPicker(); nmPad.start = st;
+}
+
+function initNavPicker() {
+  if (nmInit) return;
+  nmInit = true;
+  nmCanvas = document.getElementById('nm-canvas');
+  if (!nmCanvas) return;
+  nmCtx = nmCanvas.getContext('2d');
+  const wire = function (id, fn) { const el = document.getElementById(id); if (el) el.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); fn(); }); };
+  wire('nm-fly', nmFly);
+  wire('nm-cancel', closeNavPicker);
+  wire('nm-resume', nmResume);
+  wire('nm-zin', function () { nmZoom(1); });
+  wire('nm-zout', function () { nmZoom(-1); });
+  wire('nm-find', nmSearch);
+  const input = document.getElementById('nm-input');
+  if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); nmSearch(); } e.stopPropagation(); });
+
+  nmCanvas.addEventListener('pointerdown', function (e) {
+    try { nmCanvas.setPointerCapture(e.pointerId); } catch (er) {}
+    nmPointers[e.pointerId] = { x: e.offsetX, y: e.offsetY };
+    const ids = Object.keys(nmPointers);
+    if (ids.length === 1) { nmDragId = e.pointerId; nmDragMoved = 0; nmLast = { x: e.offsetX, y: e.offsetY }; }
+    else if (ids.length === 2) { nmPinchStart = nmPointerDist(); }
+  });
+  nmCanvas.addEventListener('pointermove', function (e) {
+    if (!(e.pointerId in nmPointers)) return;
+    nmPointers[e.pointerId] = { x: e.offsetX, y: e.offsetY };
+    if (Object.keys(nmPointers).length >= 2) {
+      const d = nmPointerDist();
+      if (nmPinchStart > 0) {
+        if (d / nmPinchStart > 1.6) { nmZoom(1); nmPinchStart = d; }
+        else if (d / nmPinchStart < 0.625) { nmZoom(-1); nmPinchStart = d; }
+      }
+      return;
+    }
+    if (e.pointerId === nmDragId) {
+      const dx = e.offsetX - nmLast.x, dy = e.offsetY - nmLast.y;
+      nmDragMoved += Math.abs(dx) + Math.abs(dy);
+      nmPanPixels(-dx, -dy);
+      nmLast = { x: e.offsetX, y: e.offsetY };
+    }
+  });
+  const endPtr = function (e) {
+    if (e.pointerId in nmPointers) {
+      const wasDrag = e.pointerId === nmDragId, moved = nmDragMoved;
+      delete nmPointers[e.pointerId];
+      if (wasDrag) { nmDragId = null; if (moved < 6) nmRecenterToScreen(e.offsetX, e.offsetY); }
+    }
+    if (Object.keys(nmPointers).length < 2) nmPinchStart = 0;
+  };
+  nmCanvas.addEventListener('pointerup', endPtr);
+  nmCanvas.addEventListener('pointercancel', endPtr);
+  nmCanvas.addEventListener('wheel', function (e) { e.preventDefault(); nmZoom(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+}
+
 function loop() {
   const now = performance.now();
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
   frameDt = dt;
+
+  if (navPickerOpen) { pollNavPickerGamepad(); drawNavMap(); render(); requestAnimationFrame(loop); return; }
 
   if (!chosen) pollMenuGamepad(); // let a controller drive the start menu
 
@@ -3943,6 +4762,3 @@ loop();
 </script>
 </body>
 </html>
-
-<!-- ADVANCED AUTOPILOT PLACEHOLDER SYSTEM ADDED -->
-<script>window.advancedAutopilot={enabled:true,doublePress:true,mapSelector:true,resumeRoute:true};</script>
