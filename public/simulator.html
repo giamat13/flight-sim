@@ -50,6 +50,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .sys-val{font-size:11px;font-weight:600}
 .sys-ok{color:#00FF41}.sys-warn{color:#ffaa00}.sys-off{color:rgba(0,255,65,0.3)}.sys-red{color:#ff3030}
 #fire-warn{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:44px;font-weight:700;color:#ff3000;text-shadow:0 0 40px rgba(255,50,0,0.9);font-family:'JetBrains Mono',monospace;letter-spacing:5px;pointer-events:none;display:none}
+#gear-warn{position:fixed;top:68%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:30px;font-weight:700;color:#ff6a00;text-shadow:0 0 30px rgba(255,106,0,0.6);font-family:'JetBrains Mono',monospace;letter-spacing:4px;pointer-events:none;display:none}
 /* ===== Touch controls (mobile) ===== */
 #touch-controls{position:fixed;inset:0;z-index:25;pointer-events:none;display:none}
 #tc-top{position:absolute;top:12px;left:12px;display:flex;flex-wrap:wrap;gap:8px}
@@ -188,6 +189,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <div id="stall-warn" class="flashing">STALL</div>
 <div id="overspeed-warn" class="flashing">OVERSPEED</div>
 <div id="fire-warn" class="flashing">ENGINE FIRE</div>
+<div id="gear-warn" class="flashing">GEAR FAILURE</div>
 <div id="terrain-warn"><div class="tw-main">TERRAIN</div><div class="tw-sub">PULL UP</div></div>
 
 <div id="landing-panel">
@@ -410,6 +412,7 @@ let state = {
   flaps: 0,
   // Landing gear
   gearDown: true,
+  gearBroken: false,     // true once the gear has been torn off in flight
   // On-ground state (landing / ground roll / takeoff)
   onGround: false,
   groundTimer: 0,  // seconds spent continuously on the ground (for refueling)
@@ -442,6 +445,7 @@ function resetState() {
   state.rpm = 0;
   state.flaps = 0;
   state.gearDown = true; // gear down on the ground
+  state.gearBroken = false;
   state.fuel = state.fuelMax;
   state.onGround = true;
   state.groundTimer = 0;
@@ -592,6 +596,7 @@ function cycleFlaps() {
 }
 
 function toggleGear() {
+  if (state.gearBroken) return;     // wheels are gone — nothing left to toggle
   if (state.onGround) return;       // can't raise gear while rolling on the ground
   if (state.altitude < 100) return; // can't retract below 100 ft
   state.gearDown = !state.gearDown;
@@ -1882,6 +1887,21 @@ function update(dt) {
   }
   updateAudio(state.rpm, state.speed);
 
+  // ---- Landing gear structural stress ----
+  // Flying fast with the gear hanging down piles huge aerodynamic load onto
+  // the struts/doors. Past a safe speed there's a rising chance per second
+  // that it just snaps off — gone for the rest of the flight, no relanding.
+  const GEAR_SAFE_KTS = 250;  // no risk at or below this speed
+  const GEAR_FAIL_KTS = 420;  // up here, failure is near-certain within ~1s
+  if (state.gearDown && !state.gearBroken && state.speed > GEAR_SAFE_KTS) {
+    const overFrac = Math.min(1, (state.speed - GEAR_SAFE_KTS) / (GEAR_FAIL_KTS - GEAR_SAFE_KTS));
+    const failChancePerSec = overFrac * overFrac * 4; // ramps up quickly with speed
+    if (Math.random() < failChancePerSec * dt) {
+      state.gearBroken = true;
+      state.gearDown = false; // torn off — can't be lowered again this flight
+    }
+  }
+
   // Engine spool-up lag — only if engine is running
   const engRunning = state.engineState === 'running';
   const effectiveThr = engRunning ? state.throttle : 0;
@@ -2826,6 +2846,8 @@ function render() {
   if (overspeedWarn) overspeedWarn.style.display = state.overspeed && !state.terrainHit && !state.onGround ? 'block' : 'none';
   const fireEl = document.getElementById('fire-warn');
   if (fireEl) fireEl.style.display = state.engineState === 'fire' ? 'block' : 'none';
+  const gearWarnEl = document.getElementById('gear-warn');
+  if (gearWarnEl) gearWarnEl.style.display = state.gearBroken && !state.onGround ? 'block' : 'none';
 
   // Color VS based on positive/negative
   hudVs.style.color = state.vs < -200 ? '#ff4444' : state.vs > 200 ? '#44ff44' : '#00FF41';
@@ -2858,8 +2880,8 @@ function render() {
       flapEl.className = 'sys-val ' + (state.flaps > 0 ? 'sys-warn' : 'sys-ok');
     }
     if (gearEl) {
-      gearEl.textContent = state.gearDown ? 'DN' : 'UP';
-      gearEl.className = 'sys-val ' + (state.gearDown ? 'sys-warn' : 'sys-ok');
+      gearEl.textContent = state.gearBroken ? 'FAIL' : (state.gearDown ? 'DN' : 'UP');
+      gearEl.className = 'sys-val ' + (state.gearBroken ? 'sys-red' : (state.gearDown ? 'sys-warn' : 'sys-ok'));
     }
   }
 
@@ -2907,7 +2929,7 @@ function renderLandingPanel() {
       val: FLAP_LABELS[state.flaps] + (flapsOk ? ' ✓' : ' — press ' + (gp ? 'X' : 'F')) },
     { key: 'GEAR',
       cls: gearOk ? 'lp-ok' : 'lp-err',
-      val: gearOk ? 'DN ✓' : 'UP — press ' + (gp ? 'LB' : 'G') },
+      val: gearOk ? 'DN ✓' : (state.gearBroken ? 'BROKEN ✗' : 'UP — press ' + (gp ? 'LB' : 'G')) },
     { key: 'SPD',
       cls: spdOk ? 'lp-ok' : 'lp-warn',
       val: spd + 'kt' + (spdOk ? ' ✓' : ' / need ' + ROTATION_KTS) }
@@ -3304,4 +3326,4 @@ loop();
 </html>
 
 <!-- ADVANCED AUTOPILOT PLACEHOLDER SYSTEM ADDED -->
-<script>window.advancedAutopilot={enabled:true,doublePress:true,mapSelector:true,resumeRoute:true};</script>  
+<script>window.advancedAutopilot={enabled:true,doublePress:true,mapSelector:true,resumeRoute:true};</script>
