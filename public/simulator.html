@@ -1343,9 +1343,13 @@ function terrainAheadMaxFt(lookAheadM) {
 // full point-mass physics needed) that holds heading/altitude/speed and
 // gently maneuvers to stay clear of everyone else, including the player.
 // The player's own autopilot also "sees" them and nudges around close ones.
-const TRAFFIC_COUNT = 5;
-const TRAFFIC_SPAWN_RADIUS_M = 9000;   // how far out new traffic appears
-const TRAFFIC_DESPAWN_M = 16000;       // recycle once this far from the player
+// Distances are tuned so the same 3D model used for the player's own plane
+// is actually visible at typical range — real far-off traffic would be an
+// invisible speck at this model's scale, so we keep it in "you can see your
+// wingman" territory instead of unrealistically-distant ambient traffic.
+const TRAFFIC_COUNT = 12;
+const TRAFFIC_SPAWN_RADIUS_M = 2600;   // how far out new traffic appears
+const TRAFFIC_DESPAWN_M = 4500;        // recycle once this far from the player
 const TRAFFIC_COLLIDE_M = 35;          // distance that counts as a mid-air collision
 let traffic = [];
 let trafficIdSeq = 1;
@@ -1357,7 +1361,7 @@ function randRange(a, b) { return a + Math.random() * (b - a); }
 // so it looks, flies and is sized exactly like flying alongside yourself.
 function spawnTrafficPlane(nearPlayer) {
   const bearing = randRange(0, 360);
-  const dist = nearPlayer ? randRange(2500, TRAFFIC_SPAWN_RADIUS_M) : randRange(800, TRAFFIC_SPAWN_RADIUS_M);
+  const dist = nearPlayer ? randRange(500, TRAFFIC_SPAWN_RADIUS_M) : randRange(300, TRAFFIC_SPAWN_RADIUS_M);
   const br = bearing * DEG;
   const dLat = (Math.cos(br) * dist) / M_PER_DEG_LAT;
   const dLon = (Math.sin(br) * dist) / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
@@ -2993,7 +2997,7 @@ function drawSpdTape() {
 // the bot's own local frame, oriented by its pitch/bank/heading-relative-to-
 // camera, and projected with a local pinhole camera using the true distance
 // as depth and a focal length derived from the real camera's FOV.
-const TRAFFIC_MODEL_M_PER_UNIT = 6.4; // same scale as the player's own model (wingspan ≈ 6 units ≈ 38m)
+const TRAFFIC_MODEL_M_PER_UNIT = 3.2; // bigger than the player's own scale (6.4) so traffic reads clearly at distance
 
 function drawTraffic() {
   if (!viewer || !traffic.length) return;
@@ -3022,7 +3026,7 @@ function drawTraffic() {
 
     const cart = Cesium.Cartesian3.fromDegrees(t.lon, t.lat, Math.max(0, t.altitude) * FT_TO_M);
     const distM = Cesium.Cartesian3.distance(camPos, cart);
-    if (distM > 18000) continue; // too far to matter visually
+    if (distM > 5500) continue; // too far to matter visually
 
     // Where the bot's CENTER sits on screen, from the real camera — correct
     // in both cockpit and chase mode since this is the actual view.
