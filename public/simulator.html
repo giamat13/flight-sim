@@ -2997,7 +2997,7 @@ function drawSpdTape() {
 // the bot's own local frame, oriented by its pitch/bank/heading-relative-to-
 // camera, and projected with a local pinhole camera using the true distance
 // as depth and a focal length derived from the real camera's FOV.
-const TRAFFIC_MODEL_M_PER_UNIT = 25; // much larger than the player's own scale (6.4) so traffic reads as a clearly visible plane, not nav-light dots
+const TRAFFIC_MODEL_M_PER_UNIT = 40; // larger than the player's own scale (6.4) so traffic reads as a clearly visible plane, not nav-light dots
 
 function drawTraffic() {
   if (!viewer || !traffic.length) return;
