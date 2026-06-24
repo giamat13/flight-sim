@@ -1783,8 +1783,12 @@ function updateTraffic(dt) {
 // and altitude hold, so AP-flown legs route around other aircraft instead of
 // flying straight through them.
 function apTrafficAvoidance() {
-  let turnBias = 0, vsBias = 0;
-  const LOOKOUT_M = 2200, ALT_BAND_FT = 700;
+  let turnBias = 0, vsBias = 0, emergency = false;
+  // Wide net: collisions happen from any bearing, not just dead ahead. A
+  // crossing aircraft at 90° is just as deadly, so we watch the whole bubble and
+  // separate VERTICALLY (the fastest, most reliable escape) regardless of bearing,
+  // while only TURNING away from threats that are ahead of us.
+  const LOOKOUT_M = 3200, ALT_BAND_FT = 900;
   for (let i = 0; i < traffic.length; i++) {
     const t = traffic[i];
     if (!t.alive) continue;
@@ -1795,12 +1799,23 @@ function apTrafficAvoidance() {
     if (horizM > LOOKOUT_M || Math.abs(altDiff) > ALT_BAND_FT) continue;
     const bearing = wrap360(Math.atan2(dE, dN) / DEG);
     const rel = normDeg(bearing - state.heading);
-    if (Math.abs(rel) > 75) continue; // only worry about traffic roughly ahead
-    const closeness = 1 - horizM / LOOKOUT_M;
-    turnBias += (rel >= 0 ? -1 : 1) * closeness * 28;       // turn away from it
-    vsBias += (altDiff >= 0 ? 1 : -1) * closeness * 900;     // climb/descend away
+    const ahead = Math.abs(rel) <= 95;
+    // Proximity weight ramps up sharply (^1.6) so distant traffic barely nudges
+    // us but a near one dominates.
+    const closeness = Math.pow(Math.max(0, 1 - horizM / LOOKOUT_M), 1.6);
+    // Vertical escape: move away from its altitude (if co-altitude, climb).
+    const sep = altDiff >= 0 ? 1 : -1;
+    vsBias += sep * closeness * (ahead ? 1600 : 850);
+    // Lateral escape: turn away, but only from traffic that's actually ahead.
+    if (ahead) turnBias += (rel >= 0 ? -1 : 1) * closeness * 42;
+    // Emergency bubble: something close AND near our level -> hard evasive climb/turn.
+    if (horizM < 700 && Math.abs(altDiff) < 550) emergency = true;
   }
-  return { turnBias: Math.max(-30, Math.min(30, turnBias)), vsBias: Math.max(-1200, Math.min(1200, vsBias)) };
+  return {
+    turnBias: Math.max(-45, Math.min(45, turnBias)),
+    vsBias: Math.max(-2400, Math.min(2400, vsBias)),
+    emergency: emergency
+  };
 }
 
 // ===================== Autopilot =====================
@@ -2108,8 +2123,10 @@ function apCruiseControl(dt) {
   if (hdgErr < -180) hdgErr += 360;
   hdgErr += avoid.turnBias;
   ap.hdgI = Math.max(-20, Math.min(20, ap.hdgI + hdgErr * dt));
-  const desiredBank = Math.max(-25, Math.min(25, hdgErr * 1.5 + ap.hdgI * 0.3));
-  const rollCmd = Math.max(-0.7, Math.min(0.7, (desiredBank - state.bank) * 0.04));
+  // Allow a steeper, faster bank when dodging traffic so the turn actually clears.
+  const bankLim = avoid.emergency ? 38 : 25;
+  const desiredBank = Math.max(-bankLim, Math.min(bankLim, hdgErr * 1.5 + ap.hdgI * 0.3));
+  const rollCmd = Math.max(-0.9, Math.min(0.9, (desiredBank - state.bank) * (avoid.emergency ? 0.06 : 0.04)));
 
   // Altitude hold — tolerant: within ~200ft is "close enough", so don't fight for
   // the exact number. The error is *softened*, not crushed: most of the band still
@@ -2123,10 +2140,14 @@ function apCruiseControl(dt) {
   if (altAbs < ALT_DEAD) altError = altErrorRaw * 0.2;                 // basically there: settle softly
   else if (altAbs < ALT_TOL) altError = altErrorRaw * 0.7;             // still closing in, visibly but gently
   else altError = altErrorRaw;                                        // far: full authority
-  const targetVS = Math.max(-1500, Math.min(1500, altError * 5 + avoid.vsBias));
+  // In an emergency let the vertical escape exceed the normal climb/descend cap
+  // and pitch harder — out-climbing/-diving a collision beats holding altitude.
+  const vsLim = avoid.emergency ? 2600 : 1500;
+  const targetVS = Math.max(-vsLim, Math.min(vsLim, altError * 5 + avoid.vsBias));
   const vsError  = targetVS - state.vs;
   ap.altI = Math.max(-500, Math.min(500, ap.altI + vsError * dt));
-  const pitchCmd = Math.max(-0.65, Math.min(0.65,
+  const pitchLim = avoid.emergency ? 0.9 : 0.65;
+  const pitchCmd = Math.max(-pitchLim, Math.min(pitchLim,
     vsError * 0.0009 + ap.altI * 0.00018));
 
   // Speed / ECON throttle — tolerant: within ~30kt, ease off rather than chase
