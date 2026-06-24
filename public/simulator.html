@@ -1323,6 +1323,13 @@ function terrainHeightM() {
   return terrainHeightAtM(state.lat, state.lon);
 }
 
+// Returns true when a lat/lon is over water (ocean/sea).
+// Cesium terrain returns 0 (or undefined→0) for ocean tiles, so any height ≤ 0
+// reliably means open water with no solid ground underneath.
+function isOverWater(lat, lon) {
+  return terrainHeightAtM(lat, lon) <= 0;
+}
+
 // Highest terrain (ft MSL) along the current flight path within lookAheadM metres.
 // Used by the autopilot to spot rising ground / obstacles before flying into them.
 function terrainAheadMaxFt(lookAheadM) {
@@ -1383,9 +1390,10 @@ function spawnTrafficPlane(nearPlayer) {
   const baseAlt = state.onGround ? Math.max(1500, state.altitude + 800) : state.altitude;
   const baseSpd = state.onGround ? 180 : Math.max(110, state.speed);
 
-  // Occasionally spawn a bot already on the ground ready to take off (~20% chance)
-  const startOnGround = Math.random() < 0.20;
+  // Occasionally spawn a bot already on the ground ready to take off (~20% chance),
+  // but only if the terrain below is actual land (not sea/ocean).
   const groundAlt     = (state.terrainHeightFt || 0);
+  const startOnGround = Math.random() < 0.20 && groundAlt > 0;
 
   return {
     id: trafficIdSeq++,
@@ -1566,9 +1574,16 @@ function updateTraffic(dt) {
       if (t.phaseTimer <= 0) {
         // Decide to land (50%) or keep cruising
         if (Math.random() < 0.5) {
-          t.phase = 'descend';
-          t.groundAlt = terrainHeightAtM(t.lat, t.lon) / FT_TO_M; // sample ground below
-          t.phaseTimer = 0;
+          const sampledGroundFt = terrainHeightAtM(t.lat, t.lon) / FT_TO_M;
+          if (sampledGroundFt > 0) {
+            // Solid ground below — start descent
+            t.phase = 'descend';
+            t.groundAlt = sampledGroundFt;
+            t.phaseTimer = 0;
+          } else {
+            // Over water — skip this landing attempt, try again after a short delay
+            t.phaseTimer = randRange(30, 60);
+          }
         } else {
           t.phaseTimer = randRange(60, 200); // cruise more
         }
@@ -2436,8 +2451,10 @@ function update(dt) {
 
   } else if (newAltM <= groundM + 3) {
     // ===== FIRST GROUND CONTACT =====
+    // Water (ocean/sea) is never a valid landing surface — always a crash.
+    const landingOnWater = groundM <= 0;
     const lc = checkLandingConditions();
-    if (lc.ok) {
+    if (!landingOnWater && lc.ok) {
       // ---- GOOD LANDING ----
       state.onGround = true;
       newAltM = groundM + 3;
@@ -2445,7 +2462,7 @@ function update(dt) {
       climbRate = 0;
       groundSpeed = Math.sqrt(groundVec.n * groundVec.n + groundVec.e * groundVec.e);
     } else {
-      // ---- CRASH (bad approach) ----
+      // ---- CRASH (bad approach OR water ditching) ----
       newAltM = groundM + 3;
       state.terrainHit = true;
       state.terrainTimer = 2.2;
