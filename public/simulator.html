@@ -453,6 +453,7 @@ function resetState() {
   terrainWarn.style.display = 'none';
   const lp = document.getElementById('landing-panel'); if (lp) lp.style.display = 'none';
   const rw = document.getElementById('rotate-warn');   if (rw) rw.style.display = 'none';
+  if (typeof initTraffic === 'function') initTraffic();
 }
 
 // ===================== Web Audio — engine sounds (no external files) =====================
@@ -1337,6 +1338,187 @@ function terrainAheadMaxFt(lookAheadM) {
   return (maxM === -Infinity ? 0 : maxM) / FT_TO_M;
 }
 
+// ===================== AI Traffic =====================
+// Other aircraft sharing the sky. Each is a lightweight kinematic flier (no
+// full point-mass physics needed) that holds heading/altitude/speed and
+// gently maneuvers to stay clear of everyone else, including the player.
+// The player's own autopilot also "sees" them and nudges around close ones.
+const TRAFFIC_COUNT = 5;
+const TRAFFIC_SPAWN_RADIUS_M = 9000;   // how far out new traffic appears
+const TRAFFIC_DESPAWN_M = 16000;       // recycle once this far from the player
+const TRAFFIC_COLLIDE_M = 35;          // distance that counts as a mid-air collision
+let traffic = [];
+let trafficIdSeq = 1;
+
+function randRange(a, b) { return a + Math.random() * (b - a); }
+
+// Build one bot at a random bearing/distance from the player, flying a
+// plausible heading/altitude/speed band so it reads as ambient air traffic.
+function spawnTrafficPlane(nearPlayer) {
+  const bearing = randRange(0, 360);
+  const dist = nearPlayer ? randRange(2500, TRAFFIC_SPAWN_RADIUS_M) : randRange(800, TRAFFIC_SPAWN_RADIUS_M);
+  const br = bearing * DEG;
+  const dLat = (Math.cos(br) * dist) / M_PER_DEG_LAT;
+  const dLon = (Math.sin(br) * dist) / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+  const altFt = state.altitude + randRange(-1800, 1800);
+  return {
+    id: trafficIdSeq++,
+    lat: state.lat + dLat,
+    lon: state.lon + dLon,
+    altitude: Math.max(800, altFt),
+    heading: randRange(0, 360),
+    targetHeading: randRange(0, 360),
+    speed: randRange(140, 260),       // knots
+    bank: 0,
+    turnTimer: randRange(8, 25),      // seconds until next lazy heading change
+    livery: Math.floor(randRange(0, 4)),
+    alive: true
+  };
+}
+
+function initTraffic() {
+  traffic = [];
+  for (let i = 0; i < TRAFFIC_COUNT; i++) traffic.push(spawnTrafficPlane(true));
+}
+
+// Great-circle-ish flat-earth distance in metres between the player and a
+// lat/lon point — fine at the scale (tens of km) traffic operates at.
+function distFromPlayerM(lat, lon) {
+  const dN = (lat - state.lat) * M_PER_DEG_LAT;
+  const dE = (lon - state.lon) * (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+  return Math.sqrt(dN * dN + dE * dE);
+}
+
+function updateTraffic(dt) {
+  if (!traffic.length) return;
+
+  for (let i = 0; i < traffic.length; i++) {
+    const t = traffic[i];
+    if (!t.alive) continue;
+
+    // Recycle traffic that's drifted too far away, spawning a fresh one nearby
+    // so the player is never left flying alone for long.
+    if (distFromPlayerM(t.lat, t.lon) > TRAFFIC_DESPAWN_M) {
+      traffic[i] = spawnTrafficPlane(true);
+      continue;
+    }
+
+    // Lazy wandering: every so often pick a new gentle heading, like ambient
+    // traffic on its own cross-country track.
+    t.turnTimer -= dt;
+    if (t.turnTimer <= 0) {
+      t.targetHeading = wrap360(t.heading + randRange(-60, 60));
+      t.turnTimer = randRange(10, 30);
+    }
+
+    // ---- Separation: steer away from anything too close (other bots AND
+    // the player). This is what keeps traffic from clustering or grazing
+    // the player even when the player isn't actively avoiding them. ----
+    let avoidTurn = 0, avoidClimb = 0;
+    const SEP_M = 1100, SEP_ALT_FT = 600;
+
+    // vs player
+    {
+      const dN = (state.lat - t.lat) * M_PER_DEG_LAT;
+      const dE = (state.lon - t.lon) * (M_PER_DEG_LAT * Math.cos(t.lat * DEG));
+      const horizM = Math.sqrt(dN * dN + dE * dE);
+      const altDiff = state.altitude - t.altitude;
+      if (horizM < SEP_M && Math.abs(altDiff) < SEP_ALT_FT) {
+        const bearingToPlayer = wrap360(Math.atan2(dE, dN) / DEG);
+        const rel = normDeg(bearingToPlayer - t.heading);
+        const closeness = 1 - horizM / SEP_M;
+        avoidTurn += (rel > 0 ? -1 : 1) * closeness * 45;
+        avoidClimb += (altDiff > 0 ? -1 : 1) * closeness * 600;
+      }
+    }
+    // vs other bots
+    for (let j = 0; j < traffic.length; j++) {
+      if (j === i) continue;
+      const o = traffic[j];
+      if (!o.alive) continue;
+      const dN = (o.lat - t.lat) * M_PER_DEG_LAT;
+      const dE = (o.lon - t.lon) * (M_PER_DEG_LAT * Math.cos(t.lat * DEG));
+      const horizM = Math.sqrt(dN * dN + dE * dE);
+      const altDiff = t.altitude - o.altitude;
+      if (horizM < SEP_M && Math.abs(altDiff) < SEP_ALT_FT && horizM > 0.1) {
+        const bearingToOther = wrap360(Math.atan2(dE, dN) / DEG);
+        const rel = normDeg(bearingToOther - t.heading);
+        const closeness = 1 - horizM / SEP_M;
+        avoidTurn += (rel > 0 ? -1 : 1) * closeness * 35;
+        avoidClimb += (altDiff < 0 ? 1 : -1) * closeness * 500;
+      }
+    }
+
+    // Blend lazy wander heading with any avoidance bias
+    let hdgErr = normDeg(t.targetHeading - t.heading) * 0.4 + avoidTurn;
+    hdgErr = Math.max(-50, Math.min(50, hdgErr));
+    const desiredBank = Math.max(-22, Math.min(22, hdgErr * 1.2));
+    t.bank += (desiredBank - t.bank) * Math.min(1, dt * 1.5);
+    t.heading = wrap360(t.heading + (t.bank * 0.5) * dt);
+
+    if (Math.abs(avoidClimb) > 1) {
+      t.altitude += Math.max(-700, Math.min(700, avoidClimb)) * dt / 60;
+    } else {
+      // Gentle altitude wander so it doesn't look perfectly flat forever
+      t.altitude += Math.sin((t.id * 13 + performance.now() * 0.00005)) * 2 * dt;
+    }
+    t.altitude = Math.max(500, t.altitude);
+
+    // Advance position along the current heading at cruise speed
+    const vMps = t.speed * KTS_TO_MPS;
+    const hr = t.heading * DEG;
+    const dN = Math.cos(hr) * vMps * dt;
+    const dE = Math.sin(hr) * vMps * dt;
+    t.lat += dN / M_PER_DEG_LAT;
+    t.lon += dE / (M_PER_DEG_LAT * Math.cos(t.lat * DEG));
+  }
+
+  // ---- Mid-air collision check: player vs. traffic ----
+  // If the autopilot failed to keep clear (or the pilot flew into one), both
+  // the player and the bot involved go down, exactly like a terrain strike.
+  if (!state.onGround && !state.terrainHit) {
+    for (let i = 0; i < traffic.length; i++) {
+      const t = traffic[i];
+      if (!t.alive) continue;
+      const horizM = distFromPlayerM(t.lat, t.lon);
+      const altDiffFt = Math.abs(state.altitude - t.altitude);
+      if (horizM < TRAFFIC_COLLIDE_M && altDiffFt < (TRAFFIC_COLLIDE_M / FT_TO_M)) {
+        state.terrainHit = true;
+        state.terrainTimer = 2.2;
+        terrainWarn.style.display = 'block';
+        t.alive = false;
+        traffic[i] = spawnTrafficPlane(true); // replace the downed bot
+        break;
+      }
+    }
+  }
+}
+
+// Looks at nearby traffic ahead/around the player and returns a steering and
+// climb/descend bias the autopilot should add on top of its normal heading
+// and altitude hold, so AP-flown legs route around other aircraft instead of
+// flying straight through them.
+function apTrafficAvoidance() {
+  let turnBias = 0, vsBias = 0;
+  const LOOKOUT_M = 2200, ALT_BAND_FT = 700;
+  for (let i = 0; i < traffic.length; i++) {
+    const t = traffic[i];
+    if (!t.alive) continue;
+    const dN = (t.lat - state.lat) * M_PER_DEG_LAT;
+    const dE = (t.lon - state.lon) * (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+    const horizM = Math.sqrt(dN * dN + dE * dE);
+    const altDiff = state.altitude - t.altitude; // +ve = player above
+    if (horizM > LOOKOUT_M || Math.abs(altDiff) > ALT_BAND_FT) continue;
+    const bearing = wrap360(Math.atan2(dE, dN) / DEG);
+    const rel = normDeg(bearing - state.heading);
+    if (Math.abs(rel) > 75) continue; // only worry about traffic roughly ahead
+    const closeness = 1 - horizM / LOOKOUT_M;
+    turnBias += (rel >= 0 ? -1 : 1) * closeness * 28;       // turn away from it
+    vsBias += (altDiff >= 0 ? 1 : -1) * closeness * 900;     // climb/descend away
+  }
+  return { turnBias: Math.max(-30, Math.min(30, turnBias)), vsBias: Math.max(-1200, Math.min(1200, vsBias)) };
+}
+
 // ===================== Autopilot =====================
 const ap = {
   on: false,
@@ -1621,10 +1803,16 @@ function apTakeoffControl(dt) {
 
 // ---- Cruise control (existing PID) ----
 function apCruiseControl(dt) {
+  // The autopilot keeps an eye on nearby traffic and biases its heading/
+  // altitude targets to route around anyone converging, on top of its
+  // normal hold logic below.
+  const avoid = apTrafficAvoidance();
+
   // Heading hold
   let hdgErr = headingForTrack(ap.targetHdg, Math.max(state.speed * KTS_TO_MPS, 1)) - state.heading;
   if (hdgErr > 180) hdgErr -= 360;
   if (hdgErr < -180) hdgErr += 360;
+  hdgErr += avoid.turnBias;
   ap.hdgI = Math.max(-20, Math.min(20, ap.hdgI + hdgErr * dt));
   const desiredBank = Math.max(-25, Math.min(25, hdgErr * 1.5 + ap.hdgI * 0.3));
   const rollCmd = Math.max(-0.7, Math.min(0.7, (desiredBank - state.bank) * 0.04));
@@ -1641,7 +1829,7 @@ function apCruiseControl(dt) {
   if (altAbs < ALT_DEAD) altError = altErrorRaw * 0.2;                 // basically there: settle softly
   else if (altAbs < ALT_TOL) altError = altErrorRaw * 0.7;             // still closing in, visibly but gently
   else altError = altErrorRaw;                                        // far: full authority
-  const targetVS = Math.max(-1500, Math.min(1500, altError * 5));
+  const targetVS = Math.max(-1500, Math.min(1500, altError * 5 + avoid.vsBias));
   const vsError  = targetVS - state.vs;
   ap.altI = Math.max(-500, Math.min(500, ap.altI + vsError * dt));
   const pitchCmd = Math.max(-0.65, Math.min(0.65,
@@ -1740,6 +1928,7 @@ function update(dt) {
   dt = Math.min(dt, 0.05);
 
   updateWind(dt);
+  updateTraffic(dt);
   checkTerrainBeep(dt);
 
   // ---- Pilot inputs (elevator / aileron / throttle / airbrake) ----
@@ -2758,11 +2947,115 @@ function drawSpdTape() {
   ctx.fillText('KTS', x + tapeW / 2, y - 6);
 }
 
+// ===== Draw AI traffic =====
+// Unlike the player's own model (drawn with a fake local camera trick),
+// traffic planes have real lat/lon/alt positions, so we project them with
+// the actual Cesium camera/scene to place them correctly in the 3D view.
+function drawTraffic() {
+  if (!viewer || !traffic.length) return;
+  const camPos = viewer.camera.positionWC;
+
+  // Collect projected traffic with their distance, draw far-to-near.
+  const drawList = [];
+  for (let i = 0; i < traffic.length; i++) {
+    const t = traffic[i];
+    if (!t.alive) continue;
+    const cart = Cesium.Cartesian3.fromDegrees(t.lon, t.lat, Math.max(0, t.altitude) * FT_TO_M);
+    const distM = Cesium.Cartesian3.distance(camPos, cart);
+    if (distM > 22000) continue; // too far to matter visually
+    const screen = viewer.scene.cartesianToCanvasCoordinates(cart);
+    if (!screen) continue; // behind camera / off-globe
+    if (screen.x < -60 || screen.x > W + 60 || screen.y < -60 || screen.y > H + 60) continue;
+    drawList.push({ t, distM, x: screen.x, y: screen.y });
+  }
+  drawList.sort(function (a, b) { return b.distM - a.distM; });
+
+  drawList.forEach(function (d) {
+    const t = d.t;
+    // Scale shrinks with distance; clamp so far traffic stays a visible dot
+    // and very close traffic doesn't get absurdly huge.
+    const scale = Math.max(0.18, Math.min(2.6, 900 / d.distM));
+    const x = d.x, y = d.y;
+
+    // Heading of the bot relative to the screen: approximate by comparing its
+    // heading to the player's current heading (camera generally faces along
+    // the player's track), which is good enough for a small silhouette.
+    const relYaw = normDeg(t.heading - state.heading) * DEG;
+    const bankRad = t.bank * DEG;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Far away: just a soft nav-light dot, like a real distant aircraft.
+    if (d.distM > 6000) {
+      const a = Math.max(0.25, Math.min(0.9, 1 - d.distM / 22000));
+      ctx.fillStyle = 'rgba(0,255,65,' + a + ')';
+      ctx.shadowColor = 'rgba(0,255,65,0.8)';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(1.4, 2.2 * scale), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+      return;
+    }
+
+    // Closer: a simple flattened silhouette — fuselage + swept wings + tail —
+    // foreshortened by the bot's yaw relative to us and rolled by its bank.
+    ctx.rotate(bankRad * 0.6);
+    const foreshorten = Math.max(0.18, Math.abs(Math.cos(relYaw)));
+    ctx.scale(foreshorten, 1);
+
+    const bodyLen = 16 * scale, bodyW = 3.2 * scale;
+    const wingSpan = 22 * scale, wingChord = 4.5 * scale;
+    const liveryHue = ['#cfd8dc', '#90caf9', '#ffcc80', '#a5d6a7'][t.livery % 4];
+
+    // Wings
+    ctx.fillStyle = liveryHue;
+    ctx.globalAlpha = 0.92;
+    ctx.beginPath();
+    ctx.moveTo(-wingSpan / 2, wingChord * 0.3);
+    ctx.lineTo(0, -wingChord * 0.5);
+    ctx.lineTo(wingSpan / 2, wingChord * 0.3);
+    ctx.lineTo(0, wingChord * 1.1);
+    ctx.closePath();
+    ctx.fill();
+
+    // Fuselage
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyW, bodyLen / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tail fin
+    ctx.beginPath();
+    ctx.moveTo(0, bodyLen * 0.32);
+    ctx.lineTo(-bodyW * 1.4, bodyLen * 0.5);
+    ctx.lineTo(0, bodyLen * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Nav lights (red left wingtip, green right wingtip) for readability
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = 'rgba(255,40,40,0.9)';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.beginPath(); ctx.arc(-wingSpan / 2, wingChord * 0.3, 1.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(0,255,65,0.9)';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.beginPath(); ctx.arc(wingSpan / 2, wingChord * 0.3, 1.4, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+  });
+}
+
 function render() {
   // Transparent overlay on top of the real-world globe
   ctx.clearRect(0, 0, W, H);
 
   drawWeather(); // rain/snow particles behind the HUD
+
+  drawTraffic();
 
   const bankRad = state.bank * Math.PI / 180;
 
@@ -2976,6 +3269,28 @@ function updateMinimap() {
   const s = mmCv.width;
   mmCtx.clearRect(0, 0, s, s);
 
+  // Traffic blips, heading-up like the player marker. The minimap window is
+  // the same ±d degree box used for the satellite tile fetch below.
+  if (traffic.length) {
+    const d = 0.035;
+    mmCtx.save();
+    mmCtx.translate(s / 2, s / 2);
+    mmCtx.rotate(state.heading * Math.PI / 180);
+    traffic.forEach(function (t) {
+      if (!t.alive) return;
+      const dLat = t.lat - state.lat;
+      const dLon = (t.lon - state.lon) * Math.cos(state.lat * Math.PI / 180);
+      if (Math.abs(dLat) > d || Math.abs(dLon) > d) return;
+      const px = (dLon / d) * (s / 2);
+      const py = -(dLat / d) * (s / 2);
+      mmCtx.fillStyle = 'rgba(127,208,255,0.85)';
+      mmCtx.beginPath();
+      mmCtx.arc(px, py, 3, 0, Math.PI * 2);
+      mmCtx.fill();
+    });
+    mmCtx.restore();
+  }
+
   // Heading-up aircraft marker at the centre
   mmCtx.save();
   mmCtx.translate(s / 2, s / 2);
@@ -3069,6 +3384,7 @@ function beginFlight(loc) {
   state.rpm = 0;
   state.thrustPct = 0;
   state.throttle = 0;
+  initTraffic();
   chosen = true;
   simReady = false;
   startTime = performance.now();
