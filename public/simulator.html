@@ -1782,39 +1782,77 @@ function updateTraffic(dt) {
 // climb/descend bias the autopilot should add on top of its normal heading
 // and altitude hold, so AP-flown legs route around other aircraft instead of
 // flying straight through them.
+// Predictive (closest-point-of-approach) collision avoidance. Instead of only
+// looking at where traffic is RIGHT NOW, we project each aircraft forward along
+// its own velocity vector and find the moment of closest approach (CPA). That's
+// what lets us react to a crossing/converging plane early and from any bearing,
+// and to commit to a single decisive escape (climb, descend, or turn) instead of
+// a weak nudge that arrives too late. Returns biases for the cruise loop plus,
+// when a hit is imminent, a hard `override` escape direction.
 function apTrafficAvoidance() {
-  let turnBias = 0, vsBias = 0, emergency = false;
-  // Wide net: collisions happen from any bearing, not just dead ahead. A
-  // crossing aircraft at 90° is just as deadly, so we watch the whole bubble and
-  // separate VERTICALLY (the fastest, most reliable escape) regardless of bearing,
-  // while only TURNING away from threats that are ahead of us.
-  const LOOKOUT_M = 3200, ALT_BAND_FT = 900;
+  let turnBias = 0, vsBias = 0, emergency = false, override = null, worst = Infinity;
+  const cosLat = Math.cos(state.lat * DEG);
+  const Vp = state.speed * KTS_TO_MPS;
+  const pvN = Vp * Math.cos(state.heading * DEG);   // player velocity, N/E (m/s)
+  const pvE = Vp * Math.sin(state.heading * DEG);
+  const HORIZON = 16;        // seconds we look ahead for a conflict
+  const MISS_M = 140;        // predicted horizontal miss below this = conflict
+  const MISS_FT = 400;       // predicted vertical miss below this = conflict
+
   for (let i = 0; i < traffic.length; i++) {
     const t = traffic[i];
     if (!t.alive) continue;
-    const dN = (t.lat - state.lat) * M_PER_DEG_LAT;
-    const dE = (t.lon - state.lon) * (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
-    const horizM = Math.sqrt(dN * dN + dE * dE);
-    const altDiff = state.altitude - t.altitude; // +ve = player above
-    if (horizM > LOOKOUT_M || Math.abs(altDiff) > ALT_BAND_FT) continue;
-    const bearing = wrap360(Math.atan2(dE, dN) / DEG);
+    // Relative position (m), player at origin.
+    const rN = (t.lat - state.lat) * M_PER_DEG_LAT;
+    const rE = (t.lon - state.lon) * (M_PER_DEG_LAT * cosLat);
+    const r0 = Math.sqrt(rN * rN + rE * rE);
+    if (r0 > 4200) continue;
+    const altDiff0 = state.altitude - t.altitude; // +ve = player above
+    // Relative velocity (other minus player), m/s.
+    const Vt = t.speed * KTS_TO_MPS;
+    const vN = Vt * Math.cos(t.heading * DEG) - pvN;
+    const vE = Vt * Math.sin(t.heading * DEG) - pvE;
+    const vRel2 = vN * vN + vE * vE;
+    // Time to closest approach (clamped to [0, HORIZON]).
+    let tca = vRel2 > 1e-6 ? -((rN * vN + rE * vE) / vRel2) : 0;
+    if (tca < 0) tca = 0; else if (tca > HORIZON) tca = HORIZON;
+    // Predicted separation at CPA. Bots hold altitude over this short window;
+    // include the player's own climb/descent so a vertical escape is credited.
+    const missH = Math.sqrt((rN + vN * tca) * (rN + vN * tca) + (rE + vE * tca) * (rE + vE * tca));
+    const missV = Math.abs(altDiff0 + (state.vs / 60) * tca);
+    // Keep it if EITHER a future CPA conflict OR a tight current proximity.
+    const cpaConflict = (missH < MISS_M && missV < MISS_FT);
+    const nearNow = (r0 < 1000 && Math.abs(altDiff0) < 750);
+    if (!cpaConflict && !nearNow) continue;
+
+    // Urgency: imminent + near miss => strong; fading with time-to-CPA and miss.
+    const timeUrg = 1 - tca / HORIZON;
+    const distUrg = Math.max(0, 1 - missH / 900);
+    const urg = Math.max(0.18, Math.min(1, (0.35 + 0.65 * distUrg) * Math.max(0.12, timeUrg)));
+
+    const bearing = wrap360(Math.atan2(rE, rN) / DEG);   // toward threat now
     const rel = normDeg(bearing - state.heading);
-    const ahead = Math.abs(rel) <= 95;
-    // Proximity weight ramps up sharply (^1.6) so distant traffic barely nudges
-    // us but a near one dominates.
-    const closeness = Math.pow(Math.max(0, 1 - horizM / LOOKOUT_M), 1.6);
-    // Vertical escape: move away from its altitude (if co-altitude, climb).
-    const sep = altDiff >= 0 ? 1 : -1;
-    vsBias += sep * closeness * (ahead ? 1600 : 850);
-    // Lateral escape: turn away, but only from traffic that's actually ahead.
-    if (ahead) turnBias += (rel >= 0 ? -1 : 1) * closeness * 42;
-    // Emergency bubble: something close AND near our level -> hard evasive climb/turn.
-    if (horizM < 700 && Math.abs(altDiff) < 550) emergency = true;
+    const ahead = Math.abs(rel) <= 100;
+    // VERTICAL escape (works from any bearing): move away from its level; if we're
+    // nearly co-altitude, climb. This is the primary, fastest separation.
+    const sep = altDiff0 >= 0 ? 1 : -1;
+    vsBias += sep * urg * 2000;
+    // LATERAL escape: turn away from a threat that's ahead of us.
+    if (ahead) turnBias += (rel >= 0 ? -1 : 1) * urg * 55;
+
+    // Last-ditch: a hit is genuinely imminent -> commit a hard maneuver toward the
+    // single worst threat (smallest predicted miss), overriding alt/heading hold.
+    if ((tca < 7 && missH < 95 && missV < 280) || (r0 < 380 && Math.abs(altDiff0) < 320)) {
+      emergency = true;
+      const score = missH + tca * 8 + r0 * 0.15;
+      if (score < worst) { worst = score; override = { climb: sep, turn: (rel >= 0 ? -1 : 1) }; }
+    }
   }
   return {
-    turnBias: Math.max(-45, Math.min(45, turnBias)),
-    vsBias: Math.max(-2400, Math.min(2400, vsBias)),
-    emergency: emergency
+    turnBias: Math.max(-60, Math.min(60, turnBias)),
+    vsBias: Math.max(-3000, Math.min(3000, vsBias)),
+    emergency: emergency,
+    override: override
   };
 }
 
@@ -2182,7 +2220,25 @@ function apCruiseControl(dt) {
     thrCmd = Math.max(-1, Math.min(1, spdErr * 0.04 + ap.spdI * 0.008));
   }
 
-  return { pitchCmd, rollCmd, thrCmd };
+  return navEvasiveOverride({ pitchCmd, rollCmd, thrCmd }, avoid);
+}
+
+// Last-ditch collision escape. When apTrafficAvoidance reports an imminent hit it
+// hands back a committed `override` direction; here we slam the controls toward it
+// (max climb/dive + hard bank away), overriding whatever altitude/heading-hold
+// wanted. Refuses to dive when too low — climbs instead — so it never trades a
+// mid-air for a terrain strike. Used by both cruise and the final-approach phase.
+function navEvasiveOverride(out, avoid, aglFtArg) {
+  if (!out || !avoid || !avoid.override) return out;
+  const aglFt = (typeof aglFtArg === 'number')
+    ? aglFtArg
+    : (state.altitude - (state.terrainHeightFt || 0));
+  let dir = avoid.override.climb;
+  if (aglFt < 450 && dir < 0) dir = 1;                  // too low to dive safely -> climb
+  out.pitchCmd = Math.max(-0.95, Math.min(0.95, dir * 0.9));
+  out.rollCmd  = Math.max(-0.95, Math.min(0.95, (avoid.override.turn * 35 - state.bank) * 0.06));
+  out.brakeCmd = false;                                  // don't fight the escape with airbrake
+  return out;
 }
 
 // ---- Terrain proximity beep ----
@@ -2634,6 +2690,10 @@ function apNavControl(dt) {
     // While actually descending (phase 2+), recover speed with the nose so it
     // doesn't porpoise; matches apLandingControl's own final approach speed.
     if (ap.landPhase >= 2) navSpeedTradeAltitude(o, activeAglFt, Math.max(stallSpeedKts() + 20, 120));
+    // Even on final approach, break off into a hard escape if a bot is about to
+    // hit us (climbs rather than dives when low so we don't fly into the ground).
+    const aglAbove = state.altitude - (state.terrainHeightFt || 0);
+    if (aglAbove > 200) { const av = apTrafficAvoidance(); if (av.override) navEvasiveOverride(o, av, aglAbove); }
     return navProtectGear(o, activeAglFt);
   }
 
