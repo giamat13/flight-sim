@@ -1122,11 +1122,7 @@ let pitchActivePrev = false;  // was the pilot actively pitching last frame? (fo
 let camFollowHeading = null;
 
 // ===================== CESIUM GLOBE (real world) =====================
-// Optional: your own free Cesium ion token (https://ion.cesium.com/tokens) --
-// removes the eval-token rate limit on Cesium OSM Buildings below. Must be set
-// before initCesium() runs.
-Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI1ZjgzMmU1NS05ZmUxLTRiNmYtYTQ2Ni0wMDBlMmU1N2ZkNjMiLCJpZCI6NDQ4Mzk0LCJzdWIiOiJnaWFtYXQxMyIsImlzcyI6Imh0dHBzOi8vYXBpLmNlc2l1bS5jb20iLCJhdWQiOiJmbGlnaHQtc2ltIiwiaWF0IjoxNzgyMjc3ODYxfQ.CM5n2Vq-HLNFV2bcSrd0Pd8WPzV51Xl0Hs99fhWvw9c';
-let viewer = null
+let viewer = null;
 function initCesium() {
   if (!window.Cesium) { if (loadingEl) loadingEl.querySelector('.l-sub').textContent = 'EARTH FAILED TO LOAD'; return; }
   try {
@@ -1180,22 +1176,6 @@ function initCesium() {
     Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(
       'https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer'
     ).then(function(t){ viewer.terrainProvider = t; }).catch(function(){ /* keep ellipsoid */ });
-
-    // 3D buildings (Cesium OSM Buildings global tileset) -- the MSFS-style
-    // extruded-building look you get from real geometry instead of a flat
-    // satellite texture. This streams from Cesium ion (createOsmBuildings
-    // was removed in newer CesiumJS, so we use the async tileset loader).
-    // It works out of the box with Cesium's bundled evaluation ion token,
-    // but that token is rate-limited -- for real use, sign up free at
-    // https://ion.cesium.com/tokens and set Cesium.Ion.defaultAccessToken
-    // (see the commented line near the top of this script).
-    Cesium.createOsmBuildingsAsync().then(function (osmBuildings) {
-      // Same memory/perf reasoning as the globe settings above: cap detail
-      // and tile memory so buildings don't blow the GPU budget.
-      osmBuildings.maximumScreenSpaceError = 32;
-      osmBuildings.maximumMemoryUsage = 256;
-      viewer.scene.primitives.add(osmBuildings);
-    }).catch(function (e) { console.warn('OSM Buildings failed to load', e); });
   } catch (e) {
     console.warn('Cesium init failed', e);
     if (loadingEl) loadingEl.querySelector('.l-sub').textContent = 'EARTH FAILED TO LOAD';
@@ -3640,6 +3620,9 @@ loop();
 </script>
 </body>
 </html>
+<<<<<<< HEAD
 
 <!-- ADVANCED AUTOPILOT PLACEHOLDER SYSTEM ADDED -->
 <script>window.advancedAutopilot={enabled:true,doublePress:true,mapSelector:true,resumeRoute:true};</script>
+=======
+>>>>>>> parent of 68363d3 (feat: add Cesium ion token support and implement OSM buildings loading in the simulator)
