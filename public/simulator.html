@@ -2997,7 +2997,7 @@ function drawSpdTape() {
 // the bot's own local frame, oriented by its pitch/bank/heading-relative-to-
 // camera, and projected with a local pinhole camera using the true distance
 // as depth and a focal length derived from the real camera's FOV.
-const TRAFFIC_MODEL_M_PER_UNIT = 3.2; // bigger than the player's own scale (6.4) so traffic reads clearly at distance
+const TRAFFIC_MODEL_M_PER_UNIT = 25; // much larger than the player's own scale (6.4) so traffic reads as a clearly visible plane, not nav-light dots
 
 function drawTraffic() {
   if (!viewer || !traffic.length) return;
@@ -3119,7 +3119,10 @@ function drawTraffic() {
       ctx.stroke();
     });
 
-    // Wingtip nav lights, same colours as the player's own model.
+    // Wingtip nav lights, same colours as the player's own model. Sized down
+    // at distance so they read as lights on the plane, not a blob bigger
+    // than the plane itself.
+    const lightR = Math.max(1, Math.min(3, 2200 / d.distM));
     function drawLight(vi, color) {
       const p = d.proj[vi];
       if (!p) return;
@@ -3127,7 +3130,7 @@ function drawTraffic() {
       ctx.shadowColor = color;
       ctx.shadowBlur = 10;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, lightR, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
     }
