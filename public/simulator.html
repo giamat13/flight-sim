@@ -1415,7 +1415,8 @@ function spawnTrafficPlane(nearPlayer) {
     // phase: 'cruise' | 'descend' | 'landing' | 'ground' | 'takeoff' | 'climb'
     phase: startOnGround ? 'ground' : 'cruise',
     phaseTimer: startOnGround ? randRange(10, 40) : randRange(60, 180), // seconds before next phase change
-    groundAlt: groundAlt  // stored terrain height at spawn
+    groundAlt: groundAlt,  // stored terrain height at spawn
+    sizeScale: randRange(20, 34)  // random visual size (model-units per metre); lower = smaller on screen
   };
 }
 
@@ -3238,7 +3239,7 @@ function drawTraffic() {
     const cyw = Math.cos(yawRad), syw = Math.sin(yawRad);
 
     // Depth in model units for this bot's local pinhole projection.
-    const depthUnits = distM / TRAFFIC_MODEL_M_PER_UNIT;
+    const depthUnits = distM / (t.sizeScale || TRAFFIC_MODEL_M_PER_UNIT);
 
     const tf = mesh.verts.map(function (v) {
       let x = v[0], y = v[1], z = v[2];
