@@ -1122,7 +1122,11 @@ let pitchActivePrev = false;  // was the pilot actively pitching last frame? (fo
 let camFollowHeading = null;
 
 // ===================== CESIUM GLOBE (real world) =====================
-let viewer = null;
+// Optional: your own free Cesium ion token (https://ion.cesium.com/tokens) --
+// removes the eval-token rate limit on Cesium OSM Buildings below. Must be set
+// before initCesium() runs.
+Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI1ZjgzMmU1NS05ZmUxLTRiNmYtYTQ2Ni0wMDBlMmU1N2ZkNjMiLCJpZCI6NDQ4Mzk0LCJzdWIiOiJnaWFtYXQxMyIsImlzcyI6Imh0dHBzOi8vYXBpLmNlc2l1bS5jb20iLCJhdWQiOiJmbGlnaHQtc2ltIiwiaWF0IjoxNzgyMjc3ODYxfQ.CM5n2Vq-HLNFV2bcSrd0Pd8WPzV51Xl0Hs99fhWvw9c';
+let viewer = null
 function initCesium() {
   if (!window.Cesium) { if (loadingEl) loadingEl.querySelector('.l-sub').textContent = 'EARTH FAILED TO LOAD'; return; }
   try {
@@ -1176,6 +1180,22 @@ function initCesium() {
     Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(
       'https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer'
     ).then(function(t){ viewer.terrainProvider = t; }).catch(function(){ /* keep ellipsoid */ });
+
+    // 3D buildings (Cesium OSM Buildings global tileset) -- the MSFS-style
+    // extruded-building look you get from real geometry instead of a flat
+    // satellite texture. This streams from Cesium ion (createOsmBuildings
+    // was removed in newer CesiumJS, so we use the async tileset loader).
+    // It works out of the box with Cesium's bundled evaluation ion token,
+    // but that token is rate-limited -- for real use, sign up free at
+    // https://ion.cesium.com/tokens and set Cesium.Ion.defaultAccessToken
+    // (see the commented line near the top of this script).
+    Cesium.createOsmBuildingsAsync().then(function (osmBuildings) {
+      // Same memory/perf reasoning as the globe settings above: cap detail
+      // and tile memory so buildings don't blow the GPU budget.
+      osmBuildings.maximumScreenSpaceError = 32;
+      osmBuildings.maximumMemoryUsage = 256;
+      viewer.scene.primitives.add(osmBuildings);
+    }).catch(function (e) { console.warn('OSM Buildings failed to load', e); });
   } catch (e) {
     console.warn('Cesium init failed', e);
     if (loadingEl) loadingEl.querySelector('.l-sub').textContent = 'EARTH FAILED TO LOAD';
@@ -1332,24 +1352,30 @@ let trafficIdSeq = 1;
 
 function randRange(a, b) { return a + Math.random() * (b - a); }
 
-// Build one bot at a random bearing/distance from the player, flying a
-// plausible heading/altitude/speed band so it reads as ambient air traffic.
+// Build one bot at a random bearing/distance from the player. Traffic mirrors
+// the PLAYER's own speed/altitude/configuration (with small per-plane variance)
+// so it looks, flies and is sized exactly like flying alongside yourself.
 function spawnTrafficPlane(nearPlayer) {
   const bearing = randRange(0, 360);
   const dist = nearPlayer ? randRange(2500, TRAFFIC_SPAWN_RADIUS_M) : randRange(800, TRAFFIC_SPAWN_RADIUS_M);
   const br = bearing * DEG;
   const dLat = (Math.cos(br) * dist) / M_PER_DEG_LAT;
   const dLon = (Math.sin(br) * dist) / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
-  const altFt = state.altitude + randRange(-1800, 1800);
+  const baseAlt = state.onGround ? Math.max(1500, state.altitude + 800) : state.altitude;
+  const baseSpd = state.onGround ? 180 : Math.max(110, state.speed);
   return {
     id: trafficIdSeq++,
     lat: state.lat + dLat,
     lon: state.lon + dLon,
-    altitude: Math.max(800, altFt),
+    altitude: Math.max(800, baseAlt + randRange(-150, 150)),
     heading: randRange(0, 360),
     targetHeading: randRange(0, 360),
-    speed: randRange(140, 260),       // knots
+    speed: Math.max(80, baseSpd + randRange(-12, 12)), // knots — matches player's pace
+    speedOffset: randRange(-10, 10), // small per-plane variance kept while tracking the player's speed
     bank: 0,
+    pitch: 0,           // nose attitude (deg) — same convention as state.pitch
+    flaps: 0,            // same model as player: 0..3
+    gearDown: false,     // cruising traffic flies clean, same as the player would
     turnTimer: randRange(8, 25),      // seconds until next lazy heading change
     livery: Math.floor(randRange(0, 4)),
     alive: true
@@ -1436,13 +1462,33 @@ function updateTraffic(dt) {
     t.bank += (desiredBank - t.bank) * Math.min(1, dt * 1.5);
     t.heading = wrap360(t.heading + (t.bank * 0.5) * dt);
 
+    const prevAltitude = t.altitude;
     if (Math.abs(avoidClimb) > 1) {
       t.altitude += Math.max(-700, Math.min(700, avoidClimb)) * dt / 60;
     } else {
-      // Gentle altitude wander so it doesn't look perfectly flat forever
+      // No one to dodge: gently match the player's altitude, like flying
+      // alongside them, with a touch of independent wander so it doesn't
+      // look perfectly locked.
+      const altErr = state.altitude - t.altitude;
+      const climbRateFtPerSec = Math.max(-10, Math.min(10, altErr * 0.4));
+      t.altitude += climbRateFtPerSec * dt;
       t.altitude += Math.sin((t.id * 13 + performance.now() * 0.00005)) * 2 * dt;
     }
     t.altitude = Math.max(500, t.altitude);
+
+    // Speed: track the player's pace (with a small per-plane offset baked in
+    // at spawn) so traffic always feels like it's flying alongside you.
+    const spdErr = (state.speed - t.speedOffset) - t.speed;
+    t.speed = Math.max(60, t.speed + Math.max(-15, Math.min(15, spdErr * 0.5)) * dt);
+
+    // Nose pitch follows the bot's own climb/descent, same convention as the
+    // player's flight-path-angle trim, so it visually noses up/down in sync
+    // with whether it's climbing or descending.
+    const climbFtPerSec = (t.altitude - prevAltitude) / Math.max(dt, 0.001);
+    const vMpsForPitch = Math.max(t.speed * KTS_TO_MPS, 1);
+    const targetPitch = Math.max(-20, Math.min(20,
+      Math.atan2(climbFtPerSec * FT_TO_M, vMpsForPitch) / DEG * 1.4));
+    t.pitch += (targetPitch - t.pitch) * Math.min(1, dt * 2);
 
     // Advance position along the current heading at cruise speed
     const vMps = t.speed * KTS_TO_MPS;
@@ -2313,9 +2359,11 @@ function drawPitchLadder(bankRad) {
   ctx.restore();
 }
 
-function drawAirplane() {
-  // === 3D Airplane Model (chase view overlay) ===
-  // Coordinate system: X=right, Y=up, Z=forward (nose)
+// Builds the airplane mesh (verts + faces, in the aircraft's own local frame:
+// X=right, Y=up, Z=forward/nose) for a given flap/gear state. Shared by the
+// player's own model and by AI traffic, so every aircraft in the sky looks
+// identical.
+function buildAirplaneMesh(flapsLevel, gearDown) {
   const verts = [];
   const faces = [];
   const sides = 6;
@@ -2384,10 +2432,10 @@ function drawAirplane() {
   const lwTips = addWing(-1);
   const rwTips = addWing(1);
 
-  // Flaps — drawn only when deployed (state.flaps > 0)
+  // Flaps — drawn only when deployed (flapsLevel > 0)
   // Each flap is a deflected panel hanging below/behind the wing trailing edge.
-  if (state.flaps > 0) {
-    const flapAngleDeg = [0, 12, 24, 42][state.flaps]; // physical deflection per notch
+  if (flapsLevel > 0) {
+    const flapAngleDeg = [0, 12, 24, 42][flapsLevel]; // physical deflection per notch
     const flapAngle = flapAngleDeg * Math.PI / 180;
     const flapLen = 0.55;  // chord of the flap surface
     const flapCol = [0.18, 0.26, 0.38];
@@ -2464,7 +2512,7 @@ function drawAirplane() {
   faces.push({ v: [cF, cB, cBT, cFT], c: [0.07, 0.14, 0.24] });
 
   // Landing gear (struts + wheels) — only modeled when the gear is down
-  if (state.gearDown) {
+  if (gearDown) {
     const strutCol = [0.30, 0.30, 0.30];
     const wheelCol = [0.06, 0.06, 0.06];
     const wheelHubCol = [0.45, 0.45, 0.45];
@@ -2511,6 +2559,16 @@ function drawAirplane() {
       addWheel(s * 0.5, gearBotY, 0.2, wheelR * 1.15, wheelW * 1.2);
     });
   }
+
+  return { verts, faces, lwTip: lwTips.tip, rwTip: rwTips.tip };
+}
+
+function drawAirplane() {
+  // === 3D Airplane Model (chase view overlay) ===
+  // Coordinate system: X=right, Y=up, Z=forward (nose)
+  const mesh = buildAirplaneMesh(state.flaps, state.gearDown);
+  const verts = mesh.verts, faces = mesh.faces;
+  const lwTips = { tip: mesh.lwTip }, rwTips = { tip: mesh.rwTip };
 
   // === Transform & Project ===
   // Negated so a POSITIVE state.pitch (nose-up / climb in the physics) renders the
@@ -2928,106 +2986,153 @@ function drawSpdTape() {
 }
 
 // ===== Draw AI traffic =====
-// Unlike the player's own model (drawn with a fake local camera trick),
-// traffic planes have real lat/lon/alt positions, so we project them with
-// the actual Cesium camera/scene to place them correctly in the 3D view.
+// Traffic uses the EXACT same 3D model as the player's own aircraft (see
+// buildAirplaneMesh) so every plane in the sky looks identical. Each bot's
+// screen position comes from the REAL Cesium camera (so this works correctly
+// whether you're in cockpit or chase view); the mesh itself is then built in
+// the bot's own local frame, oriented by its pitch/bank/heading-relative-to-
+// camera, and projected with a local pinhole camera using the true distance
+// as depth and a focal length derived from the real camera's FOV.
+const TRAFFIC_MODEL_M_PER_UNIT = 6.4; // same scale as the player's own model (wingspan ≈ 6 units ≈ 38m)
+
 function drawTraffic() {
   if (!viewer || !traffic.length) return;
   const camPos = viewer.camera.positionWC;
+  const camHeadingDeg = Cesium.Math.toDegrees(viewer.camera.heading);
 
-  // Collect projected traffic with their distance, draw far-to-near.
-  const drawList = [];
+  // Focal length (px) consistent with the real camera's current vertical FOV,
+  // so traffic is sized correctly relative to the terrain/sky behind it.
+  let fovRad = 55 * DEG;
+  try {
+    const fr = viewer.camera.frustum;
+    if (fr && typeof fr.fov === 'number') fovRad = fr.fov;
+  } catch (e) {}
+  const focal = (H / 2) / Math.tan(fovRad / 2);
+
+  // Light direction (matches drawAirplane)
+  const lD = [-0.4, 0.7, 0.6];
+  const lL = Math.sqrt(lD[0]**2 + lD[1]**2 + lD[2]**2);
+  const lx = lD[0]/lL, ly = lD[1]/lL, lz = lD[2]/lL;
+
+  const drawables = [];
+
   for (let i = 0; i < traffic.length; i++) {
     const t = traffic[i];
     if (!t.alive) continue;
+
     const cart = Cesium.Cartesian3.fromDegrees(t.lon, t.lat, Math.max(0, t.altitude) * FT_TO_M);
     const distM = Cesium.Cartesian3.distance(camPos, cart);
-    if (distM > 22000) continue; // too far to matter visually
-    const screen = viewer.scene.cartesianToCanvasCoordinates(cart);
-    if (!screen) continue; // behind camera / off-globe
-    if (screen.x < -60 || screen.x > W + 60 || screen.y < -60 || screen.y > H + 60) continue;
-    drawList.push({ t, distM, x: screen.x, y: screen.y });
-  }
-  drawList.sort(function (a, b) { return b.distM - a.distM; });
+    if (distM > 18000) continue; // too far to matter visually
 
-  drawList.forEach(function (d) {
-    const t = d.t;
-    // Scale shrinks with distance; clamp so far traffic stays a visible dot
-    // and very close traffic doesn't get absurdly huge.
-    const scale = Math.max(0.18, Math.min(2.6, 900 / d.distM));
-    const x = d.x, y = d.y;
+    // Where the bot's CENTER sits on screen, from the real camera — correct
+    // in both cockpit and chase mode since this is the actual view.
+    const center = viewer.scene.cartesianToCanvasCoordinates(cart);
+    if (!center) continue; // behind the camera / not visible
+    if (center.x < -150 || center.x > W + 150 || center.y < -150 || center.y > H + 150) continue;
 
-    // Heading of the bot relative to the screen: approximate by comparing its
-    // heading to the player's current heading (camera generally faces along
-    // the player's track), which is good enough for a small silhouette.
-    const relYaw = normDeg(t.heading - state.heading) * DEG;
+    // Build & orient this bot's own mesh (full model, same as the player's).
+    const mesh = buildAirplaneMesh(t.flaps || 0, t.gearDown !== false);
+    const pitchRad = -(t.pitch || 0) * DEG;
     const bankRad = t.bank * DEG;
+    // Bot heading relative to the camera's current heading, so it's rotated
+    // to show the correct aspect (nose-on, side-on, etc.) as seen from here.
+    const yawRad = normDeg(t.heading - camHeadingDeg) * DEG;
+    const cyw = Math.cos(yawRad), syw = Math.sin(yawRad);
 
-    ctx.save();
-    ctx.translate(x, y);
+    // Depth in model units for this bot's local pinhole projection.
+    const depthUnits = distM / TRAFFIC_MODEL_M_PER_UNIT;
 
-    // Far away: just a soft nav-light dot, like a real distant aircraft.
-    if (d.distM > 6000) {
-      const a = Math.max(0.25, Math.min(0.9, 1 - d.distM / 22000));
-      ctx.fillStyle = 'rgba(0,255,65,' + a + ')';
-      ctx.shadowColor = 'rgba(0,255,65,0.8)';
-      ctx.shadowBlur = 6;
+    const tf = mesh.verts.map(function (v) {
+      let x = v[0], y = v[1], z = v[2];
+      const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad);
+      const ny = y * cp - z * sp;
+      const nz = y * sp + z * cp;
+      y = ny; z = nz;
+      const cb = Math.cos(bankRad), sb = Math.sin(bankRad);
+      const nx = x * cb + y * sb;
+      const nyy = -x * sb + y * cb;
+      x = nx; y = nyy;
+      const nx2 = x * cyw + z * syw;
+      const nz2 = -x * syw + z * cyw;
+      return [nx2, y, nz2 + depthUnits];
+    });
+
+    const proj = tf.map(function (v) {
+      const vz = v[2];
+      if (vz <= 0.1) return null;
+      return { x: (v[0] * focal) / vz + center.x, y: (-v[1] * focal) / vz + center.y, z: vz };
+    });
+
+    // Off-screen cull (after projection, in case the model pokes off the
+    // edge even though its center is on screen).
+    let anyOnScreen = false;
+    for (let k = 0; k < proj.length; k++) {
+      const p = proj[k];
+      if (p && p.x > -80 && p.x < W + 80 && p.y > -80 && p.y < H + 80) { anyOnScreen = true; break; }
+    }
+    if (!anyOnScreen) continue;
+
+    const fData = mesh.faces.map(function (face) {
+      const pts = face.v.map(function (vi) { return proj[vi]; });
+      if (pts.some(function (p) { return !p; })) return null;
+      const tv = face.v.map(function (vi) { return tf[vi]; });
+      const avgZ = pts.reduce(function (s, p) { return s + p.z; }, 0) / pts.length;
+      const e1 = [tv[1][0]-tv[0][0], tv[1][1]-tv[0][1], tv[1][2]-tv[0][2]];
+      const e2 = [tv[2][0]-tv[0][0], tv[2][1]-tv[0][1], tv[2][2]-tv[0][2]];
+      let nx = e1[1]*e2[2] - e1[2]*e2[1];
+      let ny = e1[2]*e2[0] - e1[0]*e2[2];
+      let nz = e1[0]*e2[1] - e1[1]*e2[0];
+      const nL = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+      nx /= nL; ny /= nL; nz /= nL;
+      const cxA = tv.reduce(function (s, v) { return s + v[0]; }, 0) / tv.length;
+      const cyA = tv.reduce(function (s, v) { return s + v[1]; }, 0) / tv.length;
+      const czA = tv.reduce(function (s, v) { return s + v[2]; }, 0) / tv.length;
+      const vDot = nx*(0-cxA) + ny*(0-cyA) + nz*(0-czA);
+      const sign = vDot > 0 ? 1 : -1;
+      const light = Math.max(0.15, sign * (nx*lx + ny*ly + nz*lz));
+      return { pts, avgZ, light, color: face.c };
+    }).filter(function (f) { return f; });
+
+    drawables.push({ distM, fData, proj, lwTip: mesh.lwTip, rwTip: mesh.rwTip });
+  }
+
+  // Draw far-to-near so nearer traffic correctly overlaps farther traffic.
+  drawables.sort(function (a, b) { return b.distM - a.distM; });
+
+  drawables.forEach(function (d) {
+    d.fData.sort(function (a, b) { return b.avgZ - a.avgZ; });
+    d.fData.forEach(function (fd) {
+      const r = Math.round(fd.color[0] * fd.light * 255);
+      const g = Math.round(fd.color[1] * fd.light * 255);
+      const b = Math.round(fd.color[2] * fd.light * 255);
+      ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+      ctx.strokeStyle = 'rgba(0,255,65,0.12)';
+      ctx.lineWidth = 0.5;
       ctx.beginPath();
-      ctx.arc(0, 0, Math.max(1.4, 2.2 * scale), 0, Math.PI * 2);
+      fd.pts.forEach(function (p, i) { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    });
+
+    // Wingtip nav lights, same colours as the player's own model.
+    function drawLight(vi, color) {
+      const p = d.proj[vi];
+      if (!p) return;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.restore();
-      return;
     }
-
-    // Closer: a simple flattened silhouette — fuselage + swept wings + tail —
-    // foreshortened by the bot's yaw relative to us and rolled by its bank.
-    ctx.rotate(bankRad * 0.6);
-    const foreshorten = Math.max(0.18, Math.abs(Math.cos(relYaw)));
-    ctx.scale(foreshorten, 1);
-
-    const bodyLen = 16 * scale, bodyW = 3.2 * scale;
-    const wingSpan = 22 * scale, wingChord = 4.5 * scale;
-    const liveryHue = ['#cfd8dc', '#90caf9', '#ffcc80', '#a5d6a7'][t.livery % 4];
-
-    // Wings
-    ctx.fillStyle = liveryHue;
-    ctx.globalAlpha = 0.92;
-    ctx.beginPath();
-    ctx.moveTo(-wingSpan / 2, wingChord * 0.3);
-    ctx.lineTo(0, -wingChord * 0.5);
-    ctx.lineTo(wingSpan / 2, wingChord * 0.3);
-    ctx.lineTo(0, wingChord * 1.1);
-    ctx.closePath();
-    ctx.fill();
-
-    // Fuselage
-    ctx.beginPath();
-    ctx.ellipse(0, 0, bodyW, bodyLen / 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Tail fin
-    ctx.beginPath();
-    ctx.moveTo(0, bodyLen * 0.32);
-    ctx.lineTo(-bodyW * 1.4, bodyLen * 0.5);
-    ctx.lineTo(0, bodyLen * 0.55);
-    ctx.closePath();
-    ctx.fill();
-    ctx.globalAlpha = 1;
-
-    // Nav lights (red left wingtip, green right wingtip) for readability
-    ctx.shadowBlur = 4;
-    ctx.fillStyle = 'rgba(255,40,40,0.9)';
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.beginPath(); ctx.arc(-wingSpan / 2, wingChord * 0.3, 1.4, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(0,255,65,0.9)';
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.beginPath(); ctx.arc(wingSpan / 2, wingChord * 0.3, 1.4, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
-
-    ctx.restore();
+    drawLight(d.rwTip, 'rgba(0,255,65,0.9)');
+    drawLight(d.lwTip, 'rgba(255,40,40,0.9)');
   });
 }
+
+
 
 function render() {
   // Transparent overlay on top of the real-world globe
@@ -3620,9 +3725,6 @@ loop();
 </script>
 </body>
 </html>
-<<<<<<< HEAD
 
 <!-- ADVANCED AUTOPILOT PLACEHOLDER SYSTEM ADDED -->
 <script>window.advancedAutopilot={enabled:true,doublePress:true,mapSelector:true,resumeRoute:true};</script>
-=======
->>>>>>> parent of 68363d3 (feat: add Cesium ion token support and implement OSM buildings loading in the simulator)
