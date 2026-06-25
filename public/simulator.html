@@ -30,6 +30,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #terrain-warn .tw-main{font-size:42px;font-weight:700;color:#ff4400;text-shadow:0 0 30px rgba(255,68,0,0.6);font-family:'JetBrains Mono',monospace;letter-spacing:4px}
 #terrain-warn .tw-sub{font-size:14px;color:rgba(255,68,0,0.6);margin-top:8px;font-family:'JetBrains Mono',monospace}
 #controls-hint{position:fixed;top:16px;left:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.25);font-size:10px;font-family:'JetBrains Mono',monospace;line-height:1.8;letter-spacing:1px}
+#hud-toast{position:fixed;top:14%;left:50%;transform:translate(-50%,-50%);z-index:40;font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:700;color:#00FF41;background:rgba(0,20,0,0.62);border:1px solid rgba(0,255,65,0.4);padding:7px 18px;border-radius:6px;text-shadow:0 0 12px rgba(0,255,65,0.6);pointer-events:none;display:none;letter-spacing:2px}
 #traffic-info{position:fixed;top:16px;left:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.45);font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;margin-top:0;display:none}
 #throttle-bar-container{position:fixed;right:24px;top:50%;transform:translateY(-50%);z-index:20;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:4px}
 #throttle-bar-bg{width:8px;height:140px;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.2);border-radius:4px;position:relative;overflow:hidden}
@@ -235,6 +236,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="lp-hint" id="lp-hint">E=ENGINE &nbsp;·&nbsp; W=THR UP &nbsp;·&nbsp; B=BRAKE &nbsp;·&nbsp; ←→=STEER</div>
 </div>
 <div id="rotate-warn" class="flashing">ROTATE ↑</div>
+<div id="hud-toast"></div>
 
 <div id="sys-panel">
   <div class="sys-row"><span class="sys-key">ENG</span><span class="sys-val sys-off" id="sys-eng">OFF</span></div>
@@ -319,7 +321,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 </div>
 <div id="loc-label">GRAND CANYON, AZ</div>
 <div id="controls-hint">
-  E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · R RESET<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>
+  E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · R RESET<br>F3+A RELOAD RENDER<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>
 </div>
 <div id="traffic-info" style="position:fixed;bottom:76px;right:100px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.5);font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;text-align:right;display:none;line-height:1.6"></div>
 
@@ -420,6 +422,15 @@ const hudWindRel = document.getElementById('hud-wind-rel');
 const stallWarn = document.getElementById('stall-warn');
 const overspeedWarn = document.getElementById('overspeed-warn');
 const terrainWarn = document.getElementById('terrain-warn');
+const hudToastEl = document.getElementById('hud-toast');
+let _toastTimer = 0;
+function showToast(msg, ms) {
+  if (!hudToastEl) return;
+  hudToastEl.textContent = msg;
+  hudToastEl.style.display = 'block';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function () { hudToastEl.style.display = 'none'; }, ms || 1800);
+}
 const thrFill = document.getElementById('throttle-bar-fill');
 const fuelFill = document.getElementById('fuel-bar-fill');
 const fuelPctEl = document.getElementById('fuel-pct');
@@ -576,7 +587,7 @@ function playStartupSound() {
 // work regardless of keyboard language/layout (Hebrew, AZERTY, etc.).
 const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1, KeyA:1,
   BracketLeft:1, BracketRight:1, Semicolon:1, Quote:1, Comma:1, Period:1,
-  ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1 };
+  ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1, F3:1 };
 const keys = {};
 window.addEventListener('keydown', e => {
   // Virtual keyboard navigation (when open) takes priority
@@ -610,7 +621,9 @@ window.addEventListener('keydown', e => {
   if (!wasDown) {
     // edge-triggered actions
     if (code === 'KeyC') cameraMode = (cameraMode + 1) % 2;
-    if (code === 'KeyA') onApButtonPress();
+    // F3+A (Minecraft-style) reloads the render of loaded tiles without re-downloading;
+    // A alone toggles the autopilot.
+    if (code === 'KeyA') { if (keys['F3']) reloadRender(); else onApButtonPress(); }
     if (code === 'KeyE') handleEngineKey();
     // AP knob shortcuts (only when AP is on)
     if (ap.on) {
@@ -1341,7 +1354,7 @@ function headingDirZ(deg) { return -Math.cos(deg * Math.PI / 180); }
 // ===================== Elevation tiles (AWS Terrarium, keyless) =====================
 const ELEV_Z = 12;       // zoom used for elevation lookups (physics + terrain mesh)
 const ELEV_GRID = 64;    // decoded grid resolution per elevation tile
-const elevTiles = {};    // "z/x/y" -> { grid:Float32Array, n } | 'loading' | 'error'
+const elevTiles = {};    // "z/x/y" -> { grid:Float32Array, n } | 'loading' | { error, tries, nextAt }
 
 function decodeElevImage(img, n) {
   const cv = document.createElement('canvas');
@@ -1362,17 +1375,27 @@ function decodeElevImage(img, n) {
   }
   return grid;
 }
+const ELEV_MAX_TRIES = 5;
 function ensureElevTile(z, x, y) {
   const key = z + '/' + x + '/' + y;
-  if (elevTiles[key]) return;
+  const cur = elevTiles[key];
+  if (cur) {
+    if (cur.grid) return;          // already decoded
+    if (cur === 'loading') return; // request in flight
+    // error record: only re-attempt after backoff, up to a try budget, so a
+    // transient network/CORS hiccup no longer breaks a location permanently.
+    if (cur.error && (cur.tries >= ELEV_MAX_TRIES || performance.now() < cur.nextAt)) return;
+  }
   const n = Math.pow(2, z);
   if (y < 0 || y >= n) { elevTiles[key] = { grid: new Float32Array(ELEV_GRID * ELEV_GRID), n: ELEV_GRID }; return; }
+  const tries = (cur && cur.tries) || 0;
+  const fail = function () { elevTiles[key] = { error: true, tries: tries + 1, nextAt: performance.now() + 1500 * (tries + 1) }; };
   elevTiles[key] = 'loading';
   const wx = ((x % n) + n) % n;
   const img = new Image();
   img.crossOrigin = 'anonymous';
-  img.onload = function () { const g = decodeElevImage(img, ELEV_GRID); elevTiles[key] = g ? { grid: g, n: ELEV_GRID } : 'error'; };
-  img.onerror = function () { elevTiles[key] = 'error'; };
+  img.onload = function () { const g = decodeElevImage(img, ELEV_GRID); if (g) elevTiles[key] = { grid: g, n: ELEV_GRID }; else fail(); };
+  img.onerror = fail;
   img.src = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + z + '/' + wx + '/' + y + '.png';
 }
 // Bilinear elevation (m) at lat/lon, or null if its tile is not decoded yet.
@@ -1382,7 +1405,7 @@ function sampleElev(lat, lon) {
   const x = Math.floor(xf), y = Math.floor(yf);
   ensureElevTile(z, x, y);
   const t = elevTiles[z + '/' + x + '/' + y];
-  if (!t || typeof t === 'string') return null;
+  if (!t || !t.grid) return null;  // 'loading' or error record -> not ready
   const g = t.grid, n = t.n;
   const fx = (xf - x) * (n - 1), fy = (yf - y) * (n - 1);
   const x0 = Math.max(0, Math.min(n - 1, Math.floor(fx))), y0 = Math.max(0, Math.min(n - 1, Math.floor(fy)));
@@ -1454,7 +1477,7 @@ function resetWorld() {
   const gt = THREEJS.groundTiles;
   for (const k in gt) {
     const m = gt[k];
-    if (m && m.isObject3D) { THREEJS.groundGroup.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); } }
+    if (m && m.isObject3D) { THREEJS.groundGroup.remove(m); disposeTile(m); }
     delete gt[k];
   }
   const bg = THREEJS.buildingGroup;
@@ -1483,7 +1506,32 @@ function groundZoomForAlt(ft) {
   if (ft < 40000) return 10;
   return 9;
 }
-function buildGroundTile(z, x, y, seg) {
+// Dispose a ground-tile mesh and flag its material dead so any in-flight texture
+// retry that resolves later skips applying to (or re-creating a map on) it.
+function disposeTile(m) {
+  if (!m || !m.isObject3D) return;
+  if (m.geometry) m.geometry.dispose();
+  if (m.material) { m.material.userData.dead = true; if (m.material.map) m.material.map.dispose(); m.material.dispose(); }
+}
+// Load a tile's satellite imagery, retrying a few times on transient failure so a
+// momentary network glitch no longer leaves the area stuck as a blank placeholder.
+const TILE_MAX_TRIES = 4;
+function loadTileTexture(mat, z, y, wx, tries) {
+  _imgLoader.load(
+    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + wx,
+    function (tex) {
+      if (mat.userData.dead) { tex.dispose(); return; }
+      if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+      mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true; groundTileLoadedCount++;
+    },
+    undefined,
+    function () {
+      if (mat.userData.dead || tries >= TILE_MAX_TRIES) return;
+      setTimeout(function () { if (!mat.userData.dead) loadTileTexture(mat, z, y, wx, tries + 1); }, 1200 * (tries + 1));
+    }
+  );
+}
+function buildGroundTile(z, x, y, seg, keepTex) {
   const n = Math.pow(2, z);
   if (y < 0 || y >= n) return null;
   const wx = ((x % n) + n) % n;
@@ -1508,11 +1556,12 @@ function buildGroundTile(z, x, y, seg) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x6b7355, roughness: 1.0, metalness: 0.0 });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.userData = { z: z, x: x, y: y, seg: seg, needElev: needElev };
-  _imgLoader.load(
-    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + wx,
-    function (tex) { if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true; groundTileLoadedCount++; },
-    undefined, function () {}
-  );
+  if (keepTex) {
+    // Reuse an already-loaded texture (render reload) — no network fetch.
+    mat.map = keepTex; mat.color.set(0xffffff); mat.needsUpdate = true;
+  } else {
+    loadTileTexture(mat, z, y, wx, 0);
+  }
   return mesh;
 }
 let _elevRetryTimer = 0;
@@ -1532,7 +1581,7 @@ function updateGround() {
   for (const key in tiles) {
     if (!want[key]) {
       const m = tiles[key];
-      if (m && m.isObject3D) { THREEJS.groundGroup.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); } }
+      if (m && m.isObject3D) { THREEJS.groundGroup.remove(m); disposeTile(m); }
       delete tiles[key];
     }
   }
@@ -1555,9 +1604,13 @@ function updateGround() {
       if (!m || !m.isObject3D || !m.userData.needElev) continue;
       if (fixed >= 2) break;
       const u = m.userData;
-      const nm = buildGroundTile(u.z, u.x, u.y, u.seg);
+      // Reuse the already-loaded imagery; only the geometry needs the new elevation.
+      const nm = buildGroundTile(u.z, u.x, u.y, u.seg, (m.material && m.material.map) || null);
       if (nm) {
-        THREEJS.groundGroup.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); }
+        const sharedTex = m.material && m.material.map;
+        THREEJS.groundGroup.remove(m);
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) { m.material.userData.dead = true; if (m.material.map && m.material.map !== sharedTex) m.material.map.dispose(); m.material.dispose(); }
         tiles[key] = nm; THREEJS.groundGroup.add(nm); fixed++;
       }
     }
@@ -1571,6 +1624,29 @@ function updateGround() {
   }
   THREEJS.camera.far = Math.max(60000, far * 5);
   THREEJS.camera.updateProjectionMatrix();
+}
+
+// Rebuild every loaded ground tile's geometry from cached elevation while reusing
+// the imagery already in memory — a "reload render" (à la Minecraft F3+A) that
+// repairs glitched/half-loaded tiles without re-downloading the world. Tiles whose
+// imagery never arrived get a fresh fetch so blank placeholders finally fill in.
+function reloadRender() {
+  if (!THREEJS) return;
+  const tiles = THREEJS.groundTiles;
+  let count = 0;
+  for (const key in tiles) {
+    const m = tiles[key];
+    if (!m || !m.isObject3D) continue;
+    const u = m.userData;
+    const keepTex = (m.material && m.material.map) || null;
+    const nm = buildGroundTile(u.z, u.x, u.y, u.seg, keepTex);
+    if (!nm) continue;
+    THREEJS.groundGroup.remove(m);
+    if (m.geometry) m.geometry.dispose();
+    if (m.material) { m.material.userData.dead = true; if (m.material.map && m.material.map !== keepTex) m.material.map.dispose(); m.material.dispose(); }
+    tiles[key] = nm; THREEJS.groundGroup.add(nm); count++;
+  }
+  showToast('⟳ RENDER RELOADED · ' + count + ' TILES');
 }
 
 // ===================== OSM buildings (Overpass API, keyless) with LOD =====================
