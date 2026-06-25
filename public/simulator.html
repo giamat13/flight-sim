@@ -391,8 +391,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="sm-hint">P or ☰ to resume</div>
 </div>
 
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 <script type="module">
-import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 window.THREE = THREE; // expose for internal guards
 (function(){
 // Surface any fatal error onto the loading screen
@@ -603,6 +612,8 @@ window.addEventListener('keydown', e => {
   // Don't hijack typing in text inputs (custom location field, etc.)
   const tag = e.target && e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+  // Spectator mode locks all pilot controls until the page is refreshed.
+  if (spectate.active) return;
   // Advanced AP destination picker: arrows pan, +/- zoom, Enter fly, Esc cancel.
   if (typeof navPickerOpen !== 'undefined' && navPickerOpen) {
     if (e.key === 'ArrowUp')    { nmPanPixels(0, -100); e.preventDefault(); return; }
@@ -1812,6 +1823,7 @@ function updateCamera() {
 
   updateGround();
   updateBuildings();
+  updateTrafficModels();   // place/refresh real downloaded aircraft models in the scene
   THREEJS.renderer.render(THREEJS.scene, cam);
 }
 
@@ -1935,6 +1947,103 @@ let trafficLastFetch   = -999;   // performance.now()/1000 at last successful fe
 let trafficStatus      = 'CONNECTING…';
 const flightTrails     = {};              // icao24 → [{lat,lon,alt}]
 
+// ===================== Aircraft type → real size + downloadable 3D model =====================
+// The ADSB feeds include each aircraft's ICAO type designator (the `t` field, e.g.
+// "B738", "A320") and a coarse wake/size `category` (A1..A7). We use that to (1) draw
+// every plane at its true real-world size and (2) stream a real, type-correct 3D model.
+//
+// AC_DIMS: real [wingspan, length] in metres per ICAO type. Drives true sizing and is
+// also used to scale/orient downloaded models. Unlisted types fall back by family,
+// then by ADSB size category — so every aircraft resolves to sensible dimensions.
+const AC_DIMS = {
+  A318:[34.1,31.4],A319:[35.8,33.8],A320:[35.8,37.6],A321:[35.8,44.5],A19N:[35.8,33.8],A20N:[35.8,37.6],A21N:[35.8,44.5],
+  A306:[44.8,54.1],A30B:[44.8,54.1],A310:[43.9,46.7],A332:[60.3,58.8],A333:[60.3,63.7],A338:[64,58.8],A339:[64,63.7],A342:[60.3,63.6],A343:[60.3,63.7],A345:[63.5,67.9],A346:[63.5,75.3],
+  A359:[64.8,66.8],A35K:[64.8,73.8],A388:[79.8,72.7],
+  B712:[28.5,37.8],B722:[32.9,46.7],B732:[28.9,30.5],B733:[28.9,33.4],B734:[28.9,36.4],B735:[28.9,31],B736:[34.3,31.2],B737:[34.3,33.6],B738:[35.8,39.5],B739:[35.8,42.1],
+  B37M:[35.9,39.5],B38M:[35.9,39.5],B39M:[35.9,42.2],B752:[38,47.3],B753:[38,54.4],
+  B762:[47.6,48.5],B763:[47.6,54.9],B764:[51.9,61.4],B772:[60.9,63.7],B77L:[64.8,63.7],B77W:[64.8,73.9],B778:[71.8,69],B779:[71.8,76.7],
+  B788:[60.1,56.7],B789:[60.1,62.8],B78X:[60.1,68.3],B741:[59.6,70.6],B742:[59.6,70.6],B743:[59.6,70.6],B744:[64.4,70.6],B748:[68.4,76.3],
+  MD11:[51.7,61.2],MD81:[32.8,45],MD82:[32.8,45],MD83:[32.8,45],MD88:[32.8,45],MD90:[32.8,46.5],DC10:[47.3,55.5],
+  CRJ2:[21.2,26.8],CRJ7:[23.2,32.5],CRJ9:[24.9,36.4],CRJX:[26.2,39.1],E135:[20,26.3],E145:[20,29.9],E170:[26,29.9],E75L:[28.7,31.7],E75S:[26,31.7],E190:[28.7,36.2],E195:[28.7,38.7],E290:[33.7,36.2],E295:[35.1,41.5],
+  AT43:[24.6,22.7],AT45:[24.6,22.7],AT72:[27.1,27.2],AT75:[27.1,27.2],AT76:[27.1,27.2],DH8A:[25.9,22.3],DH8B:[25.9,22.3],DH8C:[27.4,25.7],DH8D:[28.4,32.8],SF34:[21.4,19.7],
+  B350:[17.7,14.2],BE20:[16.6,13.3],C208:[15.9,12.7],PC12:[16.3,14.4],
+  GLF4:[23.7,26.9],GLF5:[28.5,29.4],GLF6:[28.5,29.4],GLEX:[28.7,30.3],C25A:[15.8,14.4],C25B:[15.9,14.7],C25C:[16.5,17.4],C56X:[17.2,16.9],C550:[15.9,16.9],C421:[12.5,11.2],
+  F2TH:[19.3,20.2],E55P:[16,15.6],LJ45:[14.6,17.7],LJ60:[13.3,17.9],
+  C152:[10,7.3],C172:[11,8.3],C182:[11,8.8],C210:[11.2,8.6],P28A:[9.1,7.3],PA28:[9.1,7.3],PA32:[9.8,8.4],PA18:[10.7,6.8],PA22:[8.8,6.2],SR20:[11.7,7.9],SR22:[11.7,7.9],DA40:[11.9,8],DA42:[13.4,8.6],BE36:[10.2,8.1],DR40:[8.7,6.9],
+  EC35:[11,12.9],GAZL:[10.5,9.5],DHC4:[29.8,22],B407:[10.7,12.7],
+};
+function resolveAcDims(type, category) {
+  const t = (type || '').toUpperCase().trim();
+  if (AC_DIMS[t]) return { span: AC_DIMS[t][0], len: AC_DIMS[t][1] };
+  const fam = [
+    [/^A38/,'A388'],[/^A35/,'A359'],[/^A34/,'A343'],[/^A33/,'A333'],[/^A31|^A30/,'A310'],[/^A32|^A2[01]N|^A19N/,'A320'],
+    [/^B74/,'B744'],[/^B77/,'B772'],[/^B78/,'B789'],[/^B76/,'B763'],[/^B75/,'B752'],[/^B73|^B3[789]M/,'B738'],[/^B72|^B71/,'B722'],
+    [/^E29|^E19/,'E190'],[/^E17|^E75/,'E170'],[/^E13|^E14|^ERJ/,'E145'],[/^CRJ/,'CRJ9'],
+    [/^AT4/,'AT45'],[/^AT7/,'AT72'],[/^DH8|^DHC8/,'DH8D'],[/^MD8|^MD9/,'MD82'],[/^MD1|^DC1/,'MD11'],
+    [/^C7|^C1[78]|^C2[01]/,'C172'],[/^PA|^P28/,'PA28'],[/^SR2/,'SR22'],[/^DA4/,'DA42'],[/^BE3/,'BE36'],
+    [/^C25|^C5|^C68/,'C550'],[/^GLF|^GLEX/,'GLF5'],[/^LJ/,'LJ45'],[/^F2|^FA/,'F2TH'],
+    [/^C208|^PC12|^TBM|^B35|^BE20/,'PC12'],[/^EC|^H1|^R44|^AS3|^B06|^S76/,'EC35'],
+  ];
+  for (const [re, key] of fam) { if (re.test(t) && AC_DIMS[key]) return { span: AC_DIMS[key][0], len: AC_DIMS[key][1] }; }
+  switch ((category || '').toUpperCase()) {
+    case 'A1': return { span: 11, len: 8 };
+    case 'A2': return { span: 24, len: 32 };
+    case 'A3': return { span: 35.8, len: 39 };
+    case 'A4': return { span: 47.6, len: 54 };
+    case 'A5': return { span: 64.4, len: 70 };
+    case 'A7': return { span: 11, len: 13 };
+  }
+  return { span: 34, len: 38 }; // generic narrowbody twin
+}
+
+// Real GLB models, keyed by ICAO type, from the FlightAirMap public model set on raw
+// GitHub (serves "Access-Control-Allow-Origin: *", so the browser can fetch them
+// directly — no key, no proxy). They stream at runtime; nothing is committed here, so
+// the repo stays light. Types without a dedicated model map to the closest look-alike.
+const MODEL_BASE = 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/';
+const MODEL_FILES = {
+  A318:'a320/glTF2/A318.glb',A319:'a320/glTF2/A319.glb',A320:'a320/glTF2/A320.glb',A321:'a320/glTF2/A321.glb',
+  A332:'a332/glTF2/A332.glb',A333:'a333/glTF2/A333.glb',A343:'a343/glTF2/A343.glb',A350:'a350/glTF2/A350.glb',A359:'a350/glTF2/A350.glb',A35K:'a350/glTF2/A350.glb',A380:'a380/glTF2/A380.glb',A388:'a380/glTF2/A380.glb',
+  AT45:'atr42/glTF2/AT45.glb',AT72:'atr72/glTF2/AT75.glb',AT75:'atr72/glTF2/AT75.glb',
+  B407:'b407/glTF2/B407.glb',B707:'b707/glTF2/707.glb',
+  B744:'b744/glTF2/B747.glb',B747:'b744/glTF2/B747.glb',B748:'b748/glTF2/B748.glb',
+  B752:'b752/glTF2/B752.glb',B757:'b752/glTF2/757.glb',
+  B763:'b767/glTF2/B763.glb',B767:'b767/glTF2/B767.glb',
+  B788:'b788/glTF2/B788.glb',BCS1:'bcs1/glTF2/BCS1.glb',BCS3:'bcs1/glTF2/BCS3.glb',
+  C182:'c182/glTF2/C182.glb',C208:'c208/glTF2/C208.glb',C421:'c421/glTF2/C421.glb',C550:'c550/glTF2/C550.glb',
+  CRJ2:'crj2/glTF2/CRJ2.glb',CRJ7:'crj9/glTF2/CRJ7.glb',CRJ9:'crj9/glTF2/CRJ9.glb',
+  DHC4:'dhc4/glTF2/DHC4.glb',DR40:'dr40/glTF2/DR40.glb',
+  E145:'e145/glTF2/E145.glb',E170:'e190/glTF2/E170.glb',E190:'e190/glTF2/E190.glb',E75L:'e190/glTF2/E75L.glb',
+  EC35:'ec35/glTF2/EC35.glb',GAZL:'gazl/glTF2/GAZL.glb',MD11:'md11/glTF2/MD11.glb',
+  PA18:'pa18/glTF2/PA18.glb',PA22:'pa22/glTF2/PA22.glb',PA28:'pa28/glTF2/PA28.glb',PA32:'pa32/glTF2/PA32.glb',
+  PC12:'pc12/glTF2/PC12.glb',SR22:'sr22/glTF2/SR22.glb',
+};
+function modelForType(type, category) {
+  const t = (type || '').toUpperCase().trim();
+  if (MODEL_FILES[t]) return MODEL_BASE + MODEL_FILES[t];
+  const look = [
+    [/^A2[01]N|^A19N|^A318/,'A320'],[/^A30|^A31/,'A332'],[/^A33|^A34/,'A332'],[/^A35/,'A350'],[/^A38/,'A380'],
+    [/^B73|^B3[789]M|^E29|^BCS/,'A320'],[/^B72|^B71|^MD8|^MD9/,'B752'],[/^B75/,'B757'],[/^B76/,'B763'],
+    [/^B77|^B78/,'B788'],[/^B74/,'B744'],[/^MD1|^DC1/,'MD11'],
+    [/^CRJ/,'CRJ9'],[/^E1[37]|^E14|^E75|^ERJ/,'E190'],[/^E19/,'E190'],
+    [/^DH8|^DHC8|^AT4/,'AT45'],[/^AT7/,'AT75'],
+    [/^C7|^C1[78]|^C2[01]|^DA4|^DA2|^SR2|^P28|^PA28|^BE3|^M20/,'C182'],
+    [/^PC12|^TBM|^PC6/,'PC12'],
+    [/^B35|^BE20|^C25|^C5|^C68|^LJ|^GLF|^GLEX|^FA|^F2|^F9|^E55|^H25/,'C550'],
+    [/^EC|^AS3|^H1|^R44|^B06|^S76|^A13|^A139/,'EC35'],
+  ];
+  for (const [re, key] of look) { if (re.test(t) && MODEL_FILES[key]) return MODEL_BASE + MODEL_FILES[key]; }
+  switch ((category || '').toUpperCase()) {
+    case 'A5': return MODEL_BASE + MODEL_FILES.B744;
+    case 'A4': return MODEL_BASE + MODEL_FILES.B763;
+    case 'A3': return MODEL_BASE + MODEL_FILES.A320;
+    case 'A2': return MODEL_BASE + MODEL_FILES.CRJ9;
+    case 'A1': return MODEL_BASE + MODEL_FILES.C182;
+    case 'A7': return MODEL_BASE + MODEL_FILES.EC35;
+  }
+  return null; // no model → procedural generic mesh at real size
+}
+
 // Flat-earth distance in metres from the player to a lat/lon point.
 function distFromPlayerM(lat, lon) {
   const dN = (lat - state.lat) * M_PER_DEG_LAT;
@@ -2011,6 +2120,11 @@ async function fetchRealFlights() {
       const prev = traffic.find(function(t){ return t.icao === icao; });
       const pitch = Math.max(-15, Math.min(15, vsFtMin / 700 * 8));
 
+      // Identify the real aircraft type → true dimensions + a downloadable 3D model.
+      const acType   = (ac.t || '').toString().toUpperCase().trim();
+      const acDims   = resolveAcDims(acType, ac.category);
+      const modelUrl = modelForType(acType, ac.category);
+
       nextTraffic.push({
         id:         prev ? prev.id : trafficIdSeq++,
         icao,
@@ -2030,7 +2144,12 @@ async function fetchRealFlights() {
         gearDown:   onGnd || (altFt !== null && altFt < 1500),
         alive:      true,
         phase:      onGnd ? 'ground' : (vsFtMin > 300 ? 'climb' : (vsFtMin < -300 ? 'descend' : 'cruise')),
-        sizeScale:  30,
+        acType:     acType,
+        acDims:     acDims,
+        modelUrl:   modelUrl,
+        // Real-size scale for the procedural fallback mesh (its span is 6 model units,
+        // so metres-per-unit = real wingspan / 6 makes it true to life).
+        sizeScale:  Math.max(2, acDims.span / 6),
         livery:     Math.abs((icao.charCodeAt(0) || 0) % 4),
         trail:      flightTrails[icao]
       });
@@ -2096,6 +2215,120 @@ function updateTraffic(dt) {
       }
     }
     traffic = traffic.filter(function(t){ return t.alive; });
+  }
+}
+
+// ===================== Downloaded 3D models for live traffic (keyless) =====================
+// Streams real, per-type GLB models (see modelForType / MODEL_FILES) and renders them
+// as true Three.js scene objects at real-world size. Models load on demand, are cached
+// per URL, and are cloned per aircraft. Orientation across this model set is NOT uniform
+// (some have nose along +X, others +Z), so each model is auto-oriented at load time from
+// its real wingspan/length plus tail-fin detection — no per-model hand tuning needed.
+const _gltfLoader = (typeof GLTFLoader !== 'undefined') ? new GLTFLoader() : null;
+const trafficModelCache = {};   // url -> { obj:Object3D|null, status:'loading'|'ready'|'failed' }
+const trafficModelNodes = {};   // traffic id -> { group }
+let trafficModelLoads = 0;      // in-flight loads (throttled)
+const TRAFFIC_MODEL_MAX_CONCURRENT = 3;
+const _tmBox = new THREE.Box3(), _tmSize = new THREE.Vector3(), _tmCenter = new THREE.Vector3();
+
+// Center a freshly loaded model, scale it to real size by wingspan, and rotate it so its
+// nose points local -Z, up +Y, right +X (matching orientAircraft's expected convention).
+function prepLoadedModel(root, dims) {
+  root.updateMatrixWorld(true);
+  _tmBox.setFromObject(root); _tmBox.getSize(_tmSize); _tmBox.getCenter(_tmCenter);
+  const exX = _tmSize.x, exZ = _tmSize.z;      // up is consistently +Y across this set
+  const span = dims.span, len = dims.len;
+  // Pick which horizontal axis is span vs length by matching real dimensions.
+  const errA = Math.abs(exZ - span) + Math.abs(exX - len);   // span=Z, len=X
+  const errB = Math.abs(exX - span) + Math.abs(exZ - len);   // span=X, len=Z
+  const spanAxis = (errA <= errB) ? 'z' : 'x';
+  const lenAxis  = (spanAxis === 'z') ? 'x' : 'z';
+  const spanExt  = (spanAxis === 'z') ? exZ : exX;
+  const scale    = (spanExt > 0.01) ? (span / spanExt) : 1;
+
+  // Nose direction: the tail end is taller (vertical stabiliser). Sample vertices,
+  // split along the length axis, and call the shorter (less-tall) half the nose.
+  const li = (lenAxis === 'x') ? 0 : 2;
+  const cL = (lenAxis === 'x') ? _tmCenter.x : _tmCenter.z;
+  let posMinY = 1e9, posMaxY = -1e9, negMinY = 1e9, negMaxY = -1e9;
+  const v = new THREE.Vector3();
+  root.traverse(function (o) {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+    const p = o.geometry.attributes.position;
+    const stride = Math.max(1, Math.floor(p.count / 600));
+    for (let i = 0; i < p.count; i += stride) {
+      v.fromBufferAttribute(p, i); o.localToWorld(v);
+      const lv = (li === 0) ? v.x : v.z;
+      if (lv >= cL) { if (v.y < posMinY) posMinY = v.y; if (v.y > posMaxY) posMaxY = v.y; }
+      else          { if (v.y < negMinY) negMinY = v.y; if (v.y > negMaxY) negMaxY = v.y; }
+    }
+  });
+  const noseAtPositive = !((posMaxY - posMinY) < (negMaxY - negMinY));
+
+  // Fixed rotation mapping model basis (nose, up, nose×up) → target (-Z, +Y, +X).
+  const mUp = new THREE.Vector3(0, 1, 0);
+  const mNose = new THREE.Vector3(); mNose[lenAxis] = noseAtPositive ? 1 : -1;
+  const mRight = new THREE.Vector3().copy(mNose).cross(mUp);
+  const S = new THREE.Matrix4().makeBasis(mNose, mUp, mRight);
+  const tFwd = new THREE.Vector3(0, 0, -1), tUp = new THREE.Vector3(0, 1, 0);
+  const tRight = new THREE.Vector3().copy(tFwd).cross(tUp);
+  const T = new THREE.Matrix4().makeBasis(tFwd, tUp, tRight);
+  const Q = T.multiply(S.transpose());
+
+  root.position.set(-_tmCenter.x, -_tmCenter.y, -_tmCenter.z);
+  // Tame overly shiny materials so models read well under the scene lights.
+  root.traverse(function (o) { if (o.isMesh && o.material && 'metalness' in o.material) o.material.metalness = Math.min(o.material.metalness == null ? 0.2 : o.material.metalness, 0.3); });
+  const scaleNode = new THREE.Group(); scaleNode.add(root); scaleNode.scale.setScalar(scale);
+  const orientNode = new THREE.Group(); orientNode.add(scaleNode); orientNode.quaternion.setFromRotationMatrix(Q);
+  const pivot = new THREE.Group(); pivot.add(orientNode);
+  return pivot;
+}
+
+function ensureTrafficModel(url, dims) {
+  let rec = trafficModelCache[url];
+  if (rec) return rec;
+  if (trafficModelLoads >= TRAFFIC_MODEL_MAX_CONCURRENT) return null; // retry a later frame
+  if (!_gltfLoader) { trafficModelCache[url] = { obj: null, status: 'failed' }; return trafficModelCache[url]; }
+  rec = { obj: null, status: 'loading' }; trafficModelCache[url] = rec; trafficModelLoads++;
+  _gltfLoader.load(url,
+    function (gltf) { try { rec.obj = prepLoadedModel(gltf.scene || gltf.scenes[0], dims); rec.status = 'ready'; } catch (e) { rec.status = 'failed'; console.warn('[Traffic] model prep failed', url, e); } trafficModelLoads--; },
+    undefined,
+    function () { rec.status = 'failed'; trafficModelLoads--; console.warn('[Traffic] model load failed', url); }
+  );
+  return rec;
+}
+
+// Adds/positions/removes real downloaded models in the scene for nearby traffic, and
+// marks t._hasModel so drawTraffic skips the 2D fallback mesh for those planes.
+function updateTrafficModels() {
+  if (!THREEJS) return;
+  const active = {};
+  for (let i = 0; i < traffic.length; i++) {
+    const t = traffic[i];
+    if (!t.alive) continue;
+    if (t._hasModel) t._hasModel = false;
+    if (!t.modelUrl) continue;
+    const altM = Math.max(0, (t.altitude || 0)) * FT_TO_M;
+    const distM = distCamToGeo(t.lat, t.lon, altM);
+    if (distM > TRAFFIC_3D_M) continue;                 // far → 2D label in drawTraffic
+    const rec = ensureTrafficModel(t.modelUrl, t.acDims || { span: 35, len: 38 });
+    if (!rec || rec.status !== 'ready' || !rec.obj) continue;  // still loading → fallback mesh
+    let node = trafficModelNodes[t.id];
+    if (!node) {
+      const g = new THREE.Group();
+      g.add(rec.obj.clone(true));                        // clone shares geometry/material (cheap)
+      THREEJS.scene.add(g);
+      node = { group: g }; trafficModelNodes[t.id] = node;
+    }
+    orientAircraft(node.group, t.heading, t.pitch || 0, t.bank || 0, enuVec(t.lat, t.lon, altM, node.group.position));
+    node.group.visible = true;
+    t._hasModel = true;
+    active[t.id] = true;
+  }
+  // Drop scene models for planes that disappeared or moved far away. Geometry/material
+  // are shared with the cache, so we only detach the clone — never dispose them.
+  for (const id in trafficModelNodes) {
+    if (!active[id]) { THREEJS.scene.remove(trafficModelNodes[id].group); delete trafficModelNodes[id]; }
   }
 }
 
@@ -3173,7 +3406,75 @@ function navUpdateHud() {
   }
 }
 
+// ===================== Spectator: lock controls & chase the nearest live plane =====================
+// Observer aid — call followNearest() from the F12 console. It freezes all pilot input
+// (until you refresh), looks forward from an eye point just behind the nearest real
+// traffic aircraft, and rides along with it so you can study its downloaded 3D model.
+// Press F5 to return to normal flying.
+const spectate = { active: false, id: null, banner: null };
+
+function followAcquireNearest() {
+  let best = null, bestD = Infinity;
+  for (let i = 0; i < traffic.length; i++) {
+    const t = traffic[i];
+    if (!t.alive) continue;
+    const d = distFromPlayerM(t.lat, t.lon);
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  return best;
+}
+
+function followNearest() {
+  const tgt = followAcquireNearest();
+  if (!tgt) { console.warn('[Spectate] No live traffic in range yet — wait a few seconds for a fetch, then try again.'); return 'no traffic in range'; }
+  spectate.active = true;
+  spectate.id = tgt.id;
+  cameraMode = 0;   // cockpit eye point: our own model is hidden, camera looks forward
+  if (!spectate.banner) {
+    const b = document.createElement('div');
+    b.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:60;pointer-events:none;color:#00ff41;font:12px JetBrains Mono,monospace;letter-spacing:1px;text-shadow:0 0 6px #000;text-align:center;white-space:nowrap';
+    document.body.appendChild(b);
+    spectate.banner = b;
+  }
+  console.log('%c[Spectate] Following ' + (tgt.callsign || tgt.icao) + ' (' + (tgt.acType || '??') + '). Controls locked — press F5 to exit.', 'color:#00ff41');
+  return 'following ' + (tgt.callsign || tgt.icao);
+}
+window.followNearest = followNearest;
+try { window.parent.followNearest = followNearest; } catch(e) {}
+
+// Per-frame: sit just behind and above the target, aimed forward along its track.
+function spectatorFollow(dt) {
+  updateTraffic(dt);   // keep live planes moving / dead-reckoned (and re-fetching) while we watch
+  let tgt = null;
+  for (let i = 0; i < traffic.length; i++) { if (traffic[i].id === spectate.id && traffic[i].alive) { tgt = traffic[i]; break; } }
+  if (!tgt) { tgt = followAcquireNearest(); spectate.id = tgt ? tgt.id : null; }
+  if (!tgt) { if (spectate.banner) spectate.banner.textContent = 'SPECTATE · waiting for traffic…  (F5 to exit)'; return; }
+
+  const len = (tgt.acDims && tgt.acDims.len) || 40;
+  const D   = Math.max(70, len * 1.9);   // chase distance behind the plane (m)
+  const upM = Math.max(10, len * 0.28);  // ride a little above it
+  const hr  = tgt.heading * DEG;
+  const cosLat = Math.cos(tgt.lat * DEG) || 1e-6;
+  const tgtAltM = Math.max(0, tgt.altitude || 0) * FT_TO_M;
+
+  state.lat = tgt.lat - (Math.cos(hr) * D) / M_PER_DEG_LAT;
+  state.lon = tgt.lon - (Math.sin(hr) * D) / (M_PER_DEG_LAT * cosLat);
+  state.altitude = (tgtAltM + upM) / FT_TO_M;
+  state.heading = tgt.heading;
+  state.pitch = -(Math.atan2(upM, D) / DEG);   // tilt down so the plane stays centred
+  state.bank = 0;
+  state.speed = Math.max(40, tgt.speed || 0);
+  state.onGround = false; state.stall = false; state.terrainHit = false;
+  lookYawOff = 0; lookPitchOff = 0;
+
+  if (spectate.banner) {
+    spectate.banner.textContent = 'SPECTATE ▸ ' + (tgt.callsign || tgt.icao) + '  ·  ' + (tgt.acType || '??') +
+      '  ·  ' + Math.round(tgt.altitude) + 'ft  ·  ' + Math.round(tgt.speed) + 'kt   (F5 to exit)';
+  }
+}
+
 function update(dt) {
+  if (spectate.active) { spectatorFollow(Math.min(dt, 0.05)); return; }
   if (state.terrainHit) {
     state.terrainTimer -= dt;
     if (state.terrainTimer <= 0) resetState();
@@ -4336,7 +4637,7 @@ function drawTraffic() {
         const cs   = t.callsign || t.icao || '?';
         const altStr = t.altitude > 0 ? Math.round(t.altitude / 100) * 100 + 'ft' : 'GND';
         const spdStr = t.speed  > 0 ? Math.round(t.speed) + 'kt' : '';
-        const label  = cs + (altStr ? '  ' + altStr : '') + (spdStr ? '  ' + spdStr : '');
+        const label  = cs + (t.acType ? '  ' + t.acType : '') + (altStr ? '  ' + altStr : '') + (spdStr ? '  ' + spdStr : '');
         const ox = sz + 4, oy = -sz - 2;
         ctx.font      = '9px JetBrains Mono, monospace';
         ctx.fillStyle = `rgba(0,0,0,0.55)`;
@@ -4368,6 +4669,22 @@ function drawTraffic() {
       ctx.strokeStyle = 'rgba(0,220,80,0.30)';
       ctx.lineWidth   = 1.2;
       ctx.stroke();
+    }
+
+    // A real, type-correct 3D model is already rendered in the Three.js scene for this
+    // plane — just add the HUD callsign/type label and skip the 2D fallback mesh.
+    if (t._hasModel) {
+      const cs = t.callsign || t.icao;
+      if (cs) {
+        const altStr = t.altitude > 0 ? Math.round(t.altitude / 100) * 100 + 'ft' : 'GND';
+        const label  = cs + (t.acType ? '  ' + t.acType : '') + '  ' + altStr;
+        ctx.font      = '10px JetBrains Mono, monospace';
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillText(label, center.x + 14, center.y - 10);
+        ctx.fillStyle = 'rgba(0,255,65,0.95)';
+        ctx.fillText(label, center.x + 13, center.y - 11);
+      }
+      continue;
     }
 
     const mesh      = buildAirplaneMesh(t.flaps || 0, t.gearDown === true);
@@ -4464,7 +4781,7 @@ function drawTraffic() {
     if (t && (t.callsign || t.icao)) {
       const cs     = t.callsign || t.icao;
       const altStr = t.altitude > 0 ? Math.round(t.altitude / 100) * 100 + 'ft' : 'GND';
-      const label  = cs + '  ' + altStr;
+      const label  = cs + (t.acType ? '  ' + t.acType : '') + '  ' + altStr;
       ctx.font      = '10px JetBrains Mono, monospace';
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillText(label, d.center.x + 14, d.center.y - 10);
