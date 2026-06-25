@@ -1821,9 +1821,135 @@ function updateBuildings() {
   // Buildings 3D disabled.
 }
 
-// Spawn-clearing disabled (no 3D buildings).
+// Find a flat, runway-capable spawn point near (lat, lon).
+// Preloads elevation tiles, scores candidates by terrain flatness, checks for
+// cliffs in the takeoff direction, and relocates if needed.
 function findClearSpawn(lat, lon, cb) {
-  cb(lat, lon);
+  const cosLat = Math.cos(lat * Math.PI / 180);
+  const dLatPerM = 1 / M_PER_DEG_LAT;
+  const dLonPerM = 1 / (M_PER_DEG_LAT * cosLat);
+
+  // Kick off tile loads for a radius around a point.
+  function preloadArea(cLat, cLon, radiusM) {
+    const z = ELEV_Z;
+    const rLat = radiusM * dLatPerM, rLon = radiusM * dLonPerM;
+    const x0 = Math.floor(lonToTileXf(cLon - rLon, z));
+    const x1 = Math.floor(lonToTileXf(cLon + rLon, z));
+    const y0 = Math.floor(latToTileYf(cLat - rLat, z));
+    const y1 = Math.floor(latToTileYf(cLat + rLat, z));
+    for (let x = x0; x <= x1; x++)
+      for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++)
+        ensureElevTile(z, x, y);
+  }
+
+  // Elevation spread over a 5-point star probe at ±600 m.
+  // Returns null if data not ready, Infinity if ocean (centre ≤ 1 m), else spread in metres.
+  function scoreTerrain(cLat, cLon) {
+    const P = 600;
+    const pts = [[0,0],[P*dLatPerM,0],[-P*dLatPerM,0],[0,P*dLonPerM],[0,-P*dLonPerM]];
+    let minH = Infinity, maxH = -Infinity, cH = null;
+    for (let i = 0; i < pts.length; i++) {
+      const h = sampleElev(cLat + pts[i][0], cLon + pts[i][1]);
+      if (h === null) return null;
+      if (i === 0) cH = h;
+      if (h < minH) minH = h;
+      if (h > maxH) maxH = h;
+    }
+    if (cH <= 1) return Infinity; // ocean / water
+    return maxH - minH;
+  }
+
+  // Check for a cliff drop > 80 m within the first 900 m of takeoff roll.
+  // Returns true = clear, false = cliff detected, null = data not ready.
+  function runwaySafe(cLat, cLon, hdgDeg) {
+    const a = hdgDeg * Math.PI / 180;
+    const base = sampleElev(cLat, cLon);
+    if (base === null) return null;
+    for (let d = 150; d <= 900; d += 150) {
+      const h = sampleElev(cLat + Math.cos(a)*d*dLatPerM, cLon + Math.sin(a)*d*dLonPerM);
+      if (h === null) return null;
+      if (base - h > 80) return false; // severe cliff drop
+    }
+    return true;
+  }
+
+  // Spiral of candidates sorted nearest-first.
+  const candidates = (function () {
+    const list = [{ lat, lon, d: 0 }];
+    for (const r of [2000, 4000, 7000, 11000, 16000]) {
+      const n = Math.max(8, Math.round(2 * Math.PI * r / 2500));
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * 2 * Math.PI;
+        list.push({ lat: lat + Math.cos(a)*r*dLatPerM, lon: lon + Math.sin(a)*r*dLonPerM, d: r });
+      }
+    }
+    return list;
+  })();
+
+  preloadArea(lat, lon, 18000);
+
+  const hdg = START.hdg || 90;
+  const THRESHOLD = 30; // acceptable elevation spread in metres
+  let tries = 0;
+  const MAX_TRIES = 45; // ~9 s
+
+  function setSubMsg(msg) {
+    if (!loadingEl) return;
+    const s = loadingEl.querySelector('.l-sub');
+    if (s && s.style.color !== 'rgb(255, 85, 85)') s.textContent = msg;
+  }
+
+  function attempt() {
+    let goodLat = null, goodLon = null;
+    let fallLat = null, fallLon = null, fallScore = Infinity;
+    let anyData = false;
+
+    for (const c of candidates) {
+      const score = scoreTerrain(c.lat, c.lon);
+      if (score === null) continue;
+      anyData = true;
+
+      if (score < fallScore) { fallScore = score; fallLat = c.lat; fallLon = c.lon; }
+
+      if (score > THRESHOLD) continue;
+
+      // Flat enough — verify no cliff in takeoff direction (or opposite)
+      const safe = runwaySafe(c.lat, c.lon, hdg);
+      if (safe === false) {
+        const safeRev = runwaySafe(c.lat, c.lon, (hdg + 180) % 360);
+        if (safeRev === false) continue; // cliff both ways, skip
+      }
+      // safe === true or null (no data = no evidence of cliff) — accept
+      goodLat = c.lat; goodLon = c.lon;
+      break; // candidates are nearest-first; first match is optimal
+    }
+
+    if (goodLat !== null) {
+      const moved = Math.abs(goodLat - lat) > 0.0002 || Math.abs(goodLon - lon) > 0.0002;
+      if (moved) {
+        setSubMsg('RELOCATING TO CLEAR RUNWAY…');
+        setTimeout(function () { showToast('⟳ RELOCATED — FLAT TERRAIN FOUND', 4000); }, 2500);
+      }
+      cb(goodLat, goodLon);
+      return;
+    }
+
+    if (tries === 10 && anyData) setSubMsg('SCANNING FOR FLAT TERRAIN…');
+
+    if (++tries < MAX_TRIES) { setTimeout(attempt, 200); return; }
+
+    // Timeout: use flattest location found or fall back to original
+    const finalLat = fallLat !== null ? fallLat : lat;
+    const finalLon = fallLon !== null ? fallLon : lon;
+    const moved = Math.abs(finalLat - lat) > 0.0002 || Math.abs(finalLon - lon) > 0.0002;
+    if (moved) {
+      setSubMsg('USING NEAREST ACCESSIBLE TERRAIN…');
+      setTimeout(function () { showToast('⟳ RELOCATED — NEAREST ACCESSIBLE TERRAIN', 4000); }, 2500);
+    }
+    cb(finalLat, finalLon);
+  }
+
+  setTimeout(attempt, 300);
 }
 
 // ===================== Player aircraft (real lit 3D mesh) =====================
