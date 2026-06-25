@@ -1508,16 +1508,44 @@ function buildingCollision() {
 
 // ===================== Ground tiles (imagery draped over elevation) =====================
 const GROUND_RING = 8;          // (2R+1)^2 tiles loaded around the aircraft (bigger = see farther)
+const GROUND_ADDS_PER_FRAME = 20; // how many fresh tiles we may build per frame (fills the view fast without stalling)
+const STALE_TILE_MS = 6000;     // how long a previous-zoom tile is kept on screen before being force-pruned
 const _imgLoader = new THREE.TextureLoader(); _imgLoader.crossOrigin = 'anonymous';
+
+// Tile offsets (dx,dy) around the aircraft, precomputed once and sorted nearest-first
+// so every load/repair pass fills the ground *under* the aircraft before the edges —
+// the area you actually look at can never be the last thing to appear.
+const GROUND_OFFSETS = (function () {
+  const a = [];
+  for (let dx = -GROUND_RING; dx <= GROUND_RING; dx++) {
+    for (let dy = -GROUND_RING; dy <= GROUND_RING; dy++) {
+      const ring = Math.max(Math.abs(dx), Math.abs(dy));
+      const seg = ring <= 1 ? 16 : (ring === 2 ? 10 : (ring <= 3 ? 6 : 4)); // ground level-of-detail
+      a.push({ dx: dx, dy: dy, seg: seg, d: dx * dx + dy * dy });
+    }
+  }
+  a.sort(function (p, q) { return p.d - q.d; });
+  return a;
+})();
 
 // Coarser tiles cover more ground, so the view reaches much farther for the same
 // tile count. Each bucket trades a little close-up crispness for draw distance.
+// Hysteresis (a deadband around each altitude boundary) keeps flying right at a
+// band edge from flipping zoom every frame — which used to wipe and rebuild the
+// whole world repeatedly, flickering the terrain in and out.
+const _GROUND_BANDS = [
+  { z: 13, top: 2500 }, { z: 12, top: 9000 }, { z: 11, top: 22000 },
+  { z: 10, top: 40000 }, { z: 9, top: Infinity }
+];
+let _groundZoom = 13;
 function groundZoomForAlt(ft) {
-  if (ft < 2500) return 13;
-  if (ft < 9000) return 12;
-  if (ft < 22000) return 11;
-  if (ft < 40000) return 10;
-  return 9;
+  const MARGIN = 0.12; // require crossing a boundary by 12% before switching zoom
+  let i = 0;
+  for (let k = 0; k < _GROUND_BANDS.length; k++) { if (_GROUND_BANDS[k].z === _groundZoom) { i = k; break; } }
+  while (i < _GROUND_BANDS.length - 1 && ft > _GROUND_BANDS[i].top * (1 + MARGIN)) i++;        // climbing -> coarser
+  while (i > 0 && ft < _GROUND_BANDS[i - 1].top * (1 - MARGIN)) i--;                            // descending -> finer
+  _groundZoom = _GROUND_BANDS[i].z;
+  return _groundZoom;
 }
 // Dispose a ground-tile mesh and flag its material dead so any in-flight texture
 // retry that resolves later skips applying to (or re-creating a map on) it.
@@ -1529,12 +1557,17 @@ function disposeTile(m) {
 // Load a tile's satellite imagery, retrying a few times on transient failure so a
 // momentary network glitch no longer leaves the area stuck as a blank placeholder.
 const TILE_MAX_TRIES = 4;
+let _maxAniso = 0;
 function loadTileTexture(mat, z, y, wx, tries) {
   _imgLoader.load(
     'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + wx,
     function (tex) {
       if (mat.userData.dead) { tex.dispose(); return; }
       if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+      // Anisotropic filtering keeps the ground sharp at the shallow, horizon-bound
+      // angles you fly at — without it distant terrain smears into a blur.
+      if (!_maxAniso && THREEJS && THREEJS.renderer) _maxAniso = THREEJS.renderer.capabilities.getMaxAnisotropy() || 1;
+      tex.anisotropy = Math.min(8, _maxAniso || 1);
       mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true; groundTileLoadedCount++;
     },
     undefined,
@@ -1577,55 +1610,89 @@ function buildGroundTile(z, x, y, seg, keepTex) {
   }
   return mesh;
 }
+// Remove a previous-zoom ("retired") tile once a freshly-textured current-zoom tile
+// covers the same ground, or after a hard timeout so it can never linger forever.
+// This is what stops the whole world from blanking out when you change altitude band.
+function pruneRetiredTiles(z, now) {
+  const tiles = THREEJS.groundTiles;
+  for (const key in tiles) {
+    const m = tiles[key];
+    if (!m || !m.isObject3D || !m.userData.retiredAt) continue;
+    let drop = (now - m.userData.retiredAt > STALE_TILE_MS);
+    if (!drop) {
+      const u = m.userData;                                   // is this spot already re-covered?
+      const lon = tileXfToLon(u.x + 0.5, u.z), lat = tileYfToLat(u.y + 0.5, u.z);
+      const cover = tiles[z + '/' + Math.floor(lonToTileXf(lon, z)) + '/' + Math.floor(latToTileYf(lat, z))];
+      if (cover && cover.isObject3D && cover.material && cover.material.map) drop = true;
+    }
+    if (drop) { THREEJS.groundGroup.remove(m); disposeTile(m); delete tiles[key]; }
+  }
+}
 let _elevRetryTimer = 0;
 function updateGround() {
   const z = groundZoomForAlt(state.altitude);
   const cx = Math.floor(lonToTileXf(state.lon, z));
   const cy = Math.floor(latToTileYf(state.lat, z));
   const want = {};
-  for (let dx = -GROUND_RING; dx <= GROUND_RING; dx++) {
-    for (let dy = -GROUND_RING; dy <= GROUND_RING; dy++) {
-      const ring = Math.max(Math.abs(dx), Math.abs(dy));
-      const seg = ring <= 1 ? 16 : (ring === 2 ? 10 : (ring <= 3 ? 6 : 4));   // ground level-of-detail
-      want[z + '/' + (cx + dx) + '/' + (cy + dy)] = [z, cx + dx, cy + dy, seg];
-    }
+  for (let i = 0; i < GROUND_OFFSETS.length; i++) {
+    const o = GROUND_OFFSETS[i];
+    want[z + '/' + (cx + o.dx) + '/' + (cy + o.dy)] = true;
   }
   const tiles = THREEJS.groundTiles;
+  const now = performance.now();
+  // Drop unwanted tiles. A tile from a *different* zoom is not deleted outright —
+  // it's "retired" (kept rendering, dropped a few metres so the incoming tiles win
+  // the depth test) and pruned later, so swapping zoom never leaves a hole.
   for (const key in tiles) {
-    if (!want[key]) {
-      const m = tiles[key];
-      if (m && m.isObject3D) { THREEJS.groundGroup.remove(m); disposeTile(m); }
-      delete tiles[key];
-    }
+    if (want[key]) continue;
+    const m = tiles[key];
+    if (!m || !m.isObject3D) { delete tiles[key]; continue; }
+    if (m.userData.z === z) { THREEJS.groundGroup.remove(m); disposeTile(m); delete tiles[key]; }
+    else if (!m.userData.retiredAt) { m.userData.retiredAt = now; m.position.y = -4; }
   }
+  // Build missing tiles nearest-first, capped per frame. A wanted tile that is only
+  // "retired" (we dropped back into its zoom band) is revived in place for free.
   let added = 0;
-  for (const key in want) {
-    if (tiles[key]) continue;
-    if (added >= 14) break;
-    const t = want[key];
-    const mesh = buildGroundTile(t[0], t[1], t[2], t[3]);
+  for (let i = 0; i < GROUND_OFFSETS.length; i++) {
+    const o = GROUND_OFFSETS[i];
+    const key = z + '/' + (cx + o.dx) + '/' + (cy + o.dy);
+    const existing = tiles[key];
+    if (existing) {
+      if (existing.isObject3D && existing.userData.retiredAt) { existing.userData.retiredAt = 0; existing.position.y = 0; }
+      continue;
+    }
+    if (added >= GROUND_ADDS_PER_FRAME) continue;
+    const mesh = buildGroundTile(z, cx + o.dx, cy + o.dy, o.seg);
     if (mesh) { tiles[key] = mesh; THREEJS.groundGroup.add(mesh); added++; }
     else tiles[key] = 'oor';      // out of latitude range — sentinel, never a mesh
   }
-  // Tiles built before their elevation tile arrived are flat; rebuild a couple/sec.
-  const now = performance.now();
-  if (now - _elevRetryTimer > 900) {
+  pruneRetiredTiles(z, now);
+  // Tiles built before their elevation tile arrived are flat; repair them nearest
+  // first, several per pass, so terrain relief fills in within a second or two
+  // instead of crawling in over half a minute.
+  if (now - _elevRetryTimer > 250) {
     _elevRetryTimer = now;
-    let fixed = 0;
+    const fixList = [];
     for (const key in tiles) {
       const m = tiles[key];
-      if (!m || !m.isObject3D || !m.userData.needElev) continue;
-      if (fixed >= 2) break;
+      if (!m || !m.isObject3D || !m.userData.needElev || m.userData.retiredAt) continue;
+      if ((m.userData.elevTries || 0) >= 10) continue;        // give up after a while; tile stays flat, not missing
       const u = m.userData;
+      fixList.push({ key: key, m: m, d: (u.x - cx) * (u.x - cx) + (u.y - cy) * (u.y - cy) });
+    }
+    fixList.sort(function (a, b) { return a.d - b.d; });
+    const budget = Math.min(6, fixList.length);
+    for (let i = 0; i < budget; i++) {
+      const m = fixList[i].m, key = fixList[i].key, u = m.userData;
       // Reuse the already-loaded imagery; only the geometry needs the new elevation.
       const nm = buildGroundTile(u.z, u.x, u.y, u.seg, (m.material && m.material.map) || null);
-      if (nm) {
-        const sharedTex = m.material && m.material.map;
-        THREEJS.groundGroup.remove(m);
-        if (m.geometry) m.geometry.dispose();
-        if (m.material) { m.material.userData.dead = true; if (m.material.map && m.material.map !== sharedTex) m.material.map.dispose(); m.material.dispose(); }
-        tiles[key] = nm; THREEJS.groundGroup.add(nm); fixed++;
-      }
+      if (!nm) continue;
+      nm.userData.elevTries = (u.elevTries || 0) + 1;
+      const sharedTex = m.material && m.material.map;
+      THREEJS.groundGroup.remove(m);
+      if (m.geometry) m.geometry.dispose();
+      if (m.material) { m.material.userData.dead = true; if (m.material.map && m.material.map !== sharedTex) m.material.map.dispose(); m.material.dispose(); }
+      tiles[key] = nm; THREEJS.groundGroup.add(nm);
     }
   }
   // Fog/clip distance tracks the loaded extent so unloaded edges fade out.
