@@ -375,22 +375,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button id="sm-go">GO ✈</button>
   </div>
   <div id="sm-status"></div>
-  <div class="sm-section">TIME OF DAY</div>
-  <div class="env-row" id="time-row">
-    <button class="env-btn" data-env="time" data-val="dawn">🌅 Dawn</button>
-    <button class="env-btn env-on" data-env="time" data-val="day">☀️ Day</button>
-    <button class="env-btn" data-env="time" data-val="dusk">🌇 Dusk</button>
-    <button class="env-btn" data-env="time" data-val="night">🌙 Night</button>
-  </div>
-  <div class="sm-section">WEATHER</div>
-  <div class="env-row" id="wx-row">
-    <button class="env-btn env-on" data-env="weather" data-val="clear">☀ Clear</button>
-    <button class="env-btn" data-env="weather" data-val="clouds">☁ Clouds</button>
-    <button class="env-btn" data-env="weather" data-val="rain">🌧 Rain</button>
-    <button class="env-btn" data-env="weather" data-val="snow">❄ Snow</button>
-    <button class="env-btn" data-env="weather" data-val="fog">🌫 Fog</button>
-  </div>
-  <div class="sm-hint">CLEAR = CALM AIR · OTHER WEATHER ADDS WIND</div>
+  <div id="wx-status" style="font-size:9px;letter-spacing:2px;color:rgba(0,255,65,0.45);min-height:14px;text-align:center"></div>
   <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
 </div>
 
@@ -818,24 +803,130 @@ let env = {
 let frameDt = 0.016;
 let wxParticles = [];
 
-const WEATHER_WIND = {
-  clear:  { speedKts: 0,  fromDeg: 0 },
-  clouds: { speedKts: 12, fromDeg: 260 },
-  rain:   { speedKts: 18, fromDeg: 300 },
-  snow:   { speedKts: 14, fromDeg: 40 },
-  fog:    { speedKts: 8,  fromDeg: 190 }
-};
+// Real-weather state
+let realWeatherActive = false;
+let realWeatherLat = null, realWeatherLon = null;
+let realWeatherTimer = 0;
+
+// Map WMO weather codes to simulator weather types
+function wmoToWeather(code) {
+  code = code || 0;
+  if (code === 0 || code === 1) return 'clear';
+  if (code === 2 || code === 3) return 'clouds';
+  if (code === 45 || code === 48) return 'fog';
+  if ([51,53,55,56,57,61,63,65,66,67,80,81,82,95,96,99].indexOf(code) >= 0) return 'rain';
+  if ([71,73,75,77,85,86].indexOf(code) >= 0) return 'snow';
+  return 'clear';
+}
+
+// Determine time-of-day label from sunrise/sunset strings
+function classifyTimeOfDay(sunriseStr, sunsetStr) {
+  const now = Date.now();
+  const sunrise = new Date(sunriseStr).getTime();
+  const sunset  = new Date(sunsetStr).getTime();
+  if (isNaN(sunrise) || isNaN(sunset)) return 'day';
+  const dawnEnd   = sunrise + 35 * 60000;
+  const duskStart = sunset  - 35 * 60000;
+  if (now >= sunrise && now < dawnEnd)   return 'dawn';
+  if (now >= dawnEnd && now < duskStart) return 'day';
+  if (now >= duskStart && now < sunset)  return 'dusk';
+  return 'night';
+}
+
+// Fetch real weather from Open-Meteo (free, no API key)
+function fetchRealWeather(lat, lon, isFirst) {
+  realWeatherLat = lat; realWeatherLon = lon;
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat.toFixed(4) +
+    '&longitude=' + lon.toFixed(4) +
+    '&current=weathercode,windspeed_10m,winddirection_10m,is_day' +
+    '&daily=sunrise,sunset&timezone=auto&forecast_days=1';
+
+  const wxStatus = document.getElementById('wx-status');
+  if (wxStatus && isFirst) wxStatus.textContent = '⟳ FETCHING REAL WEATHER…';
+
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d || !d.current) return;
+      const c = d.current;
+      const windKts = (c.windspeed_10m || 0) * 0.539957; // km/h → knots
+      const windDir = c.winddirection_10m || 0;
+      const wxKind  = wmoToWeather(c.weathercode);
+
+      let timeOfDay = c.is_day ? 'day' : 'night';
+      if (d.daily && d.daily.sunrise && d.daily.sunrise[0] && d.daily.sunset && d.daily.sunset[0]) {
+        timeOfDay = classifyTimeOfDay(d.daily.sunrise[0], d.daily.sunset[0]);
+      }
+
+      const timeChanged = env.time    !== timeOfDay;
+      const wxChanged   = env.weather !== wxKind;
+      env.time    = timeOfDay;
+      env.weather = wxKind;
+
+      // Update base wind for the stochastic model
+      env.windState.baseSpeedKts = windKts;
+      env.windState.baseFromDeg  = windDir;
+      env.windState.active       = true;
+
+      if (isFirst) {
+        // Snap wind immediately on first fetch
+        env.windState.speedKts       = windKts;
+        env.windState.fromDeg        = windDir;
+        env.windState.targetSpeedKts = windKts;
+        env.windState.targetFromDeg  = windDir;
+        env.windState.timer          = 2 + Math.random() * 4;
+        updateWindVector();
+        applyEnvironment(true);
+      } else if (timeChanged || wxChanged) {
+        applyEnvironment(false); // gradual — don't reset windState
+      }
+
+      // Update status indicators
+      const wxIcons = { clear:'☀', clouds:'☁', rain:'🌧', snow:'❄', fog:'🌫' };
+      const timeIcons = { dawn:'🌅', day:'☀️', dusk:'🌇', night:'🌙' };
+      const speedLabel = windKts < 1 ? 'CALM' : Math.round(windKts) + 'KT';
+      if (wxStatus) {
+        wxStatus.textContent = (timeIcons[timeOfDay] || '') + ' ' + timeOfDay.toUpperCase() +
+          '  ' + (wxIcons[wxKind] || '') + ' ' + wxKind.toUpperCase() +
+          '  🌬 ' + speedLabel;
+      }
+    })
+    .catch(function(e) {
+      console.warn('[Weather] fetch failed', e);
+      if (wxStatus && isFirst) wxStatus.textContent = 'WEATHER UNAVAILABLE — USING DEFAULTS';
+      // Fall back to default environment on failure
+      if (isFirst) applyEnvironment(true);
+    });
+}
+
+// Called from update() every frame — triggers re-fetch every 60 seconds
+function tickRealWeather(dt) {
+  if (!realWeatherActive || realWeatherLat == null) return;
+  realWeatherTimer -= dt;
+  if (realWeatherTimer <= 0) {
+    realWeatherTimer = 60;
+    fetchRealWeather(realWeatherLat, realWeatherLon, false);
+  }
+}
 
 function setWeatherWind(kind) {
+  // Legacy — only used if real weather is not active
+  const WEATHER_WIND = {
+    clear:  { speedKts: 0,  fromDeg: 0 },
+    clouds: { speedKts: 12, fromDeg: 260 },
+    rain:   { speedKts: 18, fromDeg: 300 },
+    snow:   { speedKts: 14, fromDeg: 40 },
+    fog:    { speedKts: 8,  fromDeg: 190 }
+  };
   const cfg = WEATHER_WIND[kind] || WEATHER_WIND.clear;
   env.windState = {
     active: true,
     baseSpeedKts: cfg.speedKts,
-    baseFromDeg: cfg.fromDeg,
-    speedKts: cfg.speedKts,
-    fromDeg: cfg.fromDeg,
+    baseFromDeg:  cfg.fromDeg,
+    speedKts:     cfg.speedKts,
+    fromDeg:      cfg.fromDeg,
     targetSpeedKts: cfg.speedKts,
-    targetFromDeg: cfg.fromDeg,
+    targetFromDeg:  cfg.fromDeg,
     timer: cfg.speedKts > 0 ? (2.5 + Math.random() * 3.5) : (4 + Math.random() * 10)
   };
   updateWindVector();
@@ -933,7 +1024,7 @@ function drawWeather() {
   ctx.restore();
 }
 
-function applyEnvironment() {
+function applyEnvironment(resetWind) {
   const te = document.getElementById('env-time');
   const we = document.getElementById('env-wx');
   const timeBg = {
@@ -951,7 +1042,9 @@ function applyEnvironment() {
   };
   if (te) te.style.background = timeBg[env.time] || 'none';
   if (we) we.style.background = wxBg[env.weather] || 'none';
-  setWeatherWind(env.weather);
+  // When real weather is active, the windState was already set by fetchRealWeather.
+  // Only use the preset wind table as a fallback (no real weather).
+  if (!realWeatherActive) setWeatherWind(env.weather);
   if (viewer) {
     const w = env.weather;
     try {
@@ -1049,9 +1142,9 @@ let runSubmitCustom = function () {}; // set when the start menu wires up
 
 function refreshMenuItems() {
   const menu = document.getElementById('startmenu');
-  // Locations, environment toggles, the text field, and the GO button.
+  // Locations, the text field, and the GO button.
   menuItems = menu ? Array.prototype.slice.call(
-    menu.querySelectorAll('.sm-btn, .env-btn, #sm-input, #sm-go')) : [];
+    menu.querySelectorAll('.sm-btn, #sm-input, #sm-go')) : [];
 }
 function setMenuFocus(i) {
   if (!menuItems.length) return;
@@ -2603,6 +2696,7 @@ function update(dt) {
 
   updateWind(dt);
   updateTraffic(dt);
+  tickRealWeather(dt);
   checkTerrainBeep(dt);
 
   // ---- Pilot inputs (elevator / aileron / throttle / airbrake) ----
@@ -4033,7 +4127,7 @@ function render() {
       '<span style="color:#00e860">' + trafficStatus + '</span><br>' +
       '✈ ' + airborne + ' airborne' + (onGnd > 0 ? ' · ' + onGnd + ' gnd' : '') + '<br>' +
       (trafficFetching ? '<span style="color:#ffe066">↻ fetching…</span>' : 'next in ' + nextIn + 's') + '<br>' +
-      (timeLabels[env.time] || env.time) + ' · ' + (wxLabels[env.weather] || env.weather);
+      '<span style="color:rgba(127,208,255,0.7)">🌍 LIVE WX</span> · ' + (timeLabels[env.time] || env.time) + ' · ' + (wxLabels[env.weather] || env.weather);
   }
 
   // Minimap + drive the real-world camera
@@ -4271,23 +4365,14 @@ function beginFlight(loc) {
   chosen = true;
   simReady = false;
   startTime = performance.now();
-  applyEnvironment(); // apply chosen time-of-day & weather
+  // Fetch real weather for the chosen location
+  realWeatherActive = true;
+  realWeatherTimer = 60; // first auto-refresh after 60 s
+  fetchRealWeather(loc.lat, loc.lon, true);
   try { window.focus(); } catch (e) {} // capture keyboard for flight controls
 }
 
 if (startMenu) {
-  // Time-of-day & weather toggle buttons
-  startMenu.querySelectorAll('.env-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      const k = btn.getAttribute('data-env');
-      const v = btn.getAttribute('data-val');
-      env[k] = v;
-      startMenu.querySelectorAll('.env-btn[data-env="' + k + '"]').forEach(function (b) {
-        b.classList.toggle('env-on', b === btn);
-      });
-      applyEnvironment();
-    });
-  });
   startMenu.querySelectorAll('.sm-btn[data-lat]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       beginFlight({
@@ -4425,6 +4510,7 @@ function togglePause() { if (chosen && simReady) setPaused(!paused); }
 function returnToMenu() {
   setPaused(false);
   chosen = false; simReady = false; spawnResolved = false;
+  realWeatherActive = false; realWeatherLat = null; realWeatherLon = null;
   if (startMenu) startMenu.style.display = 'flex';
   if (minimapEl) minimapEl.style.display = 'none';
   const fbEl = document.getElementById('flight-btns');
