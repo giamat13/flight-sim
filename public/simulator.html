@@ -45,6 +45,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #compass{position:fixed;top:140px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none}
 #compass-canvas{border:1px solid rgba(0,255,65,0.15);border-radius:4px;background:rgba(0,255,65,0.02)}
 #cam-label{position:fixed;top:16px;right:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.6);font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:4px 10px}
+#coord-display{position:fixed;bottom:16px;right:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.7);font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:4px 12px;white-space:nowrap;text-align:right;line-height:1.4}
 #gp-indicator{position:fixed;top:46px;right:16px;z-index:20;pointer-events:none;display:none;color:#7fd0ff;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(0,160,255,0.06);border:1px solid rgba(80,180,255,0.4);border-radius:4px;padding:3px 8px}
 #sys-panel{position:fixed;left:16px;top:50%;transform:translateY(-50%);z-index:20;pointer-events:none;display:none;flex-direction:column;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px}
 .sys-row{display:flex;align-items:center;gap:6px;color:rgba(0,255,65,0.55)}
@@ -247,6 +248,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 </div>
 
 <div id="cam-label">COCKPIT</div>
+<div id="coord-display">LAT — / LON —</div>
 <div id="gp-indicator">🎮 CONTROLLER</div>
 <div id="ap-indicator">✈ AUTOPILOT</div>
 <div id="nav-hud"></div>
@@ -4819,6 +4821,16 @@ function render() {
   drawCompass();
 
   document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : 'CHASE';
+
+  // Coordinates display
+  const coordEl = document.getElementById('coord-display');
+  if (coordEl) {
+    const latDeg = Math.abs(state.lat).toFixed(4);
+    const lonDeg = Math.abs(state.lon).toFixed(4);
+    const latDir = state.lat >= 0 ? 'N' : 'S';
+    const lonDir = state.lon >= 0 ? 'E' : 'W';
+    coordEl.textContent = latDir + ' ' + latDeg + '°  ' + lonDir + ' ' + lonDeg + '°';
+  }
 
   // Update HUD
   const GROUND_OFFSET_FT = 3 / FT_TO_M; // 3m offset the sim keeps aircraft above terrain
