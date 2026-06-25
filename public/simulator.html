@@ -16,7 +16,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #scanlines{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px)}
 #vignette{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:11;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,0.4) 75%,rgba(0,0,0,0.85) 100%)}
 #env-time,#env-wx{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9;background:none;transition:background .6s ease}
-#hud{position:fixed;bottom:0;left:0;right:0;pointer-events:none;z-index:20;display:flex;justify-content:center;padding:0 20px 20px}
+#hud{position:fixed;bottom:0;left:0;right:0;pointer-events:none;z-index:20;display:flex;justify-content:center;padding:0 20px 28px}
 .hud-panel{background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.3);border-radius:4px;padding:10px 18px;color:#00FF41;font-size:13px;font-family:'JetBrains Mono',monospace;display:flex;gap:28px;align-items:center;backdrop-filter:blur(2px);box-shadow:0 0 20px rgba(0,255,65,0.05),inset 0 0 30px rgba(0,255,65,0.02)}
 .hud-item{display:flex;flex-direction:column;align-items:center;gap:2px}
 .hud-label{font-size:9px;letter-spacing:2px;opacity:0.5;font-weight:300}
@@ -33,11 +33,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #hud-toast{position:fixed;top:14%;left:50%;transform:translate(-50%,-50%);z-index:40;font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:700;color:#00FF41;background:rgba(0,20,0,0.62);border:1px solid rgba(0,255,65,0.4);padding:7px 18px;border-radius:6px;text-shadow:0 0 12px rgba(0,255,65,0.6);pointer-events:none;display:none;letter-spacing:2px}
 #traffic-info{position:fixed;top:16px;left:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.45);font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;margin-top:0;display:none}
 #throttle-bar-container{position:fixed;right:24px;top:50%;transform:translateY(-50%);z-index:20;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:4px}
-#throttle-bar-bg{width:8px;height:140px;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.2);border-radius:4px;position:relative;overflow:hidden}
+#throttle-bar-bg{width:16px;height:220px;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.2);border-radius:4px;position:relative;overflow:hidden}
 #throttle-bar-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(0,255,65,0.5),rgba(0,255,65,0.2));border-radius:0 0 3px 3px;transition:height 0.15s}
 .thr-label{font-size:8px;color:rgba(0,255,65,0.4);letter-spacing:2px;font-family:'JetBrains Mono',monospace}
 #fuel-gauge-container{position:fixed;right:58px;top:50%;transform:translateY(-50%);z-index:20;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:4px}
-#fuel-bar-bg{width:8px;height:140px;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.2);border-radius:4px;position:relative;overflow:hidden}
+#fuel-bar-bg{width:16px;height:220px;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.2);border-radius:4px;position:relative;overflow:hidden}
 #fuel-bar-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(0,255,65,0.5),rgba(0,255,65,0.2));border-radius:0 0 3px 3px;transition:height 0.15s,background 0.3s}
 #fuel-bar-fill.fuel-warn{background:linear-gradient(to top,rgba(255,170,0,0.55),rgba(255,170,0,0.2))}
 #fuel-bar-fill.fuel-crit{background:linear-gradient(to top,rgba(255,40,40,0.65),rgba(255,40,40,0.25))}
@@ -47,10 +47,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #cam-label{position:fixed;top:16px;right:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.6);font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:4px 10px}
 #coord-display{position:fixed;bottom:16px;right:16px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.7);font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:4px 12px;white-space:nowrap;text-align:right;line-height:1.4}
 #gp-indicator{position:fixed;top:46px;right:16px;z-index:20;pointer-events:none;display:none;color:#7fd0ff;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(0,160,255,0.06);border:1px solid rgba(80,180,255,0.4);border-radius:4px;padding:3px 8px}
-#sys-panel{position:fixed;left:16px;top:50%;transform:translateY(-50%);z-index:20;pointer-events:none;display:none;flex-direction:column;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px}
-.sys-row{display:flex;align-items:center;gap:6px;color:rgba(0,255,65,0.55)}
-.sys-key{width:42px;text-align:right;opacity:0.7}
-.sys-val{font-size:11px;font-weight:600}
+#sys-panel{position:fixed;left:60px;top:50%;transform:translateY(-50%);z-index:20;pointer-events:none;display:none;flex-direction:column;gap:12px;font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:1px}
+.sys-row{display:flex;align-items:center;gap:12px;color:rgba(0,255,65,0.55)}
+.sys-key{width:60px;text-align:right;opacity:0.7}
+.sys-val{font-size:15px;font-weight:600}
 .sys-ok{color:#00FF41}.sys-warn{color:#ffaa00}.sys-off{color:rgba(0,255,65,0.3)}.sys-red{color:#ff3030}
 #fire-warn{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:44px;font-weight:700;color:#ff3000;text-shadow:0 0 40px rgba(255,50,0,0.9);font-family:'JetBrains Mono',monospace;letter-spacing:5px;pointer-events:none;display:none}
 #gear-warn{position:fixed;top:68%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:30px;font-weight:700;color:#ff6a00;text-shadow:0 0 30px rgba(255,106,0,0.6);font-family:'JetBrains Mono',monospace;letter-spacing:4px;pointer-events:none;display:none}
@@ -196,7 +196,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 </div>
 
 <div id="compass">
-  <canvas id="compass-canvas" width="200" height="28"></canvas>
+  <canvas id="compass-canvas" width="280" height="40"></canvas>
 </div>
 
 <div id="hud">
