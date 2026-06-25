@@ -1676,8 +1676,16 @@ function updateGround() {
     for (const key in tiles) {
       const m = tiles[key];
       if (!m || !m.isObject3D || !m.userData.needElev || m.userData.retiredAt) continue;
-      if ((m.userData.elevTries || 0) >= 10) continue;        // give up after a while; tile stays flat, not missing
       const u = m.userData;
+      // Check whether the elevation tile covering this ground tile has settled.
+      // If still in-flight, keep the tile in the fix queue regardless of elevTries.
+      const lonC2 = tileXfToLon(u.x + 0.5, u.z);
+      const latC2 = tileYfToLat(u.y + 0.5, u.z);
+      const ex2 = Math.floor(lonToTileXf(lonC2, ELEV_Z));
+      const ey2 = Math.floor(latToTileYf(latC2, ELEV_Z));
+      const et2 = elevTiles[ELEV_Z + '/' + ex2 + '/' + ey2];
+      const elevSettled = et2 && et2 !== 'loading';
+      if (elevSettled && (u.elevTries || 0) >= 10) continue; // elevation arrived but mesh still bad — give up
       fixList.push({ key: key, m: m, d: (u.x - cx) * (u.x - cx) + (u.y - cy) * (u.y - cy) });
     }
     fixList.sort(function (a, b) { return a.d - b.d; });
@@ -1687,7 +1695,15 @@ function updateGround() {
       // Reuse the already-loaded imagery; only the geometry needs the new elevation.
       const nm = buildGroundTile(u.z, u.x, u.y, u.seg, (m.material && m.material.map) || null);
       if (!nm) continue;
-      nm.userData.elevTries = (u.elevTries || 0) + 1;
+      // Only count a try if the elevation tile is no longer loading; if it's still
+      // in-flight (slow connection / congested by preview requests) just keep waiting.
+      const lonC = tileXfToLon(u.x + 0.5, u.z);
+      const latC = tileYfToLat(u.y + 0.5, u.z);
+      const ex = Math.floor(lonToTileXf(lonC, ELEV_Z));
+      const ey = Math.floor(latToTileYf(latC, ELEV_Z));
+      const et = elevTiles[ELEV_Z + '/' + ex + '/' + ey];
+      const stillLoading = !et || et === 'loading';
+      nm.userData.elevTries = stillLoading ? (u.elevTries || 0) : (u.elevTries || 0) + 1;
       const sharedTex = m.material && m.material.map;
       THREEJS.groundGroup.remove(m);
       if (m.geometry) m.geometry.dispose();
@@ -5221,17 +5237,6 @@ function markReady() {
 }
 
 function beginFlight(loc) {
-  if (document.readyState !== 'complete') {
-    if (startMenu) startMenu.style.display = 'none';
-    if (loadingEl) {
-      loadingEl.style.display = 'flex';
-      const sub = loadingEl.querySelector('.l-sub');
-      if (sub) { sub.style.color = 'rgba(0,255,65,0.5)'; sub.classList.add('pulsing'); sub.textContent = 'PREPARING...'; }
-    }
-    window.addEventListener('load', function () { beginFlight(loc); }, { once: true });
-    return;
-  }
-
   START.lat = loc.lat;
   START.lon = loc.lon;
   START.hdg = (loc.hdg != null) ? loc.hdg : 90;
