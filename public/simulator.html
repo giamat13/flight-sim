@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flight Simulator</title>
-<script>window.CESIUM_BASE_URL='https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/';</script>
-<script src="https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/Cesium.js"></script>
-<link href="https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<!-- Cesium removed. Rendering is now a hand-built Three.js engine in an ES module at
+     the end of the page: real-world Esri imagery + AWS elevation tiles + OSM/Overpass
+     buildings, all keyless. Three.js is imported from a CDN inside that module. -->
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:'JetBrains Mono',monospace;cursor:none}
-#cesiumContainer{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1}
-#cesiumContainer .cesium-widget-credits{font-size:9px !important;opacity:0.4}
+#three-container{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1;background:#0a0a0f}
+#three-container canvas{display:block}
 #sim-canvas{position:fixed;top:0;left:0;display:block;width:100%;height:100%;background:transparent;z-index:2;pointer-events:none}
 #scanlines{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px)}
 #vignette{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:11;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,0.4) 75%,rgba(0,0,0,0.85) 100%)}
@@ -182,7 +182,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 </style>
 </head>
 <body>
-<div id="cesiumContainer"></div>
+<div id="three-container"></div>
 <canvas id="sim-canvas"></canvas>
 <div id="scanlines"></div>
 <div id="vignette"></div>
@@ -389,7 +389,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="sm-hint">P or ☰ to resume</div>
 </div>
 
-<script>
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+window.THREE = THREE; // expose for internal guards
 (function(){
 // Surface any fatal error onto the loading screen
 function showFatal(msg){
@@ -1045,12 +1047,10 @@ function applyEnvironment(resetWind) {
   // When real weather is active, the windState was already set by fetchRealWeather.
   // Only use the preset wind table as a fallback (no real weather).
   if (!realWeatherActive) setWeatherWind(env.weather);
-  if (viewer) {
+  if (THREEJS) {
     const w = env.weather;
     try {
-      viewer.scene.fog.enabled = (w === 'fog' || w === 'rain' || w === 'clouds');
-      viewer.scene.fog.density = (w === 'fog') ? 0.0008 : 0.00025;
-      // Sky colour by time of day (flat clear-colour, no atmosphere shaders).
+      // Sky colour by time of day, tinted by the weather.
       const sky = ({
         dawn:  [250, 200, 150],
         day:   [135, 206, 235],
@@ -1062,8 +1062,18 @@ function applyEnvironment(resetWind) {
       else if (w === 'rain') rgb = rgb.map(function (c) { return Math.round(c * 0.5 + 35); });
       else if (w === 'clouds') rgb = rgb.map(function (c) { return Math.round(c * 0.6 + 52); });
       else if (w === 'snow') rgb = rgb.map(function (c) { return Math.round(c * 0.6 + 84); });
-      viewer.scene.backgroundColor = Cesium.Color.fromBytes(rgb[0], rgb[1], rgb[2], 255);
-      viewer.scene.skyBox.show = (env.time === 'night' && w === 'clear'); // stars only on clear nights
+      const col = new THREE.Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255);
+      THREEJS.scene.background = col;
+      if (THREEJS.scene.fog) {
+        THREEJS.scene.fog.color.copy(col);
+        if (w === 'fog') THREEJS.scene.fog.near = 150; // updateGround retunes far each frame
+      }
+      // Light levels track time of day + weather (night/fog/rain are dim).
+      const dayAmt = (env.time === 'night') ? 0.12 : (env.time === 'dawn' || env.time === 'dusk') ? 0.6 : 1.0;
+      const wxAmt = (w === 'clear') ? 1.0 : (w === 'clouds') ? 0.7 : (w === 'fog') ? 0.5 : 0.6;
+      THREEJS.sun.intensity = 2.2 * dayAmt * wxAmt;
+      THREEJS.hemi.intensity = 0.9 * Math.max(0.3, dayAmt);
+      THREEJS.amb.intensity = 0.35 * Math.max(0.35, dayAmt);
     } catch (e) {}
   }
   initWeatherParticles();
@@ -1292,131 +1302,441 @@ let pitchActivePrev = false;  // was the pilot actively pitching last frame? (fo
 // maneuvers the model within the frame instead of rigidly dragging the view.
 let camFollowHeading = null;
 
-// ===================== CESIUM GLOBE (real world) =====================
-// Optional: your own free Cesium ion token (https://ion.cesium.com/tokens) --
-// removes the eval-token rate limit on Cesium OSM Buildings below. Must be set
-// before initCesium() runs.
-Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI1ZjgzMmU1NS05ZmUxLTRiNmYtYTQ2Ni0wMDBlMmU1N2ZkNjMiLCJpZCI6NDQ4Mzk0LCJzdWIiOiJnaWFtYXQxMyIsImlzcyI6Imh0dHBzOi8vYXBpLmNlc2l1bS5jb20iLCJhdWQiOiJmbGlnaHQtc2ltIiwiaWF0IjoxNzgyMjc3ODYxfQ.CM5n2Vq-HLNFV2bcSrd0Pd8WPzV51Xl0Hs99fhWvw9c';
-let viewer = null
-function initCesium() {
-  if (!window.Cesium) { if (loadingEl) loadingEl.querySelector('.l-sub').textContent = 'EARTH FAILED TO LOAD'; return; }
-  try {
-    viewer = new Cesium.Viewer('cesiumContainer', {
-      // Real satellite imagery from ArcGIS, served as plain {z}/{y}/{x} Web-Mercator
-      // tiles (no metadata parsing) — no API key, no signup required.
-      // NOTE: ArcGisMapServerImageryProvider.fromUrl produced a broken tiling
-      // scheme here (it requested nonsensical zoom levels and rendered nothing),
-      // so we use UrlTemplateImageryProvider with the standard scheme instead.
-      baseLayer: new Cesium.ImageryLayer(
-        new Cesium.UrlTemplateImageryProvider({
-          url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-          // Esri's World_Imagery server only has high-zoom (16-18) tiles over cities and
-          // a handful of well-mapped areas. Anywhere else it returns a literal
-          // "Map data not yet available" tile instead of failing gracefully — that's
-          // what showed up whenever you flew away from a well-covered spot. Level 15
-          // has near-universal global coverage, so capping there trades a bit of
-          // close-up crispness over cities for imagery that's actually there everywhere.
-          maximumLevel: 15,
-          credit: 'Imagery © Esri, Maxar, Earthstar Geographics'
-        })
-      ),
-      animation: false, timeline: false, baseLayerPicker: false, geocoder: false,
-      homeButton: false, sceneModePicker: false, navigationHelpButton: false,
-      fullscreenButton: false, infoBox: false, selectionIndicator: false
-    });
+// ===================== THREE.JS WORLD (real world, no API keys) =====================
+// Cesium has been replaced by a hand-built Three.js renderer working in a local
+// East-North-Up (ENU) tangent-plane frame anchored at the departure point:
+//   • Ground   : Esri World Imagery slippy tiles (keyless) draped over a mesh
+//                displaced by AWS "Terrarium" elevation tiles (keyless, SRTM-derived).
+//   • Buildings: OpenStreetMap footprints via the Overpass API (keyless), extruded
+//                with a near/far level-of-detail (real footprint vs. bounding box).
+//   • Aircraft : a real, lit 3D mesh in the scene (chase view).
+//   • Camera   : a full 6-DOF perspective camera driven by the flight model.
+// `THREEJS` plays the role the old global `viewer` did; every former Cesium call has
+// an ENU/Three.js equivalent below. All tile/elevation/geocoding endpoints are free.
+let THREEJS = null;
+let geoOrigin = { lat: 0, lon: 0, cosLat: 1 };  // ENU tangent-plane anchor
+let groundTileLoadedCount = 0;
+const M_PER_DEG = 111320;
 
-    // We drive the camera ourselves from the flight model
-    viewer.scene.screenSpaceCameraController.enableInputs = false;
-    viewer.scene.globe.enableLighting = false;
-    viewer.scene.globe.depthTestAgainstTerrain = true;
+// --- Web-Mercator slippy-tile <-> geographic helpers ---
+function lonToTileXf(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
+function latToTileYf(lat, z) { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z); }
+function tileXfToLon(x, z) { return x / Math.pow(2, z) * 360 - 180; }
+function tileYfToLat(y, z) { const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z); return Math.atan(Math.sinh(n)) * 180 / Math.PI; }
 
-    // --- Performance + stability (much lower RAM/GPU use) ---
-    // A huge tile cache exhausts GPU memory, which loses the WebGL context and
-    // causes "Fragment shader failed to compile". Keep the cache modest.
-    viewer.scene.globe.tileCacheSize = 100;
-    viewer.scene.globe.maximumScreenSpaceError = 4;   // coarser tiles -> far less memory
-    viewer.scene.globe.preloadAncestors = true;
-    viewer.scene.globe.preloadSiblings = false;
-    // Atmosphere/fog shaders are heavy and crash on some GPUs — turn them off.
-    viewer.scene.fog.enabled = false;
-    viewer.scene.skyAtmosphere.show = false;
-    viewer.scene.globe.showGroundAtmosphere = false;
-    try { viewer.scene.postProcessStages.fxaa.enabled = false; } catch (e) {}
-    try { viewer.scene.msaaSamples = 1; } catch (e) {}
-    try { viewer.scene.highDynamicRange = false; } catch (e) {}
-    // Don't let a single bad frame tear down the whole app with an error overlay.
-    try { viewer.scene.renderError.addEventListener(function () {}); } catch (e) {}
-
-    // Real 3D terrain elevation (keyless) — graceful fallback to smooth globe if unavailable
-    Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(
-      'https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer'
-    ).then(function(t){ viewer.terrainProvider = t; }).catch(function(){ /* keep ellipsoid */ });
-
-  } catch (e) {
-    console.warn('Cesium init failed', e);
-    if (loadingEl) loadingEl.querySelector('.l-sub').textContent = 'EARTH FAILED TO LOAD';
-  }
+function setGeoOrigin(lat, lon) {
+  geoOrigin.lat = lat; geoOrigin.lon = lon;
+  geoOrigin.cosLat = Math.max(0.01, Math.cos(lat * Math.PI / 180));
 }
-initCesium();
+// lat/lon/alt(m) -> local ENU metres as a THREE.Vector3 (X=East, Y=Up, Z=South[=-North]).
+function enuVec(lat, lon, altM, out) {
+  const dN = (lat - geoOrigin.lat) * M_PER_DEG;
+  const dE = (lon - geoOrigin.lon) * (M_PER_DEG * geoOrigin.cosLat);
+  out = out || new THREE.Vector3();
+  return out.set(dE, altM || 0, -dN);
+}
+function headingDirX(deg) { return Math.sin(deg * Math.PI / 180); }
+function headingDirZ(deg) { return -Math.cos(deg * Math.PI / 180); }
+
+// ===================== Elevation tiles (AWS Terrarium, keyless) =====================
+const ELEV_Z = 12;       // zoom used for elevation lookups (physics + terrain mesh)
+const ELEV_GRID = 64;    // decoded grid resolution per elevation tile
+const elevTiles = {};    // "z/x/y" -> { grid:Float32Array, n } | 'loading' | 'error'
+
+function decodeElevImage(img, n) {
+  const cv = document.createElement('canvas');
+  cv.width = img.naturalWidth || 256; cv.height = img.naturalHeight || 256;
+  const c = cv.getContext('2d'); c.drawImage(img, 0, 0);
+  let data;
+  try { data = c.getImageData(0, 0, cv.width, cv.height).data; }
+  catch (e) { return null; } // CORS-tainted
+  const W0 = cv.width, H0 = cv.height;
+  const grid = new Float32Array(n * n);
+  for (let gy = 0; gy < n; gy++) {
+    const py = Math.min(H0 - 1, Math.round(gy / (n - 1) * (H0 - 1)));
+    for (let gx = 0; gx < n; gx++) {
+      const px = Math.min(W0 - 1, Math.round(gx / (n - 1) * (W0 - 1)));
+      const i = (py * W0 + px) * 4;
+      grid[gy * n + gx] = (data[i] * 256 + data[i + 1] + data[i + 2] / 256) - 32768; // terrarium decode
+    }
+  }
+  return grid;
+}
+function ensureElevTile(z, x, y) {
+  const key = z + '/' + x + '/' + y;
+  if (elevTiles[key]) return;
+  const n = Math.pow(2, z);
+  if (y < 0 || y >= n) { elevTiles[key] = { grid: new Float32Array(ELEV_GRID * ELEV_GRID), n: ELEV_GRID }; return; }
+  elevTiles[key] = 'loading';
+  const wx = ((x % n) + n) % n;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = function () { const g = decodeElevImage(img, ELEV_GRID); elevTiles[key] = g ? { grid: g, n: ELEV_GRID } : 'error'; };
+  img.onerror = function () { elevTiles[key] = 'error'; };
+  img.src = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + z + '/' + wx + '/' + y + '.png';
+}
+// Bilinear elevation (m) at lat/lon, or null if its tile is not decoded yet.
+function sampleElev(lat, lon) {
+  const z = ELEV_Z;
+  const xf = lonToTileXf(lon, z), yf = latToTileYf(lat, z);
+  const x = Math.floor(xf), y = Math.floor(yf);
+  ensureElevTile(z, x, y);
+  const t = elevTiles[z + '/' + x + '/' + y];
+  if (!t || typeof t === 'string') return null;
+  const g = t.grid, n = t.n;
+  const fx = (xf - x) * (n - 1), fy = (yf - y) * (n - 1);
+  const x0 = Math.max(0, Math.min(n - 1, Math.floor(fx))), y0 = Math.max(0, Math.min(n - 1, Math.floor(fy)));
+  const x1 = Math.min(n - 1, x0 + 1), y1 = Math.min(n - 1, y0 + 1);
+  const sx = fx - x0, sy = fy - y0;
+  const h00 = g[y0 * n + x0], h10 = g[y0 * n + x1], h01 = g[y1 * n + x0], h11 = g[y1 * n + x1];
+  return (h00 * (1 - sx) + h10 * sx) * (1 - sy) + (h01 * (1 - sx) + h11 * sx) * sy;
+}
+
+// ===================== Three.js scene / renderer / lights =====================
+function initThree() {
+  const container = document.getElementById('three-container');
+  if (!container || !window.THREE) {
+    if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = '3D ENGINE FAILED TO LOAD'; }
+    return;
+  }
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87ceeb);
+  scene.fog = new THREE.Fog(0x87ceeb, 6000, 40000);
+
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1.0, 200000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.domElement.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block';
+  container.appendChild(renderer.domElement);
+
+  const sun = new THREE.DirectionalLight(0xfff3e0, 2.2);
+  sun.position.set(-400, 800, 550);
+  scene.add(sun); scene.add(sun.target);
+  const hemi = new THREE.HemisphereLight(0xbfdfff, 0x55603f, 0.9);
+  scene.add(hemi);
+  const amb = new THREE.AmbientLight(0xffffff, 0.35);
+  scene.add(amb);
+
+  const groundGroup = new THREE.Group(); scene.add(groundGroup);
+  const buildingGroup = new THREE.Group(); scene.add(buildingGroup);
+  const aircraft = new THREE.Group(); scene.add(aircraft);
+
+  THREEJS = {
+    renderer, scene, camera, sun, hemi, amb,
+    groundGroup, buildingGroup, aircraft,
+    groundTiles: {}, acFlaps: -1, acGear: null, bldBoxes: [],
+    bld: { center: null, loading: false },
+    _v: new THREE.Vector3(), _cs: new THREE.Vector3(), _acPos: new THREE.Vector3()
+  };
+
+  window.addEventListener('resize', function () {
+    if (!THREEJS) return;
+    THREEJS.camera.aspect = window.innerWidth / window.innerHeight;
+    THREEJS.camera.updateProjectionMatrix();
+    THREEJS.renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // Pre-load Grand Canyon terrain so the menu has a beautiful backdrop.
+  const previewLat = 36.1069, previewLon = -112.1129;
+  setGeoOrigin(previewLat, previewLon);
+  // Position camera above the canyon rim looking south-east for a dramatic view.
+  camera.position.set(0, 2200, 200);
+  camera.lookAt(new THREE.Vector3(8000, 0, -6000));
+  updateGround();
+  THREEJS._menuPreview = true;
+}
+
+// Clear all loaded world content (called when a new departure point is chosen).
+function resetWorld() {
+  if (!THREEJS) return;
+  const gt = THREEJS.groundTiles;
+  for (const k in gt) {
+    const m = gt[k];
+    if (m && m.isObject3D) { THREEJS.groundGroup.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); } }
+    delete gt[k];
+  }
+  const bg = THREEJS.buildingGroup;
+  for (let i = bg.children.length - 1; i >= 0; i--) { const m = bg.children[i]; bg.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }
+  THREEJS.bld.center = null;
+  THREEJS.bldBoxes = [];
+  groundTileLoadedCount = 0;
+}
+
+// True when the aircraft is inside any building's footprint and below its roof —
+// i.e. it flew into a building. Cheap point-in-box test against the cached boxes.
+function buildingCollision() {
+  return false;
+}
+
+// ===================== Ground tiles (imagery draped over elevation) =====================
+const GROUND_RING = 5;          // (2R+1)^2 tiles loaded around the aircraft (bigger = see farther)
+const _imgLoader = new THREE.TextureLoader(); _imgLoader.crossOrigin = 'anonymous';
+
+// Coarser tiles cover more ground, so the view reaches much farther for the same
+// tile count. Each bucket trades a little close-up crispness for draw distance.
+function groundZoomForAlt(ft) {
+  if (ft < 2500) return 13;
+  if (ft < 9000) return 12;
+  if (ft < 22000) return 11;
+  if (ft < 40000) return 10;
+  return 9;
+}
+function buildGroundTile(z, x, y, seg) {
+  const n = Math.pow(2, z);
+  if (y < 0 || y >= n) return null;
+  const wx = ((x % n) + n) % n;
+  const geo = new THREE.PlaneGeometry(1, 1, seg, seg);
+  const pos = geo.attributes.position;
+  const lonW = tileXfToLon(x, z), lonE = tileXfToLon(x + 1, z);
+  const latN = tileYfToLat(y, z), latS = tileYfToLat(y + 1, z);
+  const tmp = new THREE.Vector3();
+  let needElev = false;
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i) + 0.5;     // 0..1 west->east
+    const v = pos.getY(i) + 0.5;     // 0..1 south->north
+    const lon = lonW + (lonE - lonW) * u;
+    const lat = latS + (latN - latS) * v;
+    let h = sampleElev(lat, lon);
+    if (h == null) { h = 0; needElev = true; }
+    enuVec(lat, lon, h, tmp);
+    pos.setXYZ(i, tmp.x, tmp.y, tmp.z);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x6b7355, roughness: 1.0, metalness: 0.0 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData = { z: z, x: x, y: y, seg: seg, needElev: needElev };
+  _imgLoader.load(
+    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + wx,
+    function (tex) { if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace; mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true; groundTileLoadedCount++; },
+    undefined, function () {}
+  );
+  return mesh;
+}
+let _elevRetryTimer = 0;
+function updateGround() {
+  const z = groundZoomForAlt(state.altitude);
+  const cx = Math.floor(lonToTileXf(state.lon, z));
+  const cy = Math.floor(latToTileYf(state.lat, z));
+  const want = {};
+  for (let dx = -GROUND_RING; dx <= GROUND_RING; dx++) {
+    for (let dy = -GROUND_RING; dy <= GROUND_RING; dy++) {
+      const ring = Math.max(Math.abs(dx), Math.abs(dy));
+      const seg = ring <= 1 ? 16 : (ring === 2 ? 10 : (ring <= 3 ? 6 : 4));   // ground level-of-detail
+      want[z + '/' + (cx + dx) + '/' + (cy + dy)] = [z, cx + dx, cy + dy, seg];
+    }
+  }
+  const tiles = THREEJS.groundTiles;
+  for (const key in tiles) {
+    if (!want[key]) {
+      const m = tiles[key];
+      if (m && m.isObject3D) { THREEJS.groundGroup.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); } }
+      delete tiles[key];
+    }
+  }
+  let added = 0;
+  for (const key in want) {
+    if (tiles[key]) continue;
+    if (added >= 8) break;
+    const t = want[key];
+    const mesh = buildGroundTile(t[0], t[1], t[2], t[3]);
+    if (mesh) { tiles[key] = mesh; THREEJS.groundGroup.add(mesh); added++; }
+    else tiles[key] = 'oor';      // out of latitude range — sentinel, never a mesh
+  }
+  // Tiles built before their elevation tile arrived are flat; rebuild a couple/sec.
+  const now = performance.now();
+  if (now - _elevRetryTimer > 900) {
+    _elevRetryTimer = now;
+    let fixed = 0;
+    for (const key in tiles) {
+      const m = tiles[key];
+      if (!m || !m.isObject3D || !m.userData.needElev) continue;
+      if (fixed >= 2) break;
+      const u = m.userData;
+      const nm = buildGroundTile(u.z, u.x, u.y, u.seg);
+      if (nm) {
+        THREEJS.groundGroup.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); }
+        tiles[key] = nm; THREEJS.groundGroup.add(nm); fixed++;
+      }
+    }
+  }
+  // Fog/clip distance tracks the loaded extent so unloaded edges fade out.
+  const tileM = (M_PER_DEG * geoOrigin.cosLat * 360) / Math.pow(2, z);
+  const far = tileM * (GROUND_RING + 0.5);
+  if (THREEJS.scene.fog) {
+    THREEJS.scene.fog.near = Math.max(800, far * 0.4);
+    THREEJS.scene.fog.far = Math.max(9000, far);
+  }
+  THREEJS.camera.far = Math.max(60000, far * 5);
+  THREEJS.camera.updateProjectionMatrix();
+}
+
+// ===================== OSM buildings (Overpass API, keyless) with LOD =====================
+function buildBuildings(json, qLat, qLon, baseFallback, satImg, satBox) {
+  // Buildings 3D disabled.
+}
+function updateBuildings() {
+  // Buildings 3D disabled.
+}
+
+// Spawn-clearing disabled (no 3D buildings).
+function findClearSpawn(lat, lon, cb) {
+  cb(lat, lon);
+}
+
+// ===================== Player aircraft (real lit 3D mesh) =====================
+const AC_SCALE = 3;   // buildAirplaneMesh units -> metres (wingspan ~18 m)
+function geomFromFaces(verts, faces) {
+  const pos = [], col = [];
+  for (let i = 0; i < faces.length; i++) {
+    const vs = faces[i].v, c = faces[i].c;
+    const idx = (vs.length === 4) ? [0, 1, 2, 0, 2, 3] : [0, 1, 2];
+    for (let k = 0; k < idx.length; k++) {
+      const v = verts[vs[idx[k]]];
+      pos.push(v[0] * AC_SCALE, v[1] * AC_SCALE, -v[2] * AC_SCALE);  // negate Z: local +Z nose -> world -Z forward
+      col.push(c[0], c[1], c[2]);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+function buildAircraftMesh(flaps, gear) {
+  const ac = THREEJS.aircraft;
+  for (let i = ac.children.length - 1; i >= 0; i--) { const m = ac.children[i]; ac.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }
+  const mesh = buildAirplaneMesh(flaps, gear);
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide });
+  ac.add(new THREE.Mesh(geomFromFaces(mesh.verts, mesh.faces), mat));
+  const addLight = function (vi, color) {
+    const v = mesh.verts[vi];
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 8), new THREE.MeshBasicMaterial({ color: color }));
+    s.position.set(v[0] * AC_SCALE, v[1] * AC_SCALE, -v[2] * AC_SCALE);
+    ac.add(s);
+  };
+  addLight(mesh.rwTip, 0x00ff41);
+  addLight(mesh.lwTip, 0xff2828);
+  THREEJS.acFlaps = flaps; THREEJS.acGear = gear;
+}
+// Orient the aircraft mesh in ENU via an explicit basis (robust through loops/rolls).
+const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3();
+const _negF = new THREE.Vector3(), _fxr = new THREE.Vector3(), _basis = new THREE.Matrix4();
+const _worldUp = new THREE.Vector3(0, 1, 0);
+function orientAircraft(group, h, p, b, pos) {
+  group.position.copy(pos);
+  const hr = h * DEG, pr = p * DEG;
+  _f.set(Math.cos(pr) * Math.sin(hr), Math.sin(pr), -Math.cos(pr) * Math.cos(hr)).normalize();        // nose dir
+  if (Math.abs(_f.y) > 0.999) _r.set(Math.cos(hr), 0, Math.sin(hr));                                  // near-vertical fallback
+  else _r.copy(_f).cross(_worldUp).normalize();                                                       // right = nose × up
+  const fb = b * DEG, cb = Math.cos(fb), sb = Math.sin(fb);
+  _fxr.copy(_f).cross(_r);                                                                            // nose × right (= down, level)
+  _r.multiplyScalar(cb).addScaledVector(_fxr, sb).normalize();                                        // roll right wing down for +bank
+  _u.copy(_r).cross(_f).normalize();                                                                  // up = right × nose
+  _negF.copy(_f).multiplyScalar(-1);
+  _basis.makeBasis(_r, _u, _negF);
+  group.quaternion.setFromRotationMatrix(_basis);
+}
+// Orient the camera (forward = -Z, up = +Y) from aircraft heading/pitch/bank.
+const _camEuler = new THREE.Euler();
+function setCamOrient(cam, h, p, b) {
+  _camEuler.set(p * DEG, -h * DEG, -b * DEG, 'YXZ');
+  cam.quaternion.setFromEuler(_camEuler);
+}
+
+// ===================== Projection helpers (replace Cesium camera projection) =====================
+// Project a geographic point to canvas pixels using the live Three.js camera, or
+// null if it is behind the camera (mirrors Cesium.cartesianToCanvasCoordinates).
+function projectGeoToScreen(lat, lon, altM) {
+  const cam = THREEJS.camera;
+  enuVec(lat, lon, altM, THREEJS._v);
+  THREEJS._cs.copy(THREEJS._v).applyMatrix4(cam.matrixWorldInverse);
+  if (THREEJS._cs.z >= -1) return { x: 0, y: 0, behind: true };
+  THREEJS._v.project(cam);
+  return { x: (THREEJS._v.x * 0.5 + 0.5) * W, y: (1 - (THREEJS._v.y * 0.5 + 0.5)) * H, behind: false };
+}
+// Distance (m) from the camera to a geographic point.
+function distCamToGeo(lat, lon, altM) {
+  enuVec(lat, lon, altM, THREEJS._v);
+  return THREEJS.camera.position.distanceTo(THREEJS._v);
+}
+// Compass heading (deg) the camera is currently facing.
+function cameraHeadingDeg() {
+  const d = new THREE.Vector3(0, 0, -1).applyQuaternion(THREEJS.camera.quaternion);
+  return wrap360(Math.atan2(d.x, -d.z) / DEG);
+}
 
 const FT_TO_M = 0.3048;
 const KTS_TO_MPS = 0.514444;
 const M_PER_DEG_LAT = 111320;
 
+// Drives the Three.js camera from the flight model, orients + lights the aircraft
+// mesh, refreshes the surrounding world (tiles + buildings) and renders the scene.
 function updateCamera() {
-  if (!viewer) return;
+  if (!THREEJS) return;
+  const cam = THREEJS.camera;
 
   // Sense of speed: widen FOV as we go faster.
-  try {
-    const fr = viewer.camera.frustum;
-    if (fr && typeof fr.fov === 'number') {
-      const fovDeg = 55 + Math.min(22, Math.max(0, (state.speed - 150)) * 0.06);
-      fr.fov = Cesium.Math.toRadians(fovDeg);
-    }
-  } catch (e) { /* not a perspective frustum */ }
+  const fovDeg = 60 + Math.min(20, Math.max(0, state.speed - 150) * 0.06);
+  if (Math.abs(cam.fov - fovDeg) > 0.05) { cam.fov = fovDeg; cam.updateProjectionMatrix(); }
 
-  const lat = state.lat, lon = state.lon;
-  const h = Math.max(state.altitude, 0) * FT_TO_M;
-  // Airframe buffet shake while stalled
+  // Before the user picks a location: animate a slow pan over Grand Canyon as a backdrop.
+  if (!chosen) {
+    updateGround();
+    if (THREEJS._menuPreview) {
+      const t = performance.now() * 0.0002;
+      const r = 9000;
+      cam.position.set(Math.sin(t) * r, 2400, Math.cos(t) * r - 2000);
+      cam.lookAt(new THREE.Vector3(0, 600, -3000));
+    }
+    THREEJS.renderer.render(THREEJS.scene, cam);
+    return;
+  }
+  if (!spawnResolved) { THREEJS.renderer.render(THREEJS.scene, cam); return; }
+
+  // Rebuild the aircraft mesh whenever its configuration changes.
+  if (THREEJS.acFlaps !== state.flaps || THREEJS.acGear !== state.gearDown) buildAircraftMesh(state.flaps, state.gearDown);
+
+  const altM = Math.max(state.altitude, -200) * FT_TO_M;
+  const acPos = enuVec(state.lat, state.lon, altM, THREEJS._acPos);
+  orientAircraft(THREEJS.aircraft, state.heading, state.pitch, state.bank, acPos);
+
+  // Airframe buffet shake while stalled.
   const buf = state.stall ? (Math.random() - 0.5) : 0;
 
   if (cameraMode === 0) {
-    // Cockpit: the camera IS the aircraft, looking out the nose. The right-stick
-    // "look" turns the head (camera only); the left stick flies the aircraft.
-    viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(lon, lat, h),
-      orientation: {
-        heading: Cesium.Math.toRadians(state.heading + lookYawOff),
-        pitch: Cesium.Math.toRadians(state.pitch + buf * 1.2 + lookPitchOff),
-        roll: Cesium.Math.toRadians(state.bank + buf * 2.2)
-      }
-    });
+    // Cockpit: the camera IS the aircraft, looking out the nose. Hide the model.
+    THREEJS.aircraft.visible = false;
+    cam.position.copy(acPos);
+    setCamOrient(cam, state.heading + lookYawOff, state.pitch + buf * 1.2 + lookPitchOff, state.bank + buf * 2.2);
   } else {
-    // Chase: a STABLE third-person rig. The camera follows the aircraft's position
-    // and stays behind it, but never rolls/pitches with the aircraft — so the LEFT
-    // stick visibly banks/pitches the MODEL without tipping the view. The RIGHT
-    // stick orbits the camera around the world-anchored aircraft (which does not
-    // move), springing back behind the tail when released.
+    // Chase: a stable third-person rig behind the aircraft. The left stick visibly
+    // banks/pitches the (real, lit) model; the right stick orbits the camera, which
+    // springs back behind the tail when released.
+    THREEJS.aircraft.visible = true;
     if (camFollowHeading === null) camFollowHeading = state.heading;
     const dh = normDeg(state.heading - camFollowHeading);
     camFollowHeading = normDeg(camFollowHeading + dh * Math.min(1, (frameDt || 0.016) * 2.5));
     const azimDeg = camFollowHeading + lookYawOff;
-    const azim = azimDeg * Math.PI / 180;
     const back = 48, up = 13;
-    const dN = -Math.cos(azim) * back;
-    const dE = -Math.sin(azim) * back;
-    const dLat = dN / M_PER_DEG_LAT;
-    const dLon = dE / (M_PER_DEG_LAT * Math.cos(lat * Math.PI / 180));
-    const camH = h + up + lookPitchOff * 0.7;
-    viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(lon + dLon, lat + dLat, camH),
-      orientation: {
-        heading: Cesium.Math.toRadians(azimDeg),
-        pitch: Cesium.Math.toRadians(-9 + lookPitchOff * 0.5),
-        roll: 0
-      }
-    });
+    cam.position.set(
+      acPos.x - headingDirX(azimDeg) * back,
+      acPos.y + up + lookPitchOff * 0.7,
+      acPos.z - headingDirZ(azimDeg) * back
+    );
+    setCamOrient(cam, azimDeg, -9 + lookPitchOff * 0.5, 0);
   }
+
+  // Keep the sun anchored relative to the aircraft so shading stays consistent.
+  THREEJS.sun.position.set(acPos.x - 400, acPos.y + 800, acPos.z + 550);
+  THREEJS.sun.target.position.copy(acPos);
+  cam.updateMatrixWorld();
+
+  updateGround();
+  updateBuildings();
+  THREEJS.renderer.render(THREEJS.scene, cam);
 }
 
 const DEG = Math.PI / 180;
@@ -1464,12 +1784,11 @@ function windArrowForDeg(deg) {
 }
 
 // Sample real terrain height (m) at an arbitrary lat/lon, when tiles are loaded.
+// Backed by the decoded AWS Terrarium elevation cache; returns 0 (= sea level /
+// unknown) until the covering tile has loaded, exactly as Cesium's getHeight did.
 function terrainHeightAtM(lat, lon) {
-  if (!viewer) return 0;
-  try {
-    const h = viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(lon, lat));
-    return (typeof h === 'number' && isFinite(h)) ? h : 0;
-  } catch (e) { return 0; }
+  const h = sampleElev(lat, lon);
+  return (typeof h === 'number' && isFinite(h)) ? h : 0;
 }
 
 // Sample real terrain height (m) under the aircraft, when tiles are loaded.
@@ -2369,17 +2688,17 @@ function navSpeedTradeAltitude(out, aglFt, refSpd) {
   return out;
 }
 
-// Best-effort terrain elevation for a point: precise async sample when available,
-// otherwise whatever the loaded globe can give us right now.
+// Best-effort terrain elevation (ft) for a point: triggers the elevation tile load
+// and polls briefly until it is decoded, then returns the sampled height. Falls back
+// to 0 if the tile never arrives.
 function sampleGroundFt(lat, lon, cb) {
-  try {
-    if (viewer && viewer.terrainProvider && Cesium.sampleTerrainMostDetailed) {
-      const carto = Cesium.Cartographic.fromDegrees(lon, lat);
-      Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [carto])
-        .then(function (r) { cb((r && r[0] && isFinite(r[0].height)) ? r[0].height / FT_TO_M : terrainHeightAtM(lat, lon) / FT_TO_M); })
-        .catch(function () { cb(terrainHeightAtM(lat, lon) / FT_TO_M); });
-    } else { cb(terrainHeightAtM(lat, lon) / FT_TO_M); }
-  } catch (e) { cb(0); }
+  let tries = 0;
+  (function attempt() {
+    const h = sampleElev(lat, lon);
+    if (h != null && isFinite(h)) { cb(h / FT_TO_M); return; }
+    if (++tries > 25) { cb(0); return; }   // ~5 s max
+    setTimeout(attempt, 200);
+  })();
 }
 
 function navRecomputePlan() {
@@ -3038,6 +3357,13 @@ function update(dt) {
   if (state.lon > 180) state.lon -= 360;
   if (state.lon < -180) state.lon += 360;
   state.lat = Math.max(-85, Math.min(85, state.lat));
+
+  // ---- Building strike: flying into a building is fatal ----
+  if (!state.terrainHit && buildingCollision()) {
+    state.terrainHit = true;
+    state.terrainTimer = 2.2;
+    terrainWarn.style.display = 'block';
+  }
 }
 
 function drawCrosshair() {
@@ -3737,20 +4063,18 @@ function drawSpdTape() {
 // Real planes from the API are drawn in two layers:
 //   1.  NEAR  (< TRAFFIC_3D_M): full 3D mesh model + nav lights
 //   2.  FAR   (>= TRAFFIC_3D_M up to TRAFFIC_RENDER_KM*1000): 2D callsign label
-//       + small diamond icon + route trail projected via Cesium.
-// Both layers use Cesium's camera projection so they register correctly in
+//       + small diamond icon + route trail projected via the Three.js camera.
+// Both layers use the live camera projection so they register correctly in
 // either cockpit or chase mode.
 const TRAFFIC_MODEL_M_PER_UNIT = 40;
 
 function drawTraffic() {
-  if (!viewer || !traffic.length) return;
-  const camPos        = viewer.camera.positionWC;
-  const camHeadingDeg = Cesium.Math.toDegrees(viewer.camera.heading);
+  if (!THREEJS || !traffic.length) return;
+  const camHeadingDeg = cameraHeadingDeg();
   const maxRenderM    = TRAFFIC_RENDER_KM * 1000;
 
-  // ---- focal length for 3D near model ----
-  let fovRad = 55 * DEG;
-  try { const fr = viewer.camera.frustum; if (fr && typeof fr.fov === 'number') fovRad = fr.fov; } catch(e){}
+  // ---- focal length for 3D near model (matches the live camera FOV) ----
+  const fovRad = THREEJS.camera.fov * DEG;
   const focal = (H / 2) / Math.tan(fovRad / 2);
 
   // Light direction (matches drawAirplane)
@@ -3766,13 +4090,12 @@ function drawTraffic() {
     if (!t.alive) continue;
 
     const altM  = Math.max(0, (t.altitude || 0)) * FT_TO_M;
-    const cart  = Cesium.Cartesian3.fromDegrees(t.lon, t.lat, altM);
-    const distM = Cesium.Cartesian3.distance(camPos, cart);
+    const distM = distCamToGeo(t.lat, t.lon, altM);
     if (distM > maxRenderM) continue;
 
-    // Project the plane's centre onto the canvas via the real Cesium camera
-    const center = viewer.scene.cartesianToCanvasCoordinates(cart);
-    if (!center) continue; // behind camera
+    // Project the plane's centre onto the canvas via the real Three.js camera
+    const center = projectGeoToScreen(t.lat, t.lon, altM);
+    if (center.behind) continue; // behind camera
 
     // ── FAR: 2D symbol + label + trail ──────────────────────────────────
     if (distM >= TRAFFIC_3D_M) {
@@ -3787,9 +4110,8 @@ function drawTraffic() {
         let first = true;
         for (let k = 0; k < trail.length; k++) {
           const tp = trail[k];
-          const tc = Cesium.Cartesian3.fromDegrees(tp.lon, tp.lat, (tp.alt || 0) * FT_TO_M);
-          const ts = viewer.scene.cartesianToCanvasCoordinates(tc);
-          if (!ts) { first = true; continue; }
+          const ts = projectGeoToScreen(tp.lat, tp.lon, (tp.alt || 0) * FT_TO_M);
+          if (ts.behind) { first = true; continue; }
           if (ts.x < -2000 || ts.x > W + 2000 || ts.y < -2000 || ts.y > H + 2000) { first = true; continue; }
           const alpha = 0.08 + 0.30 * (k / trail.length);
           if (first) {
@@ -3862,9 +4184,8 @@ function drawTraffic() {
       let trailFirst = true;
       for (let k = 0; k < trail.length; k++) {
         const tp = trail[k];
-        const tc = Cesium.Cartesian3.fromDegrees(tp.lon, tp.lat, (tp.alt || 0) * FT_TO_M);
-        const ts = viewer.scene.cartesianToCanvasCoordinates(tc);
-        if (!ts) { trailFirst = true; continue; }
+        const ts = projectGeoToScreen(tp.lat, tp.lon, (tp.alt || 0) * FT_TO_M);
+        if (ts.behind) { trailFirst = true; continue; }
         if (trailFirst) { ctx.moveTo(ts.x, ts.y); trailFirst = false; }
         else ctx.lineTo(ts.x, ts.y);
       }
@@ -3981,7 +4302,11 @@ function drawTraffic() {
 
 
 function render() {
-  // Transparent overlay on top of the real-world globe
+  // Update + render the Three.js world first (terrain, buildings, aircraft, camera),
+  // then draw the 2D HUD overlay on top of it.
+  updateCamera();
+
+  // Transparent overlay on top of the real-world scene
   ctx.clearRect(0, 0, W, H);
 
   drawWeather(); // rain/snow particles behind the HUD
@@ -3993,9 +4318,8 @@ function render() {
   if (cameraMode === 0) {
     drawPitchLadder(bankRad);
     drawCrosshair();
-  } else {
-    drawAirplane();
   }
+  // Chase view: the aircraft is now a real, lit 3D mesh in the Three.js scene.
 
   drawAltTape();
   drawSpdTape();
@@ -4130,9 +4454,8 @@ function render() {
       '<span style="color:rgba(127,208,255,0.7)">🌍 LIVE WX</span> · ' + (timeLabels[env.time] || env.time) + ' · ' + (wxLabels[env.weather] || env.weather);
   }
 
-  // Minimap + drive the real-world camera
+  // Minimap (the 3D world + camera were already updated at the top of render())
   updateMinimap();
-  updateCamera();
 }
 
 // ===== Landing / ground-roll HUD panel =====
@@ -4344,17 +4667,18 @@ function beginFlight(loc) {
     state.pitch = 2.5;
     spawnResolved = true;
   }
-  const carto = Cesium.Cartographic.fromDegrees(loc.lon, loc.lat);
-  if (viewer && viewer.terrainProvider && Cesium.sampleTerrainMostDetailed) {
-    Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [carto])
-      .then(function (r) {
-        const gm = (r && r[0] && isFinite(r[0].height)) ? r[0].height : 0;
-        spawnAt(gm);
-      })
-      .catch(function () { spawnAt(0); });
-  } else {
-    spawnAt(0);
-  }
+  // Find an open/flat clearing first (never spawn stuck inside a built-up block),
+  // anchor the local ENU world there, then resolve the ground elevation.
+  if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = 'FINDING A CLEAR RUNWAY…'; }
+  findClearSpawn(loc.lat, loc.lon, function (spLat, spLon) {
+    START.lat = spLat; START.lon = spLon;
+    state.lat = spLat; state.lon = spLon;
+    setGeoOrigin(spLat, spLon);
+    resetWorld();
+    if (THREEJS) THREEJS._menuPreview = false;
+    if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = 'LOADING EARTH...'; }
+    sampleGroundFt(spLat, spLon, function (ft) { spawnAt(ft * FT_TO_M); });
+  });
 
   // Start with engine off — player must press E to start
   state.engineState = 'off';
@@ -4818,13 +5142,13 @@ function loop() {
   if (!chosen) pollMenuGamepad(); // let a controller drive the start menu
 
   // After a departure is chosen, start flying once the terrain spawn height is
-  // resolved AND the globe tiles for the start view have loaded (aircraft is
+  // resolved AND a few ground tiles for the start view have loaded (aircraft is
   // parked, so this resolves quickly), or after a safety timeout.
-  if (chosen && !simReady && viewer && spawnResolved &&
-      (viewer.scene.globe.tilesLoaded || now - startTime > 15000)) {
+  if (chosen && !simReady && THREEJS && spawnResolved &&
+      (groundTileLoadedCount >= 4 || now - startTime > 12000)) {
     markReady();
   }
-  if (chosen && !simReady && !viewer && now - startTime > 4000) markReady();
+  if (chosen && !simReady && !THREEJS && now - startTime > 4000) markReady();
 
   if (chosen && simReady) pollPauseGamepad();
   if (chosen && simReady) pollApGamepad();
@@ -4833,6 +5157,7 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
+initThree();
 updateControlsHint();
 initTouchControls();
 initApPanel();
