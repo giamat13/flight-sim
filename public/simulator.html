@@ -2180,9 +2180,13 @@ function updateApPanel() {
   const indicator = document.getElementById('ap-indicator');
   const panel     = document.getElementById('ap-panel');
   if (!ap.on) {
-    if (indicator) indicator.style.display = 'none';
-    if (panel)     panel.style.display = 'none';
-    const nh = document.getElementById('nav-hud'); if (nh && ap.mode !== 'nav') nh.style.display = 'none';
+    if (panel) panel.style.display = 'none';
+    if (navLastDest) {
+      navUpdateHud(); // keep indicator + HUD showing manual-nav info
+    } else {
+      if (indicator) indicator.style.display = 'none';
+      const nh = document.getElementById('nav-hud'); if (nh) nh.style.display = 'none';
+    }
     return;
   }
   // Advanced nav AP owns its own indicator + status banner (no manual knob panel).
@@ -2812,14 +2816,14 @@ function navEngage(dest) {
 }
 
 // Disengaged by the pilot (manual override / single-press off): remember the
-// destination so RESUME can pick it back up, and tidy the nav UI.
+// destination so RESUME can pick it back up, then switch to manual-nav HUD.
 function navOnDisengage() {
   if (ap.nav && ap.nav.destLat != null) {
     navLastDest = { lat: ap.nav.destLat, lon: ap.nav.destLon, name: ap.nav.destName };
   }
   ap.mode = 'cruise';
   ap.nav = null;
-  const nh = document.getElementById('nav-hud'); if (nh) nh.style.display = 'none';
+  navUpdateHud(); // switches HUD to manual-nav mode (distance / bearing to dest)
 }
 
 // Reached the destination: shut the autopilot down and flash an "arrived" note.
@@ -3046,7 +3050,29 @@ function fmtEtaHM(sec) {
 function navUpdateHud() {
   const hud = document.getElementById('nav-hud');
   const ind = document.getElementById('ap-indicator');
-  if (!ap.nav) { if (hud) hud.style.display = 'none'; return; }
+  if (!ap.nav) {
+    // Manual-nav fallback: AP is off but we remember a destination — show
+    // distance, bearing, and ETA at current speed so the pilot can fly there.
+    if (navLastDest && !ap.on) {
+      const db = navBearingTo(navLastDest.lat, navLastDest.lon);
+      const nm = db.dist / 1852;
+      const distStr = nm >= 1 ? (nm < 10 ? nm.toFixed(1) : Math.round(nm)) + ' nm' : Math.round(db.dist) + ' m';
+      const brgStr = String(Math.round(db.brg) % 360 || 360).padStart(3, '0') + '°';
+      const eta = state.speed > 10 ? db.dist / (state.speed * KTS_TO_MPS) : Infinity;
+      if (ind) {
+        ind.innerHTML = '<span style="color:#aad4ff">✈ MANUAL NAV</span> &nbsp;→ <b>' + (navLastDest.name || 'DEST') + '</b>';
+        ind.style.display = 'block';
+      }
+      if (hud) {
+        hud.innerHTML = '<b>' + distStr + '</b> &nbsp;·&nbsp; BRG <b>' + brgStr + '</b>' +
+          (isFinite(eta) ? ' &nbsp;·&nbsp; ETA <b>' + fmtEtaHM(eta) + '</b>' : '');
+        hud.style.display = 'block';
+      }
+    } else {
+      if (hud) hud.style.display = 'none';
+    }
+    return;
+  }
   const dDest = distToDestM();
   const nm = dDest / 1852;
   const plan = ap.nav.plan || {};
@@ -3135,9 +3161,12 @@ function update(dt) {
     if (pilotOverride) {
       const wasNav = (ap.mode === 'nav');
       ap.on = false;
-      const apEl = document.getElementById('ap-indicator');
-      if (apEl) apEl.style.display = 'none';
-      if (wasNav) navOnDisengage();
+      if (wasNav) {
+        navOnDisengage(); // saves dest + switches indicator to manual-nav mode
+      } else {
+        const apEl = document.getElementById('ap-indicator');
+        if (apEl) apEl.style.display = 'none';
+      }
     } else {
       pitchIn = apOut.pitchCmd;
       rollIn  = apOut.rollCmd;
@@ -3146,6 +3175,9 @@ function update(dt) {
       apFlying = true;
     }
   }
+
+  // Refresh manual-nav HUD each frame so distance/ETA stay live.
+  if (!ap.on && navLastDest) navUpdateHud();
 
   if (keys['KeyR'] || (gp && gp.reset)) { resetState(); return; }
 
@@ -4608,13 +4640,12 @@ function updateMinimap() {
   const s = mmCv.width;
   mmCtx.clearRect(0, 0, s, s);
 
-  // Traffic blips, heading-up like the player marker. The minimap window is
-  // the same ±d degree box used for the satellite tile fetch below.
+  // Traffic blips — North-up, matching the satellite tile underneath.
+  // (No canvas rotation: the tile is always fetched North-up.)
   if (traffic.length) {
     const d = 0.035;
     mmCtx.save();
     mmCtx.translate(s / 2, s / 2);
-    mmCtx.rotate(state.heading * Math.PI / 180);
     traffic.forEach(function (t) {
       if (!t.alive) return;
       const dLat = t.lat - state.lat;
@@ -4646,30 +4677,37 @@ function updateMinimap() {
   mmCtx.stroke();
   mmCtx.restore();
 
-  // Advanced-AP route: a dashed line toward the destination and a marker for it.
-  // The destination is usually well outside the tiny map window, so it's clamped
-  // to the rim as a direction-to-go pointer; it slides inward as we close in.
-  if (ap.on && ap.mode === 'nav' && ap.nav) {
-    const d = 0.035;
-    mmCtx.save();
-    mmCtx.translate(s / 2, s / 2);
-    mmCtx.rotate(state.heading * Math.PI / 180);
-    const dLat = ap.nav.destLat - state.lat;
-    const dLon = (ap.nav.destLon - state.lon) * Math.cos(state.lat * Math.PI / 180);
-    let px, py;
-    if (Math.abs(dLat) <= d && Math.abs(dLon) <= d) {
-      px = (dLon / d) * (s / 2); py = -(dLat / d) * (s / 2);   // in view: real position
-    } else {
-      const mag = Math.hypot(dLon, dLat) || 1, R = s / 2 - 10;
-      px = (dLon / mag) * R; py = -(dLat / mag) * R;            // off-map: pin to the rim
+  // Destination marker: shown while the nav AP is active OR while manually flying
+  // toward a remembered destination (navLastDest). North-up — no canvas rotation.
+  {
+    const mmNavDest = (ap.on && ap.mode === 'nav' && ap.nav)
+      ? { lat: ap.nav.destLat, lon: ap.nav.destLon }
+      : navLastDest;
+    if (mmNavDest) {
+      const d = 0.035;
+      const navActive = ap.on && ap.mode === 'nav';
+      mmCtx.save();
+      mmCtx.translate(s / 2, s / 2);
+      const dLat = mmNavDest.lat - state.lat;
+      const dLon = (mmNavDest.lon - state.lon) * Math.cos(state.lat * Math.PI / 180);
+      let px, py;
+      if (Math.abs(dLat) <= d && Math.abs(dLon) <= d) {
+        px = (dLon / d) * (s / 2); py = -(dLat / d) * (s / 2);
+      } else {
+        const mag = Math.hypot(dLon, dLat) || 1, R = s / 2 - 10;
+        px = (dLon / mag) * R; py = -(dLat / mag) * R;
+      }
+      // Golden when AP is flying the route, blue-white when navigating manually.
+      const lineCol = navActive ? 'rgba(255,210,90,0.85)' : 'rgba(160,200,255,0.55)';
+      const fillCol = navActive ? '#ffd24a' : '#aaccff';
+      mmCtx.strokeStyle = lineCol; mmCtx.lineWidth = 2; mmCtx.setLineDash([5, 4]);
+      mmCtx.beginPath(); mmCtx.moveTo(0, 0); mmCtx.lineTo(px, py); mmCtx.stroke(); mmCtx.setLineDash([]);
+      mmCtx.fillStyle = fillCol; mmCtx.strokeStyle = 'rgba(0,0,0,0.75)'; mmCtx.lineWidth = 1.5;
+      mmCtx.beginPath();
+      mmCtx.moveTo(px, py - 5); mmCtx.lineTo(px + 5, py); mmCtx.lineTo(px, py + 5); mmCtx.lineTo(px - 5, py);
+      mmCtx.closePath(); mmCtx.fill(); mmCtx.stroke();
+      mmCtx.restore();
     }
-    mmCtx.strokeStyle = 'rgba(255,210,90,0.85)'; mmCtx.lineWidth = 2; mmCtx.setLineDash([5, 4]);
-    mmCtx.beginPath(); mmCtx.moveTo(0, 0); mmCtx.lineTo(px, py); mmCtx.stroke(); mmCtx.setLineDash([]);
-    mmCtx.fillStyle = '#ffd24a'; mmCtx.strokeStyle = 'rgba(0,0,0,0.75)'; mmCtx.lineWidth = 1.5;
-    mmCtx.beginPath();
-    mmCtx.moveTo(px, py - 5); mmCtx.lineTo(px + 5, py); mmCtx.lineTo(px, py + 5); mmCtx.lineTo(px - 5, py);
-    mmCtx.closePath(); mmCtx.fill(); mmCtx.stroke();
-    mmCtx.restore();
   }
 
   // Refresh the satellite tile as we move (throttled)
