@@ -1401,7 +1401,7 @@ function initThree() {
   }
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb);
-  scene.fog = new THREE.Fog(0x87ceeb, 6000, 40000);
+  scene.fog = new THREE.Fog(0x87ceeb, 12000, 70000);
 
   const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1.0, 200000);
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -1471,7 +1471,7 @@ function buildingCollision() {
 }
 
 // ===================== Ground tiles (imagery draped over elevation) =====================
-const GROUND_RING = 5;          // (2R+1)^2 tiles loaded around the aircraft (bigger = see farther)
+const GROUND_RING = 8;          // (2R+1)^2 tiles loaded around the aircraft (bigger = see farther)
 const _imgLoader = new THREE.TextureLoader(); _imgLoader.crossOrigin = 'anonymous';
 
 // Coarser tiles cover more ground, so the view reaches much farther for the same
@@ -1539,7 +1539,7 @@ function updateGround() {
   let added = 0;
   for (const key in want) {
     if (tiles[key]) continue;
-    if (added >= 8) break;
+    if (added >= 14) break;
     const t = want[key];
     const mesh = buildGroundTile(t[0], t[1], t[2], t[3]);
     if (mesh) { tiles[key] = mesh; THREEJS.groundGroup.add(mesh); added++; }
@@ -1566,8 +1566,8 @@ function updateGround() {
   const tileM = (M_PER_DEG * geoOrigin.cosLat * 360) / Math.pow(2, z);
   const far = tileM * (GROUND_RING + 0.5);
   if (THREEJS.scene.fog) {
-    THREEJS.scene.fog.near = Math.max(800, far * 0.4);
-    THREEJS.scene.fog.far = Math.max(9000, far);
+    THREEJS.scene.fog.near = Math.max(1500, far * 0.65);
+    THREEJS.scene.fog.far = Math.max(12000, far);
   }
   THREEJS.camera.far = Math.max(60000, far * 5);
   THREEJS.camera.updateProjectionMatrix();
@@ -2121,7 +2121,9 @@ const ap = {
   landPhase: 0,      // 0=slowdown, 1=flaps, 2=descend, 3=touchdown, 4=rollout
   landPhaseTimer: 0,
   // takeoff sequence state
-  toPhase: 0         // 0=spool, 1=roll, 2=rotate, 3=climb, 4=gear/flaps cleanup
+  toPhase: 0,        // 0=spool, 1=roll, 2=rotate, 3=climb, 4=gear/flaps cleanup
+  // terrain evasion flag (set each frame by apTerrainAvoidance)
+  terrainAvoiding: false
 };
 
 function toggleAutopilot() {
@@ -2189,8 +2191,10 @@ function updateApPanel() {
     navUpdateHud();
     return;
   }
-  const modeLabel = ap.mode === 'land' ? '🛬 LANDING' : ap.mode === 'takeoff' ? '🛫 TAKEOFF' : '✈ CRUISE';
-  const modeColor = ap.mode === 'land' ? '#ff9944' : ap.mode === 'takeoff' ? '#44ff88' : '#7fd0ff';
+  const cruiseLabel = ap.terrainAvoiding ? '⚠ TERRAIN' : '✈ CRUISE';
+  const cruiseColor = ap.terrainAvoiding ? '#ff6644' : '#7fd0ff';
+  const modeLabel = ap.mode === 'land' ? '🛬 LANDING' : ap.mode === 'takeoff' ? '🛫 TAKEOFF' : cruiseLabel;
+  const modeColor = ap.mode === 'land' ? '#ff9944' : ap.mode === 'takeoff' ? '#44ff88' : cruiseColor;
   const hdgStr = String(Math.round(ap.targetHdg) % 360 || 360).padStart(3,'0');
   const altStr = Math.round(ap.targetAlt);
   const spdStr = Math.round(ap.targetSpd);
@@ -2395,12 +2399,75 @@ function apTakeoffControl(dt) {
   return { pitchCmd: 0, rollCmd: 0, thrCmd: 0 };
 }
 
+// ---- Terrain avoidance for cruise AP ----
+// Scans terrain ahead in a cone and returns avoidance biases in the same
+// format as apTrafficAvoidance() so the cruise loop can blend both.
+// Sets ap.terrainAvoiding for the HUD warning.
+function apTerrainAvoidance() {
+  ap.terrainAvoiding = false;
+  const nil = { turnBias: 0, vsBias: 0, emergency: false, override: null };
+  if (state.onGround || state.altitude < 300) return nil;
+
+  const V = Math.max(state.speed * KTS_TO_MPS, 50);
+  const lookM = Math.max(3000, Math.min(16000, V * 28)); // ~28 s of flight
+  const cosLat = Math.cos(state.lat * DEG) || 1e-6;
+
+  // Highest terrain (ft MSL) inside a heading cone of ±spreadDeg.
+  function coneMaxFt(hdgDeg, spreadDeg) {
+    let maxFt = 0;
+    for (const off of [-spreadDeg, 0, spreadDeg]) {
+      const b = wrap360(hdgDeg + off) * DEG;
+      for (let i = 1; i <= 8; i++) {
+        const d = lookM * (i / 8);
+        const lat = state.lat + (Math.cos(b) * d) / M_PER_DEG_LAT;
+        const lon = state.lon + (Math.sin(b) * d) / (M_PER_DEG_LAT * cosLat);
+        maxFt = Math.max(maxFt, terrainHeightAtM(lat, lon) / FT_TO_M);
+      }
+    }
+    return maxFt;
+  }
+
+  const aheadFt   = coneMaxFt(state.heading, 12);
+  const clearance = state.altitude - aheadFt;
+
+  const WARN_FT = 1200; // start biasing heading + climb
+  const CRIT_FT = 500;  // hard override: max climb + turn
+
+  if (clearance >= WARN_FT) return nil;
+
+  // Turn toward the side with lower terrain.
+  const leftFt  = coneMaxFt(wrap360(state.heading - 50), 10);
+  const rightFt = coneMaxFt(wrap360(state.heading + 50), 10);
+  const turnSign = (leftFt <= rightFt) ? -1 : 1;
+
+  ap.terrainAvoiding = true;
+
+  if (clearance < CRIT_FT) {
+    return { turnBias: 0, vsBias: 0, emergency: true,
+             override: { climb: 1, turn: turnSign } };
+  }
+
+  const urgency = (WARN_FT - clearance) / WARN_FT; // 0..1
+  return {
+    turnBias : turnSign * urgency * 22,
+    vsBias   : urgency * 1400,
+    emergency: false,
+    override : null
+  };
+}
+
 // ---- Cruise control (existing PID) ----
 function apCruiseControl(dt) {
   // The autopilot keeps an eye on nearby traffic and biases its heading/
   // altitude targets to route around anyone converging, on top of its
   // normal hold logic below.
   const avoid = apTrafficAvoidance();
+  // Merge terrain avoidance: terrain override beats traffic; biases stack.
+  const terrAvoid = apTerrainAvoidance();
+  if (terrAvoid.override)  avoid.override   = terrAvoid.override;
+  if (terrAvoid.emergency) avoid.emergency  = true;
+  avoid.turnBias += terrAvoid.turnBias;
+  avoid.vsBias   += terrAvoid.vsBias;
 
   // Heading hold
   let hdgErr = headingForTrack(ap.targetHdg, Math.max(state.speed * KTS_TO_MPS, 1)) - state.heading;
