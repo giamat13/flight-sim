@@ -1408,17 +1408,18 @@ function terrainAheadMaxFt(lookAheadM) {
   return (maxM === -Infinity ? 0 : maxM) / FT_TO_M;
 }
 
-// ===================== Live Flight Traffic (ADSB.fi / OpenSky) =====================
-// Fetches real aircraft positions from public APIs (no key required).
-// Primary source: opendata.adsb.fi  ·  Fallback: opensky-network.org
-// Both calls are routed through corsproxy.io because:
-//   - opensky-network.org's CORS policy only allows requests from its own
-//     domain (confirmed by the "Access-Control-Allow-Origin: https://opensky-network.org"
-//     error) — there's no URL fix for that, browsers will always block it directly.
-//   - corsproxy.io's free tier explicitly allows localhost/127.0.0.1 origins,
-//     which covers local dev. If this is ever hosted on a real domain, swap
-//     CORS_PROXY for a paid proxy tier or a tiny self-hosted proxy (e.g. a
-//     Cloudflare Worker) since the free tier won't recognize that origin.
+// ===================== Live Flight Traffic (ADSB.fi / adsb.lol / airplanes.live / adsb.one) =====================
+// Fetches real aircraft positions from public APIs — no key, no proxy.
+// All four mirrors below return the same ADSBExchange-v2-compatible {"ac":[...]}
+// shape and are built specifically so third-party sites/apps can query them
+// directly from the browser (unlike opensky-network.org, whose CORS header
+// only allows requests from its own domain — confirmed by the literal
+// "Access-Control-Allow-Origin: https://opensky-network.org" error earlier,
+// which is why it's been dropped rather than kept as a dead fallback).
+// They're tried in order; the first one that answers wins. I can't guarantee
+// from here which will actually allow cross-origin fetch from your origin —
+// that can only be confirmed by your browser's console — but having four
+// independent mirrors means the odds of all of them blocking you are low.
 // Planes are shown as:
 //   • Full 3D model when they are within TRAFFIC_3D_M metres of the player
 //   • 2D callsign label + plane symbol + route trail beyond that distance
@@ -1430,9 +1431,14 @@ const TRAFFIC_RENDER_KM   = 250;          // draw 2D label up to this distance
 const TRAFFIC_FETCH_S     = 15;           // seconds between live API fetches
 const TRAFFIC_RADIUS_KM   = 250;          // bounding box half-width for API query
 const TRAIL_MAX_POINTS    = 50;           // history points kept per flight
-// Free tier allows localhost/127.0.0.1 origins — see header comment above.
-const CORS_PROXY = 'https://corsproxy.io/?url=';
-function viaProxy(url) { return CORS_PROXY + encodeURIComponent(url); }
+
+// Direct, keyless, no-proxy mirrors — all ADSBExchange-v2-compatible.
+const TRAFFIC_SOURCES = [
+  { name: 'adsb.lol',       url: (lat, lon, nm) => `https://api.adsb.lol/v2/point/${lat}/${lon}/${nm}` },
+  { name: 'airplanes.live', url: (lat, lon, nm) => `https://api.airplanes.live/v2/point/${lat}/${lon}/${nm}` },
+  { name: 'adsb.one',       url: (lat, lon, nm) => `https://api.adsb.one/v2/point/${lat}/${lon}/${nm}` },
+  { name: 'adsb.fi',        url: (lat, lon, nm) => `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${nm}` },
+];
 
 let traffic       = [];
 let trafficIdSeq  = 1;
@@ -1454,53 +1460,29 @@ async function fetchRealFlights() {
   trafficFetching = true;
   trafficStatus = 'FETCHING…';
 
-  const clat  = state.lat;
-  const clon  = state.lon;
+  const clat  = state.lat.toFixed(4);
+  const clon  = state.lon.toFixed(4);
   const radNM = Math.ceil(TRAFFIC_RADIUS_KM * 0.5399568); // km → NM
 
   let rawAircraft = null;
+  const errors = [];
 
-  // ── Attempt 1: ADSB.fi  ──────────────────────────────────────────────────
-  try {
-    const realUrl = `https://opendata.adsb.fi/api/v3/lat/${clat.toFixed(4)}/lon/${clon.toFixed(4)}/dist/${radNM}`;
-    const resp = await fetch(viaProxy(realUrl), { signal: AbortSignal.timeout(12000) });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const json = await resp.json();
-    rawAircraft = (json.aircraft || json.ac || []).filter(function(a){ return a.lat && a.lon; });
-    trafficStatus = 'LIVE · ADSB.fi';
-  } catch (e1) {
-
-  // ── Attempt 2: OpenSky Network  ─────────────────────────────────────────
+  for (const src of TRAFFIC_SOURCES) {
     try {
-      const deg  = TRAFFIC_RADIUS_KM / 111;
-      const laMin = (clat - deg).toFixed(4), laMax = (clat + deg).toFixed(4);
-      const loMin = (clon - deg).toFixed(4), loMax = (clon + deg).toFixed(4);
-      const realUrl2 = `https://opensky-network.org/api/states/all?lamin=${laMin}&lomin=${loMin}&lamax=${laMax}&lomax=${loMax}`;
-      const resp2 = await fetch(viaProxy(realUrl2), { signal: AbortSignal.timeout(12000) });
-      if (!resp2.ok) throw new Error(`HTTP ${resp2.status}`);
-      const json2 = await resp2.json();
-      // OpenSky returns arrays; convert to a keyed object matching ADSB.fi shape
-      rawAircraft = (json2.states || [])
-        .filter(function(s){ return s[5] != null && s[6] != null; })
-        .map(function(s) {
-          return {
-            hex:      s[0],
-            flight:  (s[1] || '').trim(),
-            lat:      s[6],
-            lon:      s[5],
-            alt_baro: s[7]  != null ? s[7]  / FT_TO_M : null,  // m → ft
-            alt_geom: s[13] != null ? s[13] / FT_TO_M : null,
-            gs:       s[9]  != null ? s[9]  * 1.94384 : null,   // m/s → kts
-            track:    s[10],
-            baro_rate: s[11] != null ? s[11] / FT_TO_M * 60 : 0,
-            on_ground: !!s[8]
-          };
-        });
-      trafficStatus = 'LIVE · OpenSky';
-    } catch (e2) {
-      trafficStatus = 'ERR – no data';
-      console.warn('[Traffic] Both APIs failed:', e1.message, e2.message);
+      const resp = await fetch(src.url(clat, clon, radNM), { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      rawAircraft = (json.aircraft || json.ac || []).filter(function(a){ return a.lat && a.lon; });
+      trafficStatus = 'LIVE · ' + src.name;
+      break;
+    } catch (e) {
+      errors.push(src.name + ': ' + e.message);
     }
+  }
+
+  if (!rawAircraft) {
+    trafficStatus = 'ERR – no data';
+    console.warn('[Traffic] All sources failed:', errors.join(' | '));
   }
 
   if (rawAircraft) {
