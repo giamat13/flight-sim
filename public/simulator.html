@@ -5221,6 +5221,17 @@ function markReady() {
 }
 
 function beginFlight(loc) {
+  if (document.readyState !== 'complete') {
+    if (startMenu) startMenu.style.display = 'none';
+    if (loadingEl) {
+      loadingEl.style.display = 'flex';
+      const sub = loadingEl.querySelector('.l-sub');
+      if (sub) { sub.style.color = 'rgba(0,255,65,0.5)'; sub.classList.add('pulsing'); sub.textContent = 'PREPARING...'; }
+    }
+    window.addEventListener('load', function () { beginFlight(loc); }, { once: true });
+    return;
+  }
+
   START.lat = loc.lat;
   START.lon = loc.lon;
   START.hdg = (loc.hdg != null) ? loc.hdg : 90;
