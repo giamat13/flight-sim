@@ -2531,9 +2531,19 @@ function apTriggerLanding() {
   ap.mode = 'land';
   ap.targetHdg = currentTrackDeg();   // lock a straight-in approach on the current track
   ap.avoiding = false;            // landing is a deliberate descent — no terrain bail-out
-  ap.landPhase = 0;
-  ap.landPhaseTimer = 0;
   ap.altI = 0; ap.spdI = 0; ap.hdgI = 0;
+  // Skip early phases if already at or near approach speed
+  const stallKt = stallSpeedKts();
+  const approachSpd = Math.max(stallKt + 30, 140);
+  const finalSpd    = Math.max(stallKt + 20, 120);
+  if (state.speed < finalSpd + 15) {
+    ap.landPhase = 2;
+  } else if (state.speed < approachSpd + 10) {
+    ap.landPhase = 1;
+  } else {
+    ap.landPhase = 0;
+  }
+  ap.landPhaseTimer = 0;
   updateApPanel();
 }
 
@@ -2658,10 +2668,11 @@ function apLandingControl(dt) {
     // HDG hold
     const he = normDeg(headingForTrack(ap.targetHdg, Math.max(state.speed * KTS_TO_MPS, 1)) - state.heading);
     rollCmd = Math.max(-0.4, Math.min(0.4, (Math.max(-20, Math.min(20, he * 1.5)) - state.bank) * 0.04));
-    // Level flight while we slow
-    const vsErr = (0 - state.vs);
-    pitchCmd = Math.max(-0.3, Math.min(0.3, vsErr * 0.0005));
-    // Advance when slow enough and reasonably level
+    // Descend while slowing — don't waste altitude flying level
+    const descentTarget0 = agl > 800 ? Math.max(-1000, -agl * 0.55) : agl > 300 ? -400 : 0;
+    const vsErr = (descentTarget0 - state.vs);
+    pitchCmd = Math.max(-0.55, Math.min(0.3, vsErr * 0.0006));
+    // Advance when slow enough
     if (state.speed < approachSpd + 10 && ap.landPhaseTimer > 3) {
       ap.landPhase = 1; ap.landPhaseTimer = 0; ap.spdI = 0;
     }
@@ -2674,8 +2685,9 @@ function apLandingControl(dt) {
     thrCmd = Math.max(-0.5, Math.min(0.4, spdErr * 0.04 + ap.spdI * 0.01));
     const he = normDeg(headingForTrack(ap.targetHdg, Math.max(state.speed * KTS_TO_MPS, 1)) - state.heading);
     rollCmd = Math.max(-0.4, Math.min(0.4, (Math.max(-20, Math.min(20, he * 1.5)) - state.bank) * 0.04));
-    const vsErr = (0 - state.vs);
-    pitchCmd = Math.max(-0.3, Math.min(0.3, vsErr * 0.0005));
+    const descentTarget1 = agl > 600 ? Math.max(-900, -agl * 0.5) : agl > 250 ? -350 : 0;
+    const vsErr = (descentTarget1 - state.vs);
+    pitchCmd = Math.max(-0.55, Math.min(0.3, vsErr * 0.0006));
     if (state.speed < finalSpd + 15 && ap.landPhaseTimer > 3) {
       ap.landPhase = 2; ap.landPhaseTimer = 0; ap.spdI = 0;
     }
@@ -2683,11 +2695,11 @@ function apLandingControl(dt) {
   // ---- Phase 2: flaps 40, descend ----
   } else if (ap.landPhase === 2) {
     if (state.flaps < 3) state.flaps = 3;
-    // Target -700 fpm descent, tapering off as we get close to ground
-    const targetVS = agl > 200 ? -700 : Math.max(-300, -agl * 2.5);
+    // Steeper descent when high, tapering to gentle flare near ground
+    const targetVS = agl > 2000 ? -1500 : agl > 800 ? -1100 : agl > 200 ? -800 : Math.max(-300, -agl * 2.5);
     const vsErr = targetVS - state.vs;
     ap.altI = Math.max(-300, Math.min(300, ap.altI + vsErr * dt));
-    pitchCmd = Math.max(-0.5, Math.min(0.4, vsErr * 0.0008 + ap.altI * 0.00015));
+    pitchCmd = Math.max(-0.7, Math.min(0.4, vsErr * 0.001 + ap.altI * 0.00015));
     // Speed: hold finalSpd
     const spdErr = finalSpd - state.speed;
     ap.spdI = Math.max(-20, Math.min(20, ap.spdI + spdErr * dt));
