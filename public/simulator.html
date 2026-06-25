@@ -1448,6 +1448,23 @@ function ensureElevTile(z, x, y) {
   img.onerror = fail;
   img.src = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + z + '/' + wx + '/' + y + '.png';
 }
+// Returns true when the 3×3 ground mesh tiles directly under the aircraft
+// have been built with elevation applied (not flat) and have imagery loaded.
+function coreMeshElevReady() {
+  if (!THREEJS) return false;
+  const z = groundZoomForAlt(state.altitude);
+  const cx = Math.floor(lonToTileXf(state.lon, z));
+  const cy = Math.floor(latToTileYf(state.lat, z));
+  const tiles = THREEJS.groundTiles;
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      const key = z + '/' + (cx + dx) + '/' + (cy + dy);
+      const m = tiles[key];
+      if (!m || !m.isObject3D || m.userData.needElev || !(m.material && m.material.map)) return false;
+    }
+  }
+  return true;
+}
 // True when the 3×3 elevation tiles around (lat,lon) have all settled (loaded or errored).
 // Kicks off any not-yet-started fetches as a side-effect.
 function coreElevReady(lat, lon) {
@@ -5285,6 +5302,7 @@ const siteLoadStart = performance.now();
 function markReady() {
   if (simReady) return;
   simReady = true;
+  if (loadingEl) loadingEl.style.display = 'none';
   lastTime = performance.now(); // avoid a dt spike after the wait
 }
 
@@ -5303,6 +5321,11 @@ function beginFlight(loc) {
   if (minimapEl) minimapEl.style.display = 'block';
   var fbEl = document.getElementById('flight-btns');
   if (fbEl) fbEl.style.display = 'flex';
+  if (loadingEl) {
+    loadingEl.style.display = 'flex';
+    const sub = loadingEl.querySelector('.l-sub');
+    if (sub) { sub.style.color = '#00FF41'; sub.classList.add('pulsing'); sub.textContent = 'FINDING RUNWAY...'; }
+  }
 
   // Spawn the aircraft ON the ground at the chosen point.
   spawnResolved = false;
@@ -5811,13 +5834,26 @@ function loop() {
     }
   }
 
-  // Phase 2 (after departure chosen): wait for spawn elevation + core elev tiles before starting.
-  if (chosen && !simReady && THREEJS && spawnResolved) {
-    const elev = coreElevReady(state.lat, state.lon);
-    if (elev && (groundTileLoadedCount >= 4 || now - startTime > 15000)) markReady();
-    else if (now - startTime > 20000) markReady(); // absolute fallback for very slow connections
+  // Phase 2 (after departure chosen): wait until core terrain tiles are built with
+  // proper elevation AND imagery before revealing the flight.
+  if (chosen && !simReady) {
+    if (THREEJS && spawnResolved) {
+      const elev = coreElevReady(state.lat, state.lon);
+      const mesh = coreMeshElevReady();
+      // Update loading text to reflect current stage.
+      if (loadingEl && loadingEl.style.display !== 'none') {
+        const sub = loadingEl.querySelector('.l-sub');
+        if (sub && sub.style.color !== 'rgb(255, 85, 85)') {
+          const stage = !elev ? 'LOADING ELEVATION...' : !mesh ? 'RENDERING TERRAIN...' : 'ALMOST READY...';
+          if (sub.textContent !== stage) sub.textContent = stage;
+        }
+      }
+      if (elev && mesh) markReady();
+      else if (now - startTime > 25000) markReady(); // absolute fallback
+    } else if (!THREEJS && now - startTime > 4000) {
+      markReady();
+    }
   }
-  if (chosen && !simReady && !THREEJS && now - startTime > 4000) markReady();
 
   if (chosen && simReady) pollPauseGamepad();
   if (chosen && simReady) pollApGamepad();
