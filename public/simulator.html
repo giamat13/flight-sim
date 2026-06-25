@@ -63,9 +63,20 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .tc-big{font-size:16px;padding:18px 22px;min-width:96px}
 .tc-tilt.tc-on{background:rgba(80,180,255,0.22);border-color:#7fd0ff;color:#7fd0ff}
 #loc-label{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;color:rgba(0,255,65,0.45);font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;text-align:center}
-#loading{position:fixed;top:0;left:0;width:100%;height:100%;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0a0f;color:#00FF41;font-family:'JetBrains Mono',monospace;gap:14px}
-#loading .l-title{font-size:18px;letter-spacing:4px;text-shadow:0 0 10px rgba(0,255,65,0.4)}
-#loading .l-sub{font-size:11px;opacity:0.5;letter-spacing:2px}
+#loading{position:fixed;top:0;left:0;width:100%;height:100%;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,#060c0f 0%,#020406 100%);color:#00FF41;font-family:'JetBrains Mono',monospace;gap:10px}
+#loading .l-radar-wrap{width:110px;height:110px;margin-bottom:6px}
+#loading .l-radar{width:100%;height:100%}
+.l-sweep{transform-origin:60px 60px;transform-box:fill-box;animation:radarSweep 3s linear infinite}
+@keyframes radarSweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+#loading .l-title{font-size:30px;letter-spacing:12px;text-shadow:0 0 22px rgba(0,255,65,0.95),0 0 55px rgba(0,255,65,0.35);margin:0}
+#loading .l-divider{width:240px;height:1px;background:linear-gradient(to right,transparent,rgba(0,255,65,0.5),transparent);margin:4px 0}
+#loading .l-sub{font-size:11px;opacity:0.75;letter-spacing:3px}
+#loading .l-bar{width:200px;height:2px;background:rgba(0,255,65,0.12);border-radius:1px;overflow:hidden;margin-top:2px}
+#loading .l-fill{height:100%;background:#00FF41;border-radius:1px;box-shadow:0 0 8px rgba(0,255,65,0.9);animation:barScan 2.8s ease-in-out infinite}
+@keyframes barScan{0%{width:8%;margin-left:0}50%{width:55%;margin-left:22%}100%{width:8%;margin-left:88%}}
+#loading .l-boot{display:flex;flex-direction:column;gap:4px;margin-top:10px;align-items:center}
+#loading .l-boot-line{font-size:9px;letter-spacing:2px;opacity:0;animation:bootFade 0.4s ease forwards;color:rgba(0,255,65,0.55)}
+@keyframes bootFade{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
 #ap-indicator{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;display:none;color:#7fd0ff;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,160,255,0.10);border:1px solid rgba(80,180,255,0.55);border-radius:4px;padding:4px 14px;text-shadow:0 0 8px rgba(127,208,255,0.5)}
 /* ===== Autopilot control panel ===== */
 #ap-panel{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:25;display:none;flex-direction:column;align-items:center;gap:6px;background:rgba(0,12,30,0.88);border:1px solid rgba(80,180,255,0.45);border-radius:8px;padding:10px 16px 8px;font-family:'JetBrains Mono',monospace;backdrop-filter:blur(4px);pointer-events:auto}
@@ -350,9 +361,35 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   </div>
 </div>
 
-<div id="loading" style="display:none">
+<div id="loading">
+  <div class="l-radar-wrap">
+    <svg class="l-radar" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="60" cy="60" r="55" stroke="#00FF41" stroke-width="0.6" opacity="0.3"/>
+      <circle cx="60" cy="60" r="38" stroke="#00FF41" stroke-width="0.5" opacity="0.2"/>
+      <circle cx="60" cy="60" r="20" stroke="#00FF41" stroke-width="0.5" opacity="0.2"/>
+      <line x1="60" y1="5" x2="60" y2="115" stroke="#00FF41" stroke-width="0.4" opacity="0.25"/>
+      <line x1="5" y1="60" x2="115" y2="60" stroke="#00FF41" stroke-width="0.4" opacity="0.25"/>
+      <line x1="60" y1="5" x2="60" y2="13" stroke="#00FF41" stroke-width="2"/>
+      <line x1="60" y1="107" x2="60" y2="115" stroke="#00FF41" stroke-width="2"/>
+      <line x1="5" y1="60" x2="13" y2="60" stroke="#00FF41" stroke-width="2"/>
+      <line x1="107" y1="60" x2="115" y2="60" stroke="#00FF41" stroke-width="2"/>
+      <circle cx="60" cy="60" r="3" fill="#00FF41"/>
+      <g class="l-sweep">
+        <line x1="60" y1="60" x2="60" y2="6" stroke="#00FF41" stroke-width="1.5" stroke-linecap="round"/>
+        <path d="M60,60 L60,6 A54,54 0 0,1 114,60 Z" fill="rgba(0,255,65,0.08)"/>
+      </g>
+    </svg>
+  </div>
   <div class="l-title">FLIGHT SIM</div>
-  <div class="l-sub pulsing">LOADING EARTH...</div>
+  <div class="l-divider"></div>
+  <div class="l-sub pulsing">PREPARING...</div>
+  <div class="l-bar"><div class="l-fill"></div></div>
+  <div class="l-boot">
+    <div class="l-boot-line" style="animation-delay:0.2s">AVIONICS &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ONLINE</div>
+    <div class="l-boot-line" style="animation-delay:0.6s">NAV SYSTEMS &nbsp;&nbsp;&nbsp; READY</div>
+    <div class="l-boot-line" style="animation-delay:1.0s">3D RENDERER &nbsp;&nbsp;&nbsp; INIT</div>
+    <div class="l-boot-line" style="animation-delay:1.4s">TERRAIN DATA &nbsp;&nbsp; LOADING</div>
+  </div>
 </div>
 
 <div id="vkb">
@@ -361,7 +398,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="vkb-hint">D-PAD MOVE · A TYPE · B CLOSE · GO ✈ LAUNCH</div>
 </div>
 
-<div id="startmenu">
+<div id="startmenu" style="display:none">
   <div class="sm-title">FLIGHT SIM</div>
   <div class="sm-sub">SELECT DEPARTURE POINT</div>
   <div id="sm-grid">
@@ -1410,6 +1447,20 @@ function ensureElevTile(z, x, y) {
   img.onload = function () { const g = decodeElevImage(img, ELEV_GRID); if (g) elevTiles[key] = { grid: g, n: ELEV_GRID }; else fail(); };
   img.onerror = fail;
   img.src = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + z + '/' + wx + '/' + y + '.png';
+}
+// True when the 3×3 elevation tiles around (lat,lon) have all settled (loaded or errored).
+// Kicks off any not-yet-started fetches as a side-effect.
+function coreElevReady(lat, lon) {
+  const ex0 = Math.floor(lonToTileXf(lon, ELEV_Z));
+  const ey0 = Math.floor(latToTileYf(lat, ELEV_Z));
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      ensureElevTile(ELEV_Z, ex0 + dx, ey0 + dy);
+      const et = elevTiles[ELEV_Z + '/' + (ex0 + dx) + '/' + (ey0 + dy)];
+      if (!et || et === 'loading') return false;
+    }
+  }
+  return true;
 }
 // Bilinear elevation (m) at lat/lon, or null if its tile is not decoded yet.
 function sampleElev(lat, lon) {
@@ -5228,11 +5279,12 @@ let chosen = false;
 let simReady = false;
 let spawnResolved = false;
 let startTime = 0;
+let siteReady = false;
+const siteLoadStart = performance.now();
 
 function markReady() {
   if (simReady) return;
   simReady = true;
-  if (loadingEl) loadingEl.style.display = 'none';
   lastTime = performance.now(); // avoid a dt spike after the wait
 }
 
@@ -5251,11 +5303,6 @@ function beginFlight(loc) {
   if (minimapEl) minimapEl.style.display = 'block';
   var fbEl = document.getElementById('flight-btns');
   if (fbEl) fbEl.style.display = 'flex';
-  if (loadingEl) {
-    loadingEl.style.display = 'flex';
-    const sub = loadingEl.querySelector('.l-sub');
-    if (sub) { sub.style.color = '#00FF41'; sub.classList.add('pulsing'); sub.textContent = 'LOADING EARTH...'; }
-  }
 
   // Spawn the aircraft ON the ground at the chosen point.
   spawnResolved = false;
@@ -5281,7 +5328,6 @@ function beginFlight(loc) {
     setGeoOrigin(spLat, spLon);
     resetWorld();
     if (THREEJS) THREEJS._menuPreview = false;
-    if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = 'LOADING EARTH...'; }
     sampleGroundFt(spLat, spLon, function (ft) { spawnAt(ft * FT_TO_M); });
   });
 
@@ -5746,12 +5792,30 @@ function loop() {
 
   if (!chosen) pollMenuGamepad(); // let a controller drive the start menu
 
-  // After a departure is chosen, start flying once the terrain spawn height is
-  // resolved AND a few ground tiles for the start view have loaded (aircraft is
-  // parked, so this resolves quickly), or after a safety timeout.
-  if (chosen && !simReady && THREEJS && spawnResolved &&
-      (groundTileLoadedCount >= 4 || now - startTime > 12000)) {
-    markReady();
+  // Phase 1: site startup — show loading screen until Grand Canyon preview is ready.
+  if (!siteReady) {
+    const gcElev = THREEJS && coreElevReady(36.1069, -112.1129);
+    if (loadingEl) {
+      const sub = loadingEl.querySelector('.l-sub');
+      if (sub && sub.style.color !== 'rgb(255, 85, 85)') {
+        const target = (!THREEJS || !gcElev) ? 'PREPARING...' : 'LOADING EARTH...';
+        if (sub.textContent !== target) sub.textContent = target;
+      }
+    }
+    const previewReady = THREEJS && gcElev && (groundTileLoadedCount >= 4 || now - siteLoadStart > 12000);
+    const fallback = now - siteLoadStart > 20000;
+    if (previewReady || fallback) {
+      siteReady = true;
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (startMenu) startMenu.style.display = 'flex';
+    }
+  }
+
+  // Phase 2 (after departure chosen): wait for spawn elevation + core elev tiles before starting.
+  if (chosen && !simReady && THREEJS && spawnResolved) {
+    const elev = coreElevReady(state.lat, state.lon);
+    if (elev && (groundTileLoadedCount >= 4 || now - startTime > 15000)) markReady();
+    else if (now - startTime > 20000) markReady(); // absolute fallback for very slow connections
   }
   if (chosen && !simReady && !THREEJS && now - startTime > 4000) markReady();
 
