@@ -1408,375 +1408,228 @@ function terrainAheadMaxFt(lookAheadM) {
   return (maxM === -Infinity ? 0 : maxM) / FT_TO_M;
 }
 
-// ===================== AI Traffic =====================
-// Other aircraft sharing the sky. Each is a lightweight kinematic flier (no
-// full point-mass physics needed) that holds heading/altitude/speed and
-// gently maneuvers to stay clear of everyone else, including the player.
-// The player's own autopilot also "sees" them and nudges around close ones.
-// Distances are tuned so the same 3D model used for the player's own plane
-// is actually visible at typical range — real far-off traffic would be an
-// invisible speck at this model's scale, so we keep it in "you can see your
-// wingman" territory instead of unrealistically-distant ambient traffic.
-//
-// Bot count is DYNAMIC: scales with time-of-day and weather conditions.
-// Bots also land and take off autonomously — they cycle ground → takeoff → cruise → land.
-const TRAFFIC_SPAWN_RADIUS_M = 2600;   // how far out new traffic appears
-const TRAFFIC_DESPAWN_M = 4500;        // recycle once this far from the player
-const TRAFFIC_COLLIDE_M = 35;          // distance that counts as a mid-air collision
-let traffic = [];
-let trafficIdSeq = 1;
+// ===================== Live Flight Traffic (ADSB.fi / OpenSky) =====================
+// Fetches real aircraft positions from public APIs (no key required).
+// Primary source: opendata.adsb.fi  ·  Fallback: opensky-network.org
+// Both calls are routed through corsproxy.io because:
+//   - opensky-network.org's CORS policy only allows requests from its own
+//     domain (confirmed by the "Access-Control-Allow-Origin: https://opensky-network.org"
+//     error) — there's no URL fix for that, browsers will always block it directly.
+//   - corsproxy.io's free tier explicitly allows localhost/127.0.0.1 origins,
+//     which covers local dev. If this is ever hosted on a real domain, swap
+//     CORS_PROXY for a paid proxy tier or a tiny self-hosted proxy (e.g. a
+//     Cloudflare Worker) since the free tier won't recognize that origin.
+// Planes are shown as:
+//   • Full 3D model when they are within TRAFFIC_3D_M metres of the player
+//   • 2D callsign label + plane symbol + route trail beyond that distance
+// Positions are dead-reckoned between fetches for smooth movement.
 
-// Compute the target number of bot planes based on current time-of-day and weather.
-// Peak hours (day) in good weather get maximum bots; night or bad weather reduce count.
-function getTargetTrafficCount() {
-  const timeFactors = { day: 1.0, dusk: 0.65, night: 0.30, dawn: 0.50 };
-  const wxFactors   = { clear: 1.0, clouds: 0.80, rain: 0.50, snow: 0.35, fog: 0.20 };
-  const tf = timeFactors[env.time]    || 1.0;
-  const wf = wxFactors[env.weather]   || 1.0;
-  const base = 14; // max bots in clear-day conditions
-  return Math.max(2, Math.round(base * tf * wf));
-}
+const TRAFFIC_COLLIDE_M   = 35;           // mid-air collision radius (m)
+const TRAFFIC_3D_M        = 8000;         // render 3D model within this distance
+const TRAFFIC_RENDER_KM   = 250;          // draw 2D label up to this distance
+const TRAFFIC_FETCH_S     = 15;           // seconds between live API fetches
+const TRAFFIC_RADIUS_KM   = 250;          // bounding box half-width for API query
+const TRAIL_MAX_POINTS    = 50;           // history points kept per flight
+// Free tier allows localhost/127.0.0.1 origins — see header comment above.
+const CORS_PROXY = 'https://corsproxy.io/?url=';
+function viaProxy(url) { return CORS_PROXY + encodeURIComponent(url); }
 
-function randRange(a, b) { return a + Math.random() * (b - a); }
+let traffic       = [];
+let trafficIdSeq  = 1;
+let trafficFetching    = false;
+let trafficLastFetch   = -999;   // performance.now()/1000 at last successful fetch
+let trafficStatus      = 'CONNECTING…';
+const flightTrails     = {};              // icao24 → [{lat,lon,alt}]
 
-// Build one bot at a random bearing/distance from the player. Traffic mirrors
-// the PLAYER's own speed/altitude/configuration (with small per-plane variance)
-// so it looks, flies and is sized exactly like flying alongside yourself.
-function spawnTrafficPlane(nearPlayer) {
-  const bearing = randRange(0, 360);
-  const dist = nearPlayer ? randRange(500, TRAFFIC_SPAWN_RADIUS_M) : randRange(300, TRAFFIC_SPAWN_RADIUS_M);
-  const br = bearing * DEG;
-  const dLat = (Math.cos(br) * dist) / M_PER_DEG_LAT;
-  const dLon = (Math.sin(br) * dist) / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
-  const baseAlt = state.onGround ? Math.max(1500, state.altitude + 800) : state.altitude;
-  const baseSpd = state.onGround ? 180 : Math.max(110, state.speed);
-
-  // Occasionally spawn a bot already on the ground ready to take off (~20% chance),
-  // but only if the terrain below is actual land (not sea/ocean).
-  const groundAlt     = (state.terrainHeightFt || 0);
-  const startOnGround = Math.random() < 0.20 && groundAlt > 0;
-
-  return {
-    id: trafficIdSeq++,
-    lat: state.lat + dLat,
-    lon: state.lon + dLon,
-    altitude: startOnGround ? groundAlt : Math.max(800, baseAlt + randRange(-150, 150)),
-    heading: randRange(0, 360),
-    targetHeading: randRange(0, 360),
-    speed: startOnGround ? 0 : Math.max(80, baseSpd + randRange(-12, 12)), // knots — matches player's pace
-    speedOffset: randRange(-10, 10), // small per-plane variance kept while tracking the player's speed
-    bank: 0,
-    pitch: startOnGround ? 2.5 : 0, // nose attitude (deg) — same convention as state.pitch
-    flaps: startOnGround ? 1 : 0,   // take-off flaps when on ground
-    gearDown: startOnGround ? true : false, // gear up during cruise
-    turnTimer: randRange(8, 25),    // seconds until next lazy heading change
-    livery: Math.floor(randRange(0, 4)),
-    alive: true,
-    // --- Bot landing / takeoff FSM ---
-    // phase: 'cruise' | 'descend' | 'landing' | 'ground' | 'takeoff' | 'climb'
-    phase: startOnGround ? 'ground' : 'cruise',
-    phaseTimer: startOnGround ? randRange(10, 40) : randRange(60, 180), // seconds before next phase change
-    groundAlt: groundAlt,  // stored terrain height at spawn
-    sizeScale: randRange(20, 34)  // random visual size (model-units per metre); lower = smaller on screen
-  };
-}
-
-function initTraffic() {
-  traffic = [];
-  const count = getTargetTrafficCount();
-  for (let i = 0; i < count; i++) traffic.push(spawnTrafficPlane(true));
-}
-
-// Great-circle-ish flat-earth distance in metres between the player and a
-// lat/lon point — fine at the scale (tens of km) traffic operates at.
+// Flat-earth distance in metres from the player to a lat/lon point.
 function distFromPlayerM(lat, lon) {
   const dN = (lat - state.lat) * M_PER_DEG_LAT;
   const dE = (lon - state.lon) * (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
   return Math.sqrt(dN * dN + dE * dE);
 }
 
-function updateTraffic(dt) {
-  // ---- Dynamically adjust traffic count to match time/weather ----
-  const targetCount = getTargetTrafficCount();
-  while (traffic.length < targetCount) traffic.push(spawnTrafficPlane(true));
-  // If we need fewer, mark excess as dead so they fade out naturally
-  if (traffic.length > targetCount + 2) {
-    let removed = 0;
-    for (let i = traffic.length - 1; i >= 0 && removed < 2; i--) {
-      if (traffic[i].alive && traffic[i].phase === 'cruise') {
-        traffic[i].alive = false;
-        removed++;
-      }
+// ---- Live data fetch (async, non-blocking) ----
+async function fetchRealFlights() {
+  if (trafficFetching) return;
+  trafficFetching = true;
+  trafficStatus = 'FETCHING…';
+
+  const clat  = state.lat;
+  const clon  = state.lon;
+  const radNM = Math.ceil(TRAFFIC_RADIUS_KM * 0.5399568); // km → NM
+
+  let rawAircraft = null;
+
+  // ── Attempt 1: ADSB.fi  ──────────────────────────────────────────────────
+  try {
+    const realUrl = `https://opendata.adsb.fi/api/v3/lat/${clat.toFixed(4)}/lon/${clon.toFixed(4)}/dist/${radNM}`;
+    const resp = await fetch(viaProxy(realUrl), { signal: AbortSignal.timeout(12000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json();
+    rawAircraft = (json.aircraft || json.ac || []).filter(function(a){ return a.lat && a.lon; });
+    trafficStatus = 'LIVE · ADSB.fi';
+  } catch (e1) {
+
+  // ── Attempt 2: OpenSky Network  ─────────────────────────────────────────
+    try {
+      const deg  = TRAFFIC_RADIUS_KM / 111;
+      const laMin = (clat - deg).toFixed(4), laMax = (clat + deg).toFixed(4);
+      const loMin = (clon - deg).toFixed(4), loMax = (clon + deg).toFixed(4);
+      const realUrl2 = `https://opensky-network.org/api/states/all?lamin=${laMin}&lomin=${loMin}&lamax=${laMax}&lomax=${loMax}`;
+      const resp2 = await fetch(viaProxy(realUrl2), { signal: AbortSignal.timeout(12000) });
+      if (!resp2.ok) throw new Error(`HTTP ${resp2.status}`);
+      const json2 = await resp2.json();
+      // OpenSky returns arrays; convert to a keyed object matching ADSB.fi shape
+      rawAircraft = (json2.states || [])
+        .filter(function(s){ return s[5] != null && s[6] != null; })
+        .map(function(s) {
+          return {
+            hex:      s[0],
+            flight:  (s[1] || '').trim(),
+            lat:      s[6],
+            lon:      s[5],
+            alt_baro: s[7]  != null ? s[7]  / FT_TO_M : null,  // m → ft
+            alt_geom: s[13] != null ? s[13] / FT_TO_M : null,
+            gs:       s[9]  != null ? s[9]  * 1.94384 : null,   // m/s → kts
+            track:    s[10],
+            baro_rate: s[11] != null ? s[11] / FT_TO_M * 60 : 0,
+            on_ground: !!s[8]
+          };
+        });
+      trafficStatus = 'LIVE · OpenSky';
+    } catch (e2) {
+      trafficStatus = 'ERR – no data';
+      console.warn('[Traffic] Both APIs failed:', e1.message, e2.message);
     }
   }
-  // Remove dead slots that have been reaped
-  traffic = traffic.filter(function (t) { return t.alive; });
 
+  if (rawAircraft) {
+    const nowSec = performance.now() / 1000;
+    const nextTraffic = [];
+
+    for (let i = 0; i < rawAircraft.length; i++) {
+      const ac  = rawAircraft[i];
+      const acLat = Number(ac.lat);
+      const acLon = Number(ac.lon);
+      if (isNaN(acLat) || isNaN(acLon)) continue;
+
+      // Altitude (prefer baro, fall back to geometric)
+      const altBaro = (typeof ac.alt_baro === 'number') ? ac.alt_baro : null;
+      const altGeom = (typeof ac.alt_geom === 'number') ? ac.alt_geom : null;
+      const altFt   = altBaro != null ? altBaro : (altGeom != null ? altGeom : null);
+      if (altFt === null && !ac.on_ground) continue; // no position altitude, skip
+
+      const gsKts   = (typeof ac.gs    === 'number' && ac.gs > 5) ? ac.gs    : 280;
+      const hdg     = (typeof ac.track === 'number') ? ac.track : 0;
+      const vsFtMin = (typeof ac.baro_rate === 'number') ? ac.baro_rate : 0;
+      const onGnd   = !!ac.on_ground || altFt < 50;
+      const icao    = (ac.hex || '').toLowerCase().trim();
+      const callsign = ((ac.flight || ac.r || icao || '????')).trim().toUpperCase();
+
+      if (!icao) continue;
+
+      // Accumulate route trail
+      if (!flightTrails[icao]) flightTrails[icao] = [];
+      const trail = flightTrails[icao];
+      const lastPt = trail[trail.length - 1];
+      if (!lastPt || Math.abs(lastPt.lat - acLat) > 0.00005 || Math.abs(lastPt.lon - acLon) > 0.00005) {
+        trail.push({ lat: acLat, lon: acLon, alt: altFt || 0 });
+        if (trail.length > TRAIL_MAX_POINTS) trail.shift();
+      }
+
+      // Preserve smoothed/dead-reckoned position from previous frame if we already track this plane
+      const prev = traffic.find(function(t){ return t.icao === icao; });
+      const pitch = Math.max(-15, Math.min(15, vsFtMin / 700 * 8));
+
+      nextTraffic.push({
+        id:         prev ? prev.id : trafficIdSeq++,
+        icao,
+        callsign,
+        lat:        prev ? prev.lat : acLat,
+        lon:        prev ? prev.lon : acLon,
+        altitude:   altFt || 0,
+        heading:    prev ? prev.heading : hdg,
+        // Dead-reckon targets updated each fetch
+        targetLat:  acLat,
+        targetLon:  acLon,
+        targetHdg:  hdg,
+        speed:      gsKts,
+        bank:       0,
+        pitch,
+        flaps:      onGnd ? 1 : 0,
+        gearDown:   onGnd || (altFt !== null && altFt < 1500),
+        alive:      true,
+        phase:      onGnd ? 'ground' : (vsFtMin > 300 ? 'climb' : (vsFtMin < -300 ? 'descend' : 'cruise')),
+        sizeScale:  30,
+        livery:     Math.abs((icao.charCodeAt(0) || 0) % 4),
+        trail:      flightTrails[icao]
+      });
+    }
+
+    traffic = nextTraffic;
+    trafficLastFetch = performance.now() / 1000;
+    trafficStatus += ' · ' + nextTraffic.length + ' AC';
+  }
+
+  trafficFetching = false;
+}
+
+function initTraffic() {
+  traffic = [];
+  trafficLastFetch = -999;
+  // Short delay so the chosen location is fully established before querying
+  setTimeout(fetchRealFlights, 1200);
+}
+
+function updateTraffic(dt) {
+  const nowSec = performance.now() / 1000;
+
+  // Re-fetch on schedule
+  if (!trafficFetching && nowSec - trafficLastFetch > TRAFFIC_FETCH_S) {
+    fetchRealFlights();
+  }
+
+  // Smooth each plane toward its last-reported position and dead-reckon forward
   for (let i = 0; i < traffic.length; i++) {
     const t = traffic[i];
     if (!t.alive) continue;
 
-    // Recycle traffic that's drifted too far away, spawning a fresh one nearby
-    // so the player is never left flying alone for long.
-    if (t.phase !== 'ground' && distFromPlayerM(t.lat, t.lon) > TRAFFIC_DESPAWN_M) {
-      traffic[i] = spawnTrafficPlane(true);
-      continue;
-    }
+    // Lerp toward the reported position (smooth out the coarse API steps)
+    const lr = Math.min(1, dt * 0.25);
+    t.lat += (t.targetLat - t.lat) * lr;
+    t.lon += (t.targetLon - t.lon) * lr;
 
-    // ================================================================
-    // BOT LANDING / TAKEOFF FSM
-    // States: cruise → descend → landing → ground → takeoff → climb → cruise
-    // ================================================================
-    t.phaseTimer -= dt;
+    // Shortest-arc heading convergence
+    const hdgErr = normDeg(t.targetHdg - t.heading);
+    t.heading = wrap360(t.heading + hdgErr * Math.min(1, dt * 1.2));
 
-    if (t.phase === 'ground') {
-      // ---- ON THE GROUND: wait, then start taking off ----
-      t.speed = Math.max(0, t.speed - 20 * dt); // decelerate / stopped
-      t.pitch = 2.5;
-      t.bank  = 0;
-      t.gearDown = true;
-      t.flaps = 1; // takeoff flaps
-      if (t.phaseTimer <= 0) {
-        // Start takeoff roll
-        t.phase = 'takeoff';
-        t.phaseTimer = 0;
-        t.targetHeading = t.heading; // hold runway heading
-      }
-      // Advance position at taxi / zero speed
-      // (don't move while parked — looks more natural)
-      continue;
-    }
-
-    if (t.phase === 'takeoff') {
-      // ---- TAKEOFF ROLL → CLIMB ----
-      t.gearDown = true;
-      t.flaps = 1;
-      t.bank  = 0;
-      t.speed += 80 * dt; // accelerate like full throttle
-      if (t.speed >= 130) {
-        // Rotate
-        t.pitch = 12;
-        if (t.altitude < (t.groundAlt || 0) + 300) {
-          t.altitude += 600 * dt / 60; // climb steeply
-        } else {
-          // Airborne — switch to climb phase
-          t.phase = 'climb';
-          t.gearDown = false;
-          t.phaseTimer = randRange(30, 90);
-          t.targetHeading = wrap360(t.heading + randRange(-30, 30));
-        }
-      } else {
-        t.pitch = 2.5;
-      }
-      // Move along runway heading during roll
-      const vMpsTakeoff = t.speed * KTS_TO_MPS;
-      const hrTakeoff = t.heading * DEG;
-      t.lat += (Math.cos(hrTakeoff) * vMpsTakeoff * dt) / M_PER_DEG_LAT;
-      t.lon += (Math.sin(hrTakeoff) * vMpsTakeoff * dt) / (M_PER_DEG_LAT * Math.cos(t.lat * DEG));
-      continue;
-    }
-
-    if (t.phase === 'climb') {
-      // ---- INITIAL CLIMB to cruise alt ----
-      t.gearDown = false;
-      const targetAlt = Math.max(1200, (state.onGround ? 2000 : state.altitude) + randRange(-200, 400));
-      const altErr = targetAlt - t.altitude;
-      t.altitude += Math.max(-800, Math.min(1200, altErr * 3)) * dt / 60;
-      t.speed += Math.max(-15, Math.min(15, (Math.max(110, state.speed) - t.speed) * 0.5)) * dt;
-      if (state.flaps > 0 && t.speed > 170) t.flaps = 0; // retract flaps once fast enough
-      const targetPitchClimb = altErr > 50 ? 8 : 2;
-      t.pitch += (targetPitchClimb - t.pitch) * Math.min(1, dt * 1.5);
-      if (t.phaseTimer <= 0 || Math.abs(altErr) < 100) {
-        t.phase = 'cruise';
-        t.flaps = 0;
-        t.phaseTimer = randRange(60, 200); // cruise for a while before descending
-      }
-      // Apply heading + position below (falls through to common movement)
-    }
-
-    if (t.phase === 'descend') {
-      // ---- DESCEND for approach ----
-      t.gearDown = true;
-      if (t.flaps < 2) t.flaps = 2; // approach flaps
-      const groundTarget = t.groundAlt || 0;
-      const agl = t.altitude - groundTarget;
-      if (agl < 60) {
-        // Touchdown
-        t.phase = 'landing';
-        t.phaseTimer = 0;
-      } else {
-        // Nose-down descent at -700 fpm
-        t.altitude = Math.max(groundTarget + 40, t.altitude - 700 * dt / 60);
-        const spdTarget = 130;
-        t.speed += Math.max(-20, Math.min(20, (spdTarget - t.speed) * 0.5)) * dt;
-        const targetPitchDesc = -4;
-        t.pitch += (targetPitchDesc - t.pitch) * Math.min(1, dt * 1.5);
-      }
-    }
-
-    if (t.phase === 'landing') {
-      // ---- LANDING ROLLOUT ----
-      t.altitude = t.groundAlt || 0;
-      t.pitch = 2.5;
-      t.bank  = 0;
-      t.speed = Math.max(0, t.speed - 22 * dt); // braking
-      if (t.speed < 2) {
-        // Stopped
-        t.speed = 0;
-        t.phase = 'ground';
-        t.phaseTimer = randRange(15, 50); // sit on ground before next takeoff
-        t.flaps = 1;
-      }
-    }
-
-    // ---- Decide when to switch cruise → descend ----
-    if (t.phase === 'cruise') {
-      t.flaps = 0;
-      t.gearDown = false;
-      if (t.phaseTimer <= 0) {
-        // Decide to land (50%) or keep cruising
-        if (Math.random() < 0.5) {
-          const sampledGroundFt = terrainHeightAtM(t.lat, t.lon) / FT_TO_M;
-          if (sampledGroundFt > 0) {
-            // Solid ground below — start descent
-            t.phase = 'descend';
-            t.groundAlt = sampledGroundFt;
-            t.phaseTimer = 0;
-          } else {
-            // Over water — skip this landing attempt, try again after a short delay
-            t.phaseTimer = randRange(30, 60);
-          }
-        } else {
-          t.phaseTimer = randRange(60, 200); // cruise more
-        }
-      }
-    }
-
-    // ================================================================
-    // Lazy wandering heading (cruise & climb only; descend keeps its track)
-    // ================================================================
-    if (t.phase !== 'descend' && t.phase !== 'landing' && t.phase !== 'ground' && t.phase !== 'takeoff') {
-      t.turnTimer -= dt;
-      if (t.turnTimer <= 0) {
-        t.targetHeading = wrap360(t.heading + randRange(-60, 60));
-        t.turnTimer = randRange(10, 30);
-      }
-    }
-
-    // ---- Separation: steer away from anything too close (other bots AND
-    // the player). This is what keeps traffic from clustering or grazing
-    // the player even when the player isn't actively avoiding them. ----
-    let avoidTurn = 0, avoidClimb = 0;
-    const SEP_M = 1100, SEP_ALT_FT = 600;
-    const isCruising = (t.phase === 'cruise' || t.phase === 'climb');
-
-    if (isCruising) {
-      // vs player
-      {
-        const dN = (state.lat - t.lat) * M_PER_DEG_LAT;
-        const dE = (state.lon - t.lon) * (M_PER_DEG_LAT * Math.cos(t.lat * DEG));
-        const horizM = Math.sqrt(dN * dN + dE * dE);
-        const altDiff = state.altitude - t.altitude;
-        if (horizM < SEP_M && Math.abs(altDiff) < SEP_ALT_FT) {
-          const bearingToPlayer = wrap360(Math.atan2(dE, dN) / DEG);
-          const rel = normDeg(bearingToPlayer - t.heading);
-          const closeness = 1 - horizM / SEP_M;
-          avoidTurn += (rel > 0 ? -1 : 1) * closeness * 45;
-          avoidClimb += (altDiff > 0 ? -1 : 1) * closeness * 600;
-        }
-      }
-      // vs other bots
-      for (let j = 0; j < traffic.length; j++) {
-        if (j === i) continue;
-        const o = traffic[j];
-        if (!o.alive || o.phase === 'ground') continue;
-        const dN = (o.lat - t.lat) * M_PER_DEG_LAT;
-        const dE = (o.lon - t.lon) * (M_PER_DEG_LAT * Math.cos(t.lat * DEG));
-        const horizM = Math.sqrt(dN * dN + dE * dE);
-        const altDiff = t.altitude - o.altitude;
-        if (horizM < SEP_M && Math.abs(altDiff) < SEP_ALT_FT && horizM > 0.1) {
-          const bearingToOther = wrap360(Math.atan2(dE, dN) / DEG);
-          const rel = normDeg(bearingToOther - t.heading);
-          const closeness = 1 - horizM / SEP_M;
-          avoidTurn += (rel > 0 ? -1 : 1) * closeness * 35;
-          avoidClimb += (altDiff < 0 ? 1 : -1) * closeness * 500;
-        }
-      }
-    }
-
-    // ---- Heading update (cruise / climb) ----
-    if (isCruising) {
-      let hdgErr = normDeg(t.targetHeading - t.heading) * 0.4 + avoidTurn;
-      hdgErr = Math.max(-50, Math.min(50, hdgErr));
-      const desiredBank = Math.max(-22, Math.min(22, hdgErr * 1.2));
-      t.bank += (desiredBank - t.bank) * Math.min(1, dt * 1.5);
-      t.heading = wrap360(t.heading + (t.bank * 0.5) * dt);
-    } else if (t.phase === 'descend') {
-      // Hold a steady heading on approach
-      t.bank *= Math.pow(0.1, dt);
-    }
-
-    const prevAltitude = t.altitude;
-
-    // ---- Altitude update (cruise only; other phases manage their own alt) ----
-    if (t.phase === 'cruise') {
-      if (Math.abs(avoidClimb) > 1) {
-        t.altitude += Math.max(-700, Math.min(700, avoidClimb)) * dt / 60;
-      } else {
-        const altErr = state.altitude - t.altitude;
-        const climbRateFtPerSec = Math.max(-10, Math.min(10, altErr * 0.4));
-        t.altitude += climbRateFtPerSec * dt;
-        t.altitude += Math.sin((t.id * 13 + performance.now() * 0.00005)) * 2 * dt;
-      }
-      t.altitude = Math.max(500, t.altitude);
-    }
-
-    // Speed: track the player's pace during cruise; other phases self-manage
-    if (t.phase === 'cruise') {
-      const spdErr = (state.speed - t.speedOffset) - t.speed;
-      t.speed = Math.max(60, t.speed + Math.max(-15, Math.min(15, spdErr * 0.5)) * dt);
-    }
-
-    // Nose pitch follows the bot's own climb/descent
-    if (t.phase === 'cruise') {
-      const climbFtPerSec = (t.altitude - prevAltitude) / Math.max(dt, 0.001);
-      const vMpsForPitch = Math.max(t.speed * KTS_TO_MPS, 1);
-      const targetPitch = Math.max(-20, Math.min(20,
-        Math.atan2(climbFtPerSec * FT_TO_M, vMpsForPitch) / DEG * 1.4));
-      t.pitch += (targetPitch - t.pitch) * Math.min(1, dt * 2);
-    }
-
-    // Advance position along the current heading
-    if (t.phase !== 'ground' && t.phase !== 'landing') {
-      const vMps = t.speed * KTS_TO_MPS;
-      const hr = t.heading * DEG;
-      const dN = Math.cos(hr) * vMps * dt;
-      const dE = Math.sin(hr) * vMps * dt;
-      t.lat += dN / M_PER_DEG_LAT;
-      t.lon += dE / (M_PER_DEG_LAT * Math.cos(t.lat * DEG));
-    }
+    // Dead-reckon the TARGET position forward between API fetches
+    const vMps = t.speed * KTS_TO_MPS;
+    const hr   = t.heading * DEG;
+    t.targetLat += (Math.cos(hr) * vMps * dt) / M_PER_DEG_LAT;
+    t.targetLon += (Math.sin(hr) * vMps * dt) / (M_PER_DEG_LAT * Math.cos(t.lat * DEG));
   }
 
-  // ---- Mid-air collision check: player vs. traffic ----
-  // If the autopilot failed to keep clear (or the pilot flew into one), both
-  // the player and the bot involved go down, exactly like a terrain strike.
+  // ---- Mid-air collision check: player vs. real traffic ----
   if (!state.onGround && !state.terrainHit) {
     for (let i = 0; i < traffic.length; i++) {
       const t = traffic[i];
-      if (!t.alive) continue;
-      const horizM = distFromPlayerM(t.lat, t.lon);
+      if (!t.alive || t.phase === 'ground') continue;
+      const horizM   = distFromPlayerM(t.lat, t.lon);
       const altDiffFt = Math.abs(state.altitude - t.altitude);
       if (horizM < TRAFFIC_COLLIDE_M && altDiffFt < (TRAFFIC_COLLIDE_M / FT_TO_M)) {
-        state.terrainHit = true;
+        state.terrainHit  = true;
         state.terrainTimer = 2.2;
         terrainWarn.style.display = 'block';
         t.alive = false;
-        traffic[i] = spawnTrafficPlane(true); // replace the downed bot
         break;
       }
     }
+    traffic = traffic.filter(function(t){ return t.alive; });
   }
 }
+
+// ---- STUBS that the old AI-traffic FSM used (kept so call-sites compile) ----
 
 // Looks at nearby traffic ahead/around the player and returns a steering and
 // climb/descend bias the autopilot should add on top of its normal heading
@@ -3804,28 +3657,24 @@ function drawSpdTape() {
   ctx.fillText('KTS', x + tapeW / 2, y - 6);
 }
 
-// ===== Draw AI traffic =====
-// Traffic uses the EXACT same 3D model as the player's own aircraft (see
-// buildAirplaneMesh) so every plane in the sky looks identical. Each bot's
-// screen position comes from the REAL Cesium camera (so this works correctly
-// whether you're in cockpit or chase view); the mesh itself is then built in
-// the bot's own local frame, oriented by its pitch/bank/heading-relative-to-
-// camera, and projected with a local pinhole camera using the true distance
-// as depth and a focal length derived from the real camera's FOV.
-const TRAFFIC_MODEL_M_PER_UNIT = 40; // larger than the player's own scale (6.4) so traffic reads as a clearly visible plane, not nav-light dots
+// ===== Draw Live Flight Traffic =====
+// Real planes from the API are drawn in two layers:
+//   1.  NEAR  (< TRAFFIC_3D_M): full 3D mesh model + nav lights
+//   2.  FAR   (>= TRAFFIC_3D_M up to TRAFFIC_RENDER_KM*1000): 2D callsign label
+//       + small diamond icon + route trail projected via Cesium.
+// Both layers use Cesium's camera projection so they register correctly in
+// either cockpit or chase mode.
+const TRAFFIC_MODEL_M_PER_UNIT = 40;
 
 function drawTraffic() {
   if (!viewer || !traffic.length) return;
-  const camPos = viewer.camera.positionWC;
+  const camPos        = viewer.camera.positionWC;
   const camHeadingDeg = Cesium.Math.toDegrees(viewer.camera.heading);
+  const maxRenderM    = TRAFFIC_RENDER_KM * 1000;
 
-  // Focal length (px) consistent with the real camera's current vertical FOV,
-  // so traffic is sized correctly relative to the terrain/sky behind it.
+  // ---- focal length for 3D near model ----
   let fovRad = 55 * DEG;
-  try {
-    const fr = viewer.camera.frustum;
-    if (fr && typeof fr.fov === 'number') fovRad = fr.fov;
-  } catch (e) {}
+  try { const fr = viewer.camera.frustum; if (fr && typeof fr.fov === 'number') fovRad = fr.fov; } catch(e){}
   const focal = (H / 2) / Math.tan(fovRad / 2);
 
   // Light direction (matches drawAirplane)
@@ -3833,32 +3682,127 @@ function drawTraffic() {
   const lL = Math.sqrt(lD[0]**2 + lD[1]**2 + lD[2]**2);
   const lx = lD[0]/lL, ly = lD[1]/lL, lz = lD[2]/lL;
 
-  const drawables = [];
+  const drawables3D = [];   // near 3D models
+  const drawables2D = [];   // far 2D labels
 
   for (let i = 0; i < traffic.length; i++) {
     const t = traffic[i];
     if (!t.alive) continue;
 
-    const cart = Cesium.Cartesian3.fromDegrees(t.lon, t.lat, Math.max(0, t.altitude) * FT_TO_M);
+    const altM  = Math.max(0, (t.altitude || 0)) * FT_TO_M;
+    const cart  = Cesium.Cartesian3.fromDegrees(t.lon, t.lat, altM);
     const distM = Cesium.Cartesian3.distance(camPos, cart);
-    if (distM > 5500) continue; // too far to matter visually
+    if (distM > maxRenderM) continue;
 
-    // Where the bot's CENTER sits on screen, from the real camera — correct
-    // in both cockpit and chase mode since this is the actual view.
+    // Project the plane's centre onto the canvas via the real Cesium camera
     const center = viewer.scene.cartesianToCanvasCoordinates(cart);
-    if (!center) continue; // behind the camera / not visible
+    if (!center) continue; // behind camera
+
+    // ── FAR: 2D symbol + label + trail ──────────────────────────────────
+    if (distM >= TRAFFIC_3D_M) {
+      const cx = center.x, cy = center.y;
+      // off-screen cull with some margin for label text
+      if (cx < -200 || cx > W + 200 || cy < -60 || cy > H + 60) continue;
+
+      // ---- Route trail ----
+      const trail = t.trail;
+      if (trail && trail.length >= 2) {
+        ctx.beginPath();
+        let first = true;
+        for (let k = 0; k < trail.length; k++) {
+          const tp = trail[k];
+          const tc = Cesium.Cartesian3.fromDegrees(tp.lon, tp.lat, (tp.alt || 0) * FT_TO_M);
+          const ts = viewer.scene.cartesianToCanvasCoordinates(tc);
+          if (!ts) { first = true; continue; }
+          if (ts.x < -2000 || ts.x > W + 2000 || ts.y < -2000 || ts.y > H + 2000) { first = true; continue; }
+          const alpha = 0.08 + 0.30 * (k / trail.length);
+          if (first) {
+            ctx.beginPath();
+            ctx.moveTo(ts.x, ts.y);
+            first = false;
+          } else {
+            ctx.lineTo(ts.x, ts.y);
+          }
+        }
+        // Draw trail from last trail point to current plane position
+        ctx.lineTo(cx, cy);
+        ctx.strokeStyle = 'rgba(0,220,80,0.22)';
+        ctx.lineWidth   = 1;
+        ctx.stroke();
+      }
+
+      // ---- Diamond icon ----
+      const km   = distM / 1000;
+      const sz   = Math.max(3, Math.min(8, 400 / km));   // 3–8 px
+      const alpha = Math.max(0.35, Math.min(0.9, 1 - km / (maxRenderM / 1000) * 0.7));
+      ctx.strokeStyle = `rgba(0,255,65,${alpha})`;
+      ctx.fillStyle   = `rgba(0,255,65,${alpha * 0.18})`;
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx,      cy - sz);
+      ctx.lineTo(cx + sz, cy);
+      ctx.lineTo(cx,      cy + sz);
+      ctx.lineTo(cx - sz, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // ---- Heading tick ----
+      const hdgRad = (t.heading - camHeadingDeg) * DEG;
+      const tickLen = sz * 2.2;
+      ctx.strokeStyle = `rgba(0,255,65,${alpha * 0.8})`;
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.sin(hdgRad) * tickLen, cy - Math.cos(hdgRad) * tickLen);
+      ctx.stroke();
+
+      // ---- Callsign + altitude label ----
+      // Only draw label if not crowded (skip if very many close together)
+      if (sz >= 4) {
+        const cs   = t.callsign || t.icao || '?';
+        const altStr = t.altitude > 0 ? Math.round(t.altitude / 100) * 100 + 'ft' : 'GND';
+        const spdStr = t.speed  > 0 ? Math.round(t.speed) + 'kt' : '';
+        const label  = cs + (altStr ? '  ' + altStr : '') + (spdStr ? '  ' + spdStr : '');
+        const ox = sz + 4, oy = -sz - 2;
+        ctx.font      = '9px JetBrains Mono, monospace';
+        ctx.fillStyle = `rgba(0,0,0,0.55)`;
+        ctx.fillText(label, cx + ox + 1, cy + oy + 1);
+        ctx.fillStyle = `rgba(0,255,65,${alpha * 0.9})`;
+        ctx.fillText(label, cx + ox, cy + oy);
+      }
+
+      drawables2D.push(true); // just used for count
+      continue;
+    }
+
+    // ── NEAR: full 3D mesh model ─────────────────────────────────────────
     if (center.x < -150 || center.x > W + 150 || center.y < -150 || center.y > H + 150) continue;
 
-    // Build & orient this bot's own mesh (full model, same as the player's).
-    const mesh = buildAirplaneMesh(t.flaps || 0, t.gearDown === true);
-    const pitchRad = -(t.pitch || 0) * DEG;
-    const bankRad = t.bank * DEG;
-    // Bot heading relative to the camera's current heading, so it's rotated
-    // to show the correct aspect (nose-on, side-on, etc.) as seen from here.
-    const yawRad = normDeg(t.heading - camHeadingDeg) * DEG;
-    const cyw = Math.cos(yawRad), syw = Math.sin(yawRad);
+    // ---- Route trail for near planes too ----
+    const trail = t.trail;
+    if (trail && trail.length >= 2) {
+      ctx.beginPath();
+      let trailFirst = true;
+      for (let k = 0; k < trail.length; k++) {
+        const tp = trail[k];
+        const tc = Cesium.Cartesian3.fromDegrees(tp.lon, tp.lat, (tp.alt || 0) * FT_TO_M);
+        const ts = viewer.scene.cartesianToCanvasCoordinates(tc);
+        if (!ts) { trailFirst = true; continue; }
+        if (trailFirst) { ctx.moveTo(ts.x, ts.y); trailFirst = false; }
+        else ctx.lineTo(ts.x, ts.y);
+      }
+      ctx.lineTo(center.x, center.y);
+      ctx.strokeStyle = 'rgba(0,220,80,0.30)';
+      ctx.lineWidth   = 1.2;
+      ctx.stroke();
+    }
 
-    // Depth in model units for this bot's local pinhole projection.
+    const mesh      = buildAirplaneMesh(t.flaps || 0, t.gearDown === true);
+    const pitchRad  = -(t.pitch || 0) * DEG;
+    const bankRad   = t.bank * DEG;
+    const yawRad    = normDeg(t.heading - camHeadingDeg) * DEG;
+    const cyw = Math.cos(yawRad), syw = Math.sin(yawRad);
     const depthUnits = distM / (t.sizeScale || TRAFFIC_MODEL_M_PER_UNIT);
 
     const tf = mesh.verts.map(function (v) {
@@ -3882,8 +3826,6 @@ function drawTraffic() {
       return { x: (v[0] * focal) / vz + center.x, y: (-v[1] * focal) / vz + center.y, z: vz };
     });
 
-    // Off-screen cull (after projection, in case the model pokes off the
-    // edge even though its center is on screen).
     let anyOnScreen = false;
     for (let k = 0; k < proj.length; k++) {
       const p = proj[k];
@@ -3894,7 +3836,7 @@ function drawTraffic() {
     const fData = mesh.faces.map(function (face) {
       const pts = face.v.map(function (vi) { return proj[vi]; });
       if (pts.some(function (p) { return !p; })) return null;
-      const tv = face.v.map(function (vi) { return tf[vi]; });
+      const tv  = face.v.map(function (vi) { return tf[vi]; });
       const avgZ = pts.reduce(function (s, p) { return s + p.z; }, 0) / pts.length;
       const e1 = [tv[1][0]-tv[0][0], tv[1][1]-tv[0][1], tv[1][2]-tv[0][2]];
       const e2 = [tv[2][0]-tv[0][0], tv[2][1]-tv[0][1], tv[2][2]-tv[0][2]];
@@ -3912,21 +3854,21 @@ function drawTraffic() {
       return { pts, avgZ, light, color: face.c };
     }).filter(function (f) { return f; });
 
-    drawables.push({ distM, fData, proj, lwTip: mesh.lwTip, rwTip: mesh.rwTip });
+    drawables3D.push({ distM, fData, proj, lwTip: mesh.lwTip, rwTip: mesh.rwTip, t, center });
   }
 
-  // Draw far-to-near so nearer traffic correctly overlaps farther traffic.
-  drawables.sort(function (a, b) { return b.distM - a.distM; });
+  // ── Render 3D models far-to-near ────────────────────────────────────────
+  drawables3D.sort(function (a, b) { return b.distM - a.distM; });
 
-  drawables.forEach(function (d) {
+  drawables3D.forEach(function (d) {
     d.fData.sort(function (a, b) { return b.avgZ - a.avgZ; });
     d.fData.forEach(function (fd) {
       const r = Math.round(fd.color[0] * fd.light * 255);
       const g = Math.round(fd.color[1] * fd.light * 255);
       const b = Math.round(fd.color[2] * fd.light * 255);
-      ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+      ctx.fillStyle   = 'rgb(' + r + ',' + g + ',' + b + ')';
       ctx.strokeStyle = 'rgba(0,255,65,0.12)';
-      ctx.lineWidth = 0.5;
+      ctx.lineWidth   = 0.5;
       ctx.beginPath();
       fd.pts.forEach(function (p, i) { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
       ctx.closePath();
@@ -3934,23 +3876,29 @@ function drawTraffic() {
       ctx.stroke();
     });
 
-    // Wingtip nav lights, same colours as the player's own model. Sized down
-    // at distance so they read as lights on the plane, not a blob bigger
-    // than the plane itself.
     const lightR = Math.max(1, Math.min(3, 2200 / d.distM));
     function drawLight(vi, color) {
       const p = d.proj[vi];
       if (!p) return;
-      ctx.fillStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 10;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, lightR, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(p.x, p.y, lightR, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
     }
     drawLight(d.rwTip, 'rgba(0,255,65,0.9)');
     drawLight(d.lwTip, 'rgba(255,40,40,0.9)');
+
+    // Callsign label for near planes
+    const t = d.t;
+    if (t && (t.callsign || t.icao)) {
+      const cs     = t.callsign || t.icao;
+      const altStr = t.altitude > 0 ? Math.round(t.altitude / 100) * 100 + 'ft' : 'GND';
+      const label  = cs + '  ' + altStr;
+      ctx.font      = '10px JetBrains Mono, monospace';
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillText(label, d.center.x + 14, d.center.y - 10);
+      ctx.fillStyle = 'rgba(0,255,65,0.95)';
+      ctx.fillText(label, d.center.x + 13, d.center.y - 11);
+    }
   });
 }
 
@@ -4088,17 +4036,21 @@ function render() {
   // Landing panel (shown while on the ground)
   renderLandingPanel();
 
-  // Traffic info overlay
+  // Traffic info overlay — shows live flight data status
   const trafficInfoEl = document.getElementById('traffic-info');
   if (trafficInfoEl && chosen && simReady) {
     trafficInfoEl.style.display = 'block';
-    const airborne = traffic.filter(function(t){ return t.alive && t.phase !== 'ground' && t.phase !== 'landing'; }).length;
-    const onGnd    = traffic.filter(function(t){ return t.alive && (t.phase === 'ground' || t.phase === 'landing'); }).length;
-    const wxLabels = { clear:'CLEAR', clouds:'CLOUDS', rain:'RAIN', snow:'SNOW', fog:'FOG' };
+    const alive    = traffic.filter(function(t){ return t.alive; });
+    const airborne = alive.filter(function(t){ return t.phase !== 'ground'; }).length;
+    const onGnd    = alive.filter(function(t){ return t.phase === 'ground'; }).length;
+    const secSince = Math.round((performance.now() / 1000) - trafficLastFetch);
+    const nextIn   = Math.max(0, TRAFFIC_FETCH_S - secSince);
+    const wxLabels   = { clear:'CLEAR', clouds:'CLOUDS', rain:'RAIN', snow:'SNOW', fog:'FOG' };
     const timeLabels = { day:'DAY', dusk:'DUSK', night:'NIGHT', dawn:'DAWN' };
     trafficInfoEl.innerHTML =
-      'TRAFFIC ' + traffic.filter(function(t){return t.alive;}).length +
-      ' &nbsp;✈ ' + airborne + ' &nbsp;⬇ ' + onGnd + '<br>' +
+      '<span style="color:#00e860">' + trafficStatus + '</span><br>' +
+      '✈ ' + airborne + ' airborne' + (onGnd > 0 ? ' · ' + onGnd + ' gnd' : '') + '<br>' +
+      (trafficFetching ? '<span style="color:#ffe066">↻ fetching…</span>' : 'next in ' + nextIn + 's') + '<br>' +
       (timeLabels[env.time] || env.time) + ' · ' + (wxLabels[env.weather] || env.weather);
   }
 
