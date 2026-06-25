@@ -4,115 +4,103 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**flight-sim** is a web-based flight simulator built with React and Vite. The app renders an interactive 3D flight simulator using HTML5 Canvas inside a React component, complete with a HUD (heads-up display) showing altitude, speed, heading, and other flight instruments.
+**Flight Simulator** is a web-based 3D flight simulator running entirely in a single HTML file (`public/simulator.html`). It renders real-world terrain using Three.js with Esri imagery, AWS elevation data, and OSM/Overpass building data (all keyless APIs). The simulator includes realistic flight physics, autopilot, terrain collision detection, traffic models, and a green-monochrome HUD.
 
-## Build, Dev, and Test Commands
+## Architecture
+
+### Single-File Design
+- **Main app**: `public/simulator.html` (~5700 lines) — the entire application
+- **Entry point**: `index.html` — a thin wrapper that iframes `simulator.html` for Google Analytics
+- **Vite config**: Serves at `/flight-sim/` base path; Cesium has been removed in favor of hand-built Three.js rendering
+
+### Core Structure in simulator.html
+1. **Inline CSS** (lines 10–183) — styling for HUD, panels, warnings, touch controls, menus
+2. **HTML structure** (lines 186–403) — canvas, HUD panels, menus, overlays
+3. **ES module** (line 404+) — self-contained JavaScript IIFE with all flight logic, rendering, and UI
+
+### Key JavaScript Sections (representative, not exhaustive)
+- **Three.js initialization** — `initThree()`, loads terrain tiles, cameras, scene
+- **Physics simulation** — `update(dt)` handles aircraft dynamics, autopilot, collision detection
+- **Rendering** — `render()` draws 3D scene and 2D canvas overlays (HUD, AHI, compass, warnings)
+- **UI state & menus** — start menu, pause, autopilot panel, nav map picker
+- **Input handling** — keyboard, gamepad, touch controls
+- **Warnings & indicators** — stall, overspeed, terrain collision, fuel, landing feedback
+
+## Development Commands
 
 ```bash
-# Start dev server (http://localhost:5173/flight-sim/)
+# Install dependencies
+npm install
+
+# Start dev server (opens http://localhost:5173/flight-sim/)
 npm run dev
 
 # Build for production
 npm run build
 
-# Lint code (ESLint)
-npm run lint
-
-# Fix linting issues
-npm run lint:fix
-
-# Type check (via TypeScript on jsconfig.json)
-npm run typecheck
-
-# Preview production build
+# Preview production build locally
 npm run preview
 ```
 
-## Project Architecture
+## Important Notes for Editing
 
-### Frontend Stack
-- **React 18** - UI framework
-- **Vite** - Bundler and dev server
-- **Tailwind CSS** - Styling with custom dark mode
-- **Radix UI** - Accessible component library (all components in `src/components/ui/`)
-- **React Router** - Client-side routing
-- **React Query (TanStack)** - Data fetching and caching
-- **Framer Motion** - Animations
-- **Three.js** - 3D graphics (installed but primary 3D is canvas-based)
-- **Lucide React** - Icons
-- **Zod** - Schema validation
-- **React Hook Form** - Form management
+### When Modifying simulator.html
+- **Line 404** marks `<script type="module">` — all JavaScript after this is the single ES module
+- The module is wrapped in an async IIFE that immediately calls `loop()` at the end
+- Avoid adding script tags or external module imports; the file is self-contained
+- All data (imagery, tiles) must use keyless public APIs or be fetched at runtime
 
-### Project Structure
+### Physics & State
+- Global `state` object tracks aircraft position, attitude, speed, altitude, fuel, etc.
+- Physics timestep is dt (typically ~16ms at 60 FPS)
+- Autopilot modes: altitude hold, heading hold, nav-to-point (via double-press AP + map picker)
+- Terrain collision immediately sets `state.terrainHit = true` and triggers crash screen
 
-```
-src/
-├── main.jsx                 # App entry point
-├── App.jsx                  # Main router setup with React Query provider
-├── index.css               # Global styles
-├── pages/
-│   └── FlightSimulator.jsx  # Main flight simulator page with embedded iframe
-├── components/
-│   ├── ui/                 # Radix UI component wrappers (44+ components)
-│   ├── ScrollToTop.jsx     # Route change handler
-│   └── [other components]
-├── lib/
-│   ├── utils.js            # Utility functions
-│   ├── query-client.js     # React Query setup
-│   ├── PageNotFound.jsx    # 404 page
-│   └── [other libs]
-├── hooks/
-│   └── use-mobile.jsx      # Mobile detection hook
-└── utils/
-    └── index.ts            # Additional utilities
-```
+### HUD & Canvas Rendering
+- Primary 3D scene rendered by Three.js to `#three-container`
+- 2D canvas overlays (gauges, warnings, toast messages) drawn to `#sim-canvas`
+- HUD elements use `rgba(0,255,65,...)` green (#00FF41) for monochrome cockpit aesthetic
+- Scanlines and vignette applied via CSS for CRT monitor effect
 
-### Key Implementation Details
+### UI Menus & Flows
+1. **Start menu** (`#startmenu`) — select departure airport or custom geolocation
+2. **Simulation ready** — terrain spawned, aircraft positioned
+3. **In-flight** — HUD active, pause/resume available, AP control panel optional
+4. **Landing/crash** — landing panel shows summary; restart via menu
 
-1. **FlightSimulator Page**: Creates an iframe and injects a self-contained HTML document with canvas-based flight simulation. The simulator includes:
-   - 3D terrain rendering
-   - Flight physics (pitch, bank, altitude, airspeed, heading)
-   - HUD with green monochrome aesthetic
-   - Artificial Horizon Indicator (AHI)
-   - Compass display
-   - Throttle control bar
-   - Stall and terrain warning systems
+### Advanced Features
+- **Autopilot** — toggled with space; double-press opens nav map picker (slippy map)
+- **Map picker** — drag to pan, zoom +/−, search for ICAO or coordinates, "GO" to navigate
+- **Traffic models** — 3D aircraft rendered alongside the player
+- **Terrain avoidance** — autopilot climbs during cruise to avoid hills
+- **Gamepad support** — D-pad drives AP knobs (HDG/SPD/ALT), buttons for menu/AP toggle
 
-2. **Routing**: Single-page application with React Router, basename set to `/flight-sim`
+### Coordinate System & Geospatial
+- World position: `state.lat`, `state.lon` (WGS84)
+- Ground-relative frame: North, East, Down (N/E/D)
+- Altitude in feet, ground elevation fetched from AWS tiles
+- Heading 0–360°, pitch/roll in degrees
 
-3. **Component Library**: Extensive use of Radix UI components (accordion, alerts, buttons, forms, etc.) wrapped with Tailwind styling
+## File Locations
+- `vite.config.js` — simple config; base is `/flight-sim/` for GitHub Pages
+- `package.json` — dependencies: Vite, @vitejs/plugin-basic-ssl, Cesium (not used)
+- `.claude/settings.json` — Claude Code configuration (if present)
+- `README.md` — outdated documentation; refer to the code as the source of truth
 
-4. **Query Client**: Centralized React Query setup for consistent data-fetching patterns
+## Testing & Verification
+- No automated tests; changes should be verified in the browser
+- Dev server: `npm run dev` opens `http://localhost:5173/flight-sim/` automatically
+- Test critical flows: takeoff, landing, terrain avoidance, autopilot, menu navigation
+- Check HUD updates, warning triggers, and 3D rendering on different zoom levels
 
-## Configuration Files
+## Troubleshooting
+- **Port 5173 in use**: Vite will use the next available port; check terminal output
+- **Terrain not loading**: Check browser console; Esri/AWS APIs may be rate-limited or blocked
+- **Gamepad not detected**: Browser must have focus; some gamepads require driver updates
+- **Build fails**: Clear `.vite` cache (`rm -rf .vite dist` on Unix, PowerShell equivalent on Windows) and rebuild
 
-- **vite.config.js** - Vite config with React plugin and `@` alias for `src/`
-- **jsconfig.json** - JavaScript path configuration (JSX, module resolution, etc.)
-- **tailwind.config.js** - Tailwind CSS theme extensions and custom colors (sidebar, chart, etc.)
-- **eslint.config.js** - Flat ESLint config enforcing React/hooks best practices and unused import cleanup
-- **package.json** - Dependencies and npm scripts
-
-## ESLint & Linting
-
-- ESLint covers `src/components/`, `src/pages/`, and `Layout.jsx` only
-- Ignores `src/lib/**/*` and `src/components/ui/**/*`
-- Enforces React Hooks rules, removes unused imports, requires JSX files to use React
-- Run `npm run lint:fix` to auto-fix issues
-
-## Type Checking
-
-TypeScript configuration via jsconfig.json with `checkJs: true`. Includes `src/components/**/*.js`, `src/pages/**/*.jsx`, and `Layout.jsx`. Run `npm run typecheck` before committing to ensure no type errors.
-
-## Common Patterns
-
-- **UI Components**: All Radix UI wrappers are in `src/components/ui/` and composed with Tailwind classes
-- **Dark Mode**: Configured via `darkMode: ["class"]` in Tailwind
-- **Data Fetching**: Use React Query with the `queryClientInstance` from `lib/query-client.js`
-- **Forms**: Use React Hook Form with Zod schema validation via `@hookform/resolvers`
-- **Routing**: All routes defined in `App.jsx`; add new pages in `src/pages/` and import them
-
-## Deployment
-
-- Base path is `/flight-sim/` (configured in vite.config.js and React Router)
-- GitHub Pages deployment configured (based on recent commits)
-- Build output goes to `dist/`
+## Future Architecture Notes
+- The single-file approach is intentional (easy deployment, no build step dependency for end user)
+- Three.js is loaded from CDN inside the module; no bundler needed for the app itself
+- Vite is used only for dev server and production build optimization
+- Consider breaking into separate files only if the file grows significantly or modularization becomes critical
