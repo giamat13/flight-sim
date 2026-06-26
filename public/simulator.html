@@ -470,10 +470,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 }
 </script>
 <script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-window.THREE = THREE; // expose for internal guards
 (function(){
+// Three.js and GLTFLoader are loaded on demand (dynamic import) during our
+// loading screen — not at page startup — so Chrome doesn't block on them.
+let THREE = null;
+let GLTFLoader = null;
+let threeInitStarted = false;
 // Surface any fatal error onto the loading screen
 function showFatal(msg){
   var l = document.getElementById('loading');
@@ -1534,10 +1536,29 @@ function sampleElev(lat, lon) {
 }
 
 // ===================== Three.js scene / renderer / lights =====================
-function initThree() {
+async function initThree() {
+  // Dynamic import — happens here, during our loading screen, not at page startup.
+  try {
+    const mod = await import('three');
+    THREE = mod;
+    window.THREE = mod;
+    const gltfMod = await import('three/addons/loaders/GLTFLoader.js');
+    GLTFLoader = gltfMod.GLTFLoader;
+    _gltfLoader = new GLTFLoader();
+    // Init module-level THREE helpers that couldn't be created at parse time.
+    _imgLoader = new THREE.TextureLoader(); _imgLoader.crossOrigin = 'anonymous';
+    _f = new THREE.Vector3(); _r = new THREE.Vector3(); _u = new THREE.Vector3();
+    _negF = new THREE.Vector3(); _fxr = new THREE.Vector3(); _basis = new THREE.Matrix4();
+    _worldUp = new THREE.Vector3(0, 1, 0);
+    _camEuler = new THREE.Euler();
+    _tmBox = new THREE.Box3(); _tmSize = new THREE.Vector3(); _tmCenter = new THREE.Vector3();
+  } catch(e) {
+    if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) { s.style.color='#ff5555'; s.textContent = '3D ENGINE FAILED TO LOAD'; } }
+    return;
+  }
   const container = document.getElementById('three-container');
-  if (!container || !window.THREE) {
-    if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = '3D ENGINE FAILED TO LOAD'; }
+  if (!container) {
+    if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) { s.style.color='#ff5555'; s.textContent = '3D ENGINE FAILED TO LOAD'; } }
     return;
   }
   const scene = new THREE.Scene();
@@ -1615,7 +1636,7 @@ function buildingCollision() {
 const GROUND_RING = 8;          // (2R+1)^2 tiles loaded around the aircraft (bigger = see farther)
 const GROUND_ADDS_PER_FRAME = 20; // how many fresh tiles we may build per frame (fills the view fast without stalling)
 const STALE_TILE_MS = 6000;     // how long a previous-zoom tile is kept on screen before being force-pruned
-const _imgLoader = new THREE.TextureLoader(); _imgLoader.crossOrigin = 'anonymous';
+let _imgLoader = null; // set after THREE dynamic import
 
 // Tile offsets (dx,dy) around the aircraft, precomputed once and sorted nearest-first
 // so every load/repair pass fills the ground *under* the aircraft before the edges —
@@ -2025,9 +2046,7 @@ function buildAircraftMesh(flaps, gear) {
   THREEJS.acFlaps = flaps; THREEJS.acGear = gear;
 }
 // Orient the aircraft mesh in ENU via an explicit basis (robust through loops/rolls).
-const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3();
-const _negF = new THREE.Vector3(), _fxr = new THREE.Vector3(), _basis = new THREE.Matrix4();
-const _worldUp = new THREE.Vector3(0, 1, 0);
+let _f, _r, _u, _negF, _fxr, _basis, _worldUp; // set after THREE dynamic import
 function orientAircraft(group, h, p, b, pos) {
   group.position.copy(pos);
   const hr = h * DEG, pr = p * DEG;
@@ -2043,7 +2062,7 @@ function orientAircraft(group, h, p, b, pos) {
   group.quaternion.setFromRotationMatrix(_basis);
 }
 // Orient the camera (forward = -Z, up = +Y) from aircraft heading/pitch/bank.
-const _camEuler = new THREE.Euler();
+let _camEuler; // set after THREE dynamic import
 function setCamOrient(cam, h, p, b) {
   _camEuler.set(p * DEG, -h * DEG, -b * DEG, 'YXZ');
   cam.quaternion.setFromEuler(_camEuler);
@@ -2540,12 +2559,12 @@ function updateTraffic(dt) {
 // per URL, and are cloned per aircraft. Orientation across this model set is NOT uniform
 // (some have nose along +X, others +Z), so each model is auto-oriented at load time from
 // its real wingspan/length plus tail-fin detection — no per-model hand tuning needed.
-const _gltfLoader = (typeof GLTFLoader !== 'undefined') ? new GLTFLoader() : null;
+let _gltfLoader = null; // set by initThree() after dynamic import of GLTFLoader
 const trafficModelCache = {};   // url -> { obj:Object3D|null, status:'loading'|'ready'|'failed' }
 const trafficModelNodes = {};   // traffic id -> { group }
 let trafficModelLoads = 0;      // in-flight loads (throttled)
 const TRAFFIC_MODEL_MAX_CONCURRENT = 3;
-const _tmBox = new THREE.Box3(), _tmSize = new THREE.Vector3(), _tmCenter = new THREE.Vector3();
+let _tmBox, _tmSize, _tmCenter; // set after THREE dynamic import
 
 // Center a freshly loaded model, scale it to real size by wingspan, and rotate it so its
 // nose points local -Z, up +Y, right +X (matching orientAircraft's expected convention).
@@ -6041,8 +6060,10 @@ function loop() {
 
   if (!chosen) pollMenuGamepad(); // let a controller drive the start menu
 
-  // Phase 1: site startup — show loading screen until Grand Canyon preview is ready.
+  // Phase 1: site startup — trigger dynamic import of Three.js on first loop frame,
+  // then show loading screen until Grand Canyon preview is ready.
   if (!siteReady) {
+    if (!THREEJS && !threeInitStarted) { threeInitStarted = true; initThree(); }
     const gcElev = THREEJS && coreElevReady(36.1069, -112.1129);
     if (loadingEl) {
       const sub = loadingEl.querySelector('.l-sub');
@@ -6088,7 +6109,6 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-initThree();
 updateControlsHint();
 initTouchControls();
 initApPanel();
