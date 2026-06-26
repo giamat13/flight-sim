@@ -2121,7 +2121,21 @@ function updateCamera() {
   // Rebuild the aircraft mesh whenever its configuration changes.
   if (THREEJS.acFlaps !== state.flaps || THREEJS.acGear !== state.gearDown) buildAircraftMesh(state.flaps, state.gearDown);
 
-  const altM = Math.max(state.altitude, -200) * FT_TO_M;
+  // --- Vertical placement: seat the aircraft on the terrain the pilot actually sees ---
+  // We don't render at an abstract MSL height (which never matches the interpolated
+  // mesh surface). Instead we keep the *height above ground* the physics computed and
+  // re-base it onto the visible mesh, so on the ground / on approach the model rests
+  // exactly on the surface — never buried, never floating. The correction fades out by
+  // 1000 ft AGL, where the two ground references converge and the drift is invisible,
+  // so there is no pop and high-altitude flight skips the raycast entirely.
+  const groundSampleM = terrainHeightAtM(state.lat, state.lon);
+  let altM = Math.max(state.altitude, -200) * FT_TO_M;
+  const aglMeters = altM - groundSampleM;
+  if (aglMeters < 1000 * FT_TO_M) {
+    const drift = meshGroundHeightM(state.lat, state.lon) - groundSampleM;
+    const blend = 1 - Math.max(0, aglMeters) / (1000 * FT_TO_M);
+    altM += drift * blend;
+  }
   const acPos = enuVec(state.lat, state.lon, altM, THREEJS._acPos);
   orientAircraft(THREEJS.aircraft, state.heading, state.pitch, state.bank, acPos);
 
@@ -2217,6 +2231,31 @@ function terrainHeightAtM(lat, lon) {
 // Sample real terrain height (m) under the aircraft, when tiles are loaded.
 function terrainHeightM() {
   return terrainHeightAtM(state.lat, state.lon);
+}
+
+// Height (m, MSL) of the *rendered* terrain surface directly beneath a point, found
+// by casting a ray straight down onto the loaded ground mesh. This is the ground the
+// pilot actually sees — which differs from terrainHeightAtM() because the mesh
+// interpolates elevation linearly between vertices spaced hundreds of metres apart,
+// whereas terrainHeightAtM() bilinearly samples the source grid at the exact point.
+// The aircraft is seated on THIS value so it can never clip into, or float above, the
+// terrain it is resting on. Falls back to the bilinear sample when no live tile covers
+// the point yet (so it always returns something sane during loads / off the edge).
+let _groundRay = null;
+function meshGroundHeightM(lat, lon) {
+  const fallback = terrainHeightAtM(lat, lon);
+  if (!THREEJS || !THREE) return fallback;
+  if (!_groundRay) { _groundRay = new THREE.Raycaster(); _groundRay.far = 1e6; }
+  enuVec(lat, lon, 60000, _groundRay.ray.origin);   // start well above any peak
+  _groundRay.ray.direction.set(0, -1, 0);
+  const hits = _groundRay.intersectObjects(THREEJS.groundGroup.children, false);
+  for (let i = 0; i < hits.length; i++) {
+    // Skip "retired" previous-zoom tiles (dropped a few metres below the live ones).
+    const u = hits[i].object.userData;
+    if (u && u.retiredAt) continue;
+    return hits[i].point.y;
+  }
+  return fallback;
 }
 
 // Returns true when a lat/lon is over water (ocean/sea).
@@ -4114,8 +4153,17 @@ function update(dt) {
   let newAltM = altM + climbRate * dt;
 
   // ---- Terrain / ground collision & landing ----
-  const groundM = terrainHeightM();
-  state.terrainHeightFt = groundM / FT_TO_M; // store for AGL display
+  // Use sampleElev directly so we can distinguish "tile not loaded yet" (null)
+  // from legitimate sea-level terrain (0). When a tile is mid-fetch we keep the
+  // last known value; without this, groundM would snap to 0 and AGL would spike
+  // to near-MSL for a second or two every time the aircraft crosses a tile edge.
+  const _rawElev = sampleElev(state.lat, state.lon);
+  const groundM = (_rawElev !== null && isFinite(_rawElev))
+    ? _rawElev
+    : ((state.terrainHeightFt || 0) * FT_TO_M);
+  if (_rawElev !== null && isFinite(_rawElev)) {
+    state.terrainHeightFt = _rawElev / FT_TO_M;
+  }
 
   if (state.onGround) {
     // ===== GROUND ROLL =====
