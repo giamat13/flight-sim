@@ -1447,6 +1447,37 @@ const AIRCRAFT_DEFS = {
     },
     // gearNodes: [...]  // optional — omit to let gear auto-detect
   },
+  airbus320: {
+    label: 'AIRBUS A320',
+    desc: 'Narrow-body airliner',
+    m: 73500,           // kg — MTOW 73,500 (A320-200)
+    S: 122.6,           // m² — reference wing area
+    CL_a: 4.8,          // per rad — swept ~25-deg wing, similar to 737
+    CL_max: 2.4,        // approach config (slats + partial flaps)
+    aStall: 13,         // deg — clean stall AoA
+    Cd0: 0.020,         // parasitic drag (clean)
+    k: 0.041,           // induced drag coefficient
+    incidence: 2.2,     // deg — wing mounting incidence
+    Tmax: 233600,       // N — 2× CFM56-5B4 at 116.8 kN each (CFM56-5A4 typical)
+    Vne: 230,           // m/s — VMO 350 KIAS ≈ 180 m/s at low alt
+    fuelFlowIdle: 0.14, // kg/s — both engines idle
+    fuelFlowMax: 3.3,   // kg/s — both engines max takeoff thrust
+    fuelMax: 27000,     // kg — nominal fuel capacity (larger than 737)
+    rotationKts: 155,   // kt — typical Vr at 73.5t MTOW
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/a320/glTF2/A320.glb',
+    playerModelDims: { span: 34.1, len: 37.6 }, // metres (wingspan / fuselage length)
+    modelYOffset: 2,    // metres — lifts the centred GLB so it rests on the terrain
+    // Trailing-edge flap meshes (exact GLB node names), hinged at each forward edge.
+    flapCfg: {
+      nodes: ['FlapL1', 'FlapL2', 'FlapR1', 'FlapR2'],
+      maxDeg: 40,   // deflection at full flaps (state.flaps = 3)
+      sign: 1,      // +1 = trailing edge down; flip to -1 if it lifts
+    },
+    // This model is cruise-config: no landing-gear wheels, only gear-bay doors.
+    // Use the doors as the toggle proxy (visible ≈ gear deployed).
+    gearNodes: ['GearLDoor', 'GearRDoor', 'GearNFwdDoorL', 'GearNFwdDoorR',
+                'GearNAftDoorL', 'GearNAftDoorR'],
+  },
   // Add more aircraft here — they appear in the menu automatically.
 };
 
