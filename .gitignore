@@ -19,7 +19,7 @@ dist-electron
 
 # Editor directories and files
 .vscode/
-!.vscode/extensions.json
+.claude/
 .idea
 .DS_Store
 *.suo
@@ -30,6 +30,3 @@ dist-electron
 
 .env
 .vite
-
-
-.claude/

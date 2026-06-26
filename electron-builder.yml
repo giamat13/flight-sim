@@ -8,6 +8,7 @@ files:
   - electron/main.cjs
   - public/simulator.html
   - public/**
+  - .env
 
 win:
   target:
