@@ -191,6 +191,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sm-status{font-size:10px;letter-spacing:1px;min-height:14px;color:rgba(0,255,65,0.6)}
 #sm-status.sm-err{color:#ff6060}
 #startmenu .sm-section{font-size:9px;letter-spacing:3px;opacity:0.5;margin-top:4px}
+/* ===== Aircraft selector ===== */
+#ac-selector{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:460px;width:92%}
+.ac-btn{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;padding:11px 14px;border-radius:5px;transition:all .15s;text-align:center;text-transform:uppercase;min-width:110px}
+.ac-btn:hover{background:rgba(0,255,65,0.16);border-color:#00FF41;box-shadow:0 0 12px rgba(0,255,65,0.2)}
+.ac-btn.ac-active{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 14px rgba(0,255,65,0.35)}
+.ac-btn .ac-sub{display:block;font-size:8px;opacity:0.5;margin-top:4px;letter-spacing:1px}
 .env-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:460px;width:94%}
 .env-btn{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.25);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 11px;border-radius:5px;transition:all .15s}
 .env-btn:hover{background:rgba(0,255,65,0.14);border-color:#00FF41}
@@ -431,7 +437,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 
 <div id="startmenu" style="display:none">
   <div class="sm-title">FLIGHT SIM</div>
-  <div class="sm-sub">SELECT DEPARTURE POINT</div>
+  <div class="sm-section">SELECT AIRCRAFT</div>
+  <div id="ac-selector">
+    <!-- Aircraft buttons are generated from AIRCRAFT_DEFS at runtime -->
+  </div>
+  <div class="sm-sub" style="margin-top:4px">SELECT DEPARTURE POINT</div>
   <div id="sm-grid">
     <button class="sm-btn" data-name="GRAND CANYON, AZ" data-lat="36.1069" data-lon="-112.1129" data-alt="1500" data-hdg="90">Grand Canyon<span class="sm-sub2">USA</span></button>
     <button class="sm-btn" data-name="SWISS ALPS" data-lat="45.9763" data-lon="7.6586" data-alt="2500" data-hdg="210">Swiss Alps<span class="sm-sub2">Matterhorn</span></button>
@@ -612,6 +622,7 @@ function resetState() {
   state.flaps = 0;
   state.gearDown = true; // gear down on the ground
   state.gearBroken = false;
+  state.fuelMax = (AC && AC.fuelMax) ? AC.fuelMax : 800;
   state.fuel = state.fuelMax;
   state.onGround = true;
   state.groundTimer = 0;
@@ -1273,7 +1284,7 @@ function refreshMenuItems() {
   const menu = document.getElementById('startmenu');
   // Locations, the text field, and the GO button.
   menuItems = menu ? Array.prototype.slice.call(
-    menu.querySelectorAll('.sm-btn, #sm-input, #sm-go')) : [];
+    menu.querySelectorAll('.ac-btn, .sm-btn, #sm-input, #sm-go')) : [];
 }
 function setMenuFocus(i) {
   if (!menuItems.length) return;
@@ -1382,27 +1393,88 @@ function pollMenuGamepad() {
   menuNavPrev.a = a; menuNavPrev.b = b;
 }
 
-// ===================== Aircraft / aerodynamics model (SI) =====================
-// A nimble light jet. Real point-mass dynamics: lift, drag, thrust, weight.
-const AC = {
-  m: 5200,            // mass (kg)
-  S: 30,              // wing area (m^2)
-  g: 9.81,
-  CL_a: 5.2,          // lift-curve slope (per rad)
-  CL_max: 1.5,        // max lift coefficient (before stall)
-  aStall: 16,         // stall angle of attack (deg)
-  Cd0: 0.024,         // parasitic drag
-  k: 0.045,           // induced drag factor
-  incidence: 2.0,     // wing mounting incidence (deg) — neutral stick ≈ level flight
-  Tmax: 52000,        // max thrust at sea level (N)
-  rho0: 1.225,        // sea-level air density
-  scaleH: 9200,       // density scale height (m)
-  Vne: 320,           // never-exceed true airspeed (m/s) ~ 620 kt
-  fuelFlowIdle: 0.025, // kg/sec burned at 0% thrust (engine just turning over)
-  fuelFlowMax: 0.55    // kg/sec burned at 100% thrust (full power)
+// ===================== Aircraft definitions =====================
+// To add a new aircraft: add an entry to AIRCRAFT_DEFS with the physics parameters
+// and display info. To give it a unique 3D model, register a builder function in
+// AIRCRAFT_MODEL_BUILDERS (defined near buildAirplaneMesh, further below).
+const AIRCRAFT_DEFS = {
+  classic: {
+    label: 'CLASSIC JET',
+    desc: 'Light business jet',
+    m: 5200,            // mass (kg)
+    S: 30,              // wing area (m^2)
+    CL_a: 5.2,          // lift-curve slope (per rad)
+    CL_max: 1.5,        // max lift coefficient (before stall)
+    aStall: 16,         // stall angle of attack (deg)
+    Cd0: 0.024,         // parasitic drag
+    k: 0.045,           // induced drag factor
+    incidence: 2.0,     // wing mounting incidence (deg)
+    Tmax: 52000,        // max thrust at sea level (N)
+    Vne: 320,           // never-exceed speed (m/s) ≈ 622 kt
+    fuelFlowIdle: 0.025,
+    fuelFlowMax: 0.55,
+    fuelMax: 800,       // kg — total fuel capacity (gameplay)
+    rotationKts: 100,   // takeoff rotation speed (kt)
+  },
+  boeing737: {
+    label: 'BOEING 737-800',
+    desc: 'Narrow-body airliner',
+    m: 65000,           // kg — typical operating weight (OEW 41,145 / MTOW 70,535)
+    S: 125.0,           // m² — reference wing area (boeing.com)
+    CL_a: 4.8,          // per rad — swept 25-deg wing, AR=9.5
+    CL_max: 2.4,        // slats + partial flaps (approach config)
+    aStall: 13,         // deg — clean stall AoA
+    Cd0: 0.019,         // parasitic drag (clean transonic)
+    k: 0.040,           // induced drag: 1/(pi × 0.85 × 9.5)
+    incidence: 1.5,     // deg — wing mounting incidence
+    Tmax: 243000,       // N — 2× CFM56-7B27 at 121.4 kN each
+    Vne: 175,           // m/s — VMO 340 KIAS
+    fuelFlowIdle: 0.15, // kg/s — both engines idle
+    fuelFlowMax: 3.5,   // kg/s — both engines at max takeoff thrust
+    fuelMax: 5000,      // kg — gameplay fuel budget
+    rotationKts: 148,   // kt — typical Vr at 65t
+    playerModelUrl: 'https://raw.githubusercontent.com/djzoom/MU5735/main/b738.glb',
+    playerModelDims: { span: 35.8, len: 39.5 }, // metres (with winglets / fuselage)
+    modelYOffset: 3,    // metres — lifts the centred GLB so gear sits on the terrain
+    // Flaps: pick the trailing-edge flap meshes by exact GLB node name. Each is
+    // hinged at its own forward edge and rotated trailing-edge-down. Tune maxDeg
+    // (full-flap angle) and sign (flip if they deflect up) here — pure JSON.
+    flapCfg: {
+      nodes: ['flapI_B', 'flapO_B', 'aftflapI_B', 'aftflapO_B',
+              'rhflapI_B', 'rhflapO_B', 'rhaftflapI_B', 'rhaftflapO_B'],
+      maxDeg: 40,   // deflection at full flaps (state.flaps = 3)
+      sign: 1,      // +1 = trailing edge down; flip to -1 if it lifts
+    },
+    // gearNodes: [...]  // optional — omit to let gear auto-detect
+  },
+  // Add more aircraft here — they appear in the menu automatically.
 };
-const VNE_KTS = AC.Vne / 0.514444;
-const ROTATION_KTS = 100;   // ground-roll takeoff rotation speed (knots)
+
+// ===================== Active aircraft / aerodynamics model (SI) =====================
+// Physics constants shared by all aircraft (not user-configurable per type):
+const AC_PHYS = { g: 9.81, rho0: 1.225, scaleH: 9200 };
+
+let selectedAircraftKey = 'classic';
+let AC = Object.assign({}, AC_PHYS, AIRCRAFT_DEFS.classic);
+
+let VNE_KTS = AC.Vne / 0.514444;
+let ROTATION_KTS = AC.rotationKts;   // ground-roll takeoff rotation speed (knots)
+
+function applyAircraftType(key) {
+  const def = AIRCRAFT_DEFS[key] || AIRCRAFT_DEFS.classic;
+  selectedAircraftKey = key;
+  Object.assign(AC, AC_PHYS, def);
+  VNE_KTS = AC.Vne / 0.514444;
+  ROTATION_KTS = def.rotationKts || 100;
+  document.querySelectorAll('.ac-btn').forEach(function(b) {
+    b.classList.toggle('ac-active', b.dataset.ac === key);
+  });
+  // If switching aircraft mid-session (after first flight), start download immediately.
+  // On first launch the loader isn't ready yet — initThree() handles that case.
+  if (def.playerModelUrl && _gltfLoader) {
+    ensureTrafficModel(def.playerModelUrl, def.playerModelDims || { span: 30, len: 35 });
+  }
+}
 
 // Current 1g stall speed (knots) at the present altitude — rises with altitude.
 function stallSpeedKts() {
@@ -1569,6 +1641,7 @@ async function initThree() {
     _worldUp = new THREE.Vector3(0, 1, 0);
     _camEuler = new THREE.Euler();
     _tmBox = new THREE.Box3(); _tmSize = new THREE.Vector3(); _tmCenter = new THREE.Vector3();
+    _tmpMat4A = new THREE.Matrix4(); _tmpMat4B = new THREE.Matrix4(); _tmpMat4C = new THREE.Matrix4(); _tmpVecA = new THREE.Vector3();
   } catch(e) {
     if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) { s.style.color='#ff5555'; s.textContent = '3D ENGINE FAILED TO LOAD'; } }
     return;
@@ -1616,6 +1689,11 @@ async function initThree() {
     THREEJS.camera.updateProjectionMatrix();
     THREEJS.renderer.setSize(window.innerWidth, window.innerHeight);
   });
+
+  // Start downloading the player aircraft model if the current type defines one.
+  if (AC.playerModelUrl) {
+    ensureTrafficModel(AC.playerModelUrl, AC.playerModelDims || { span: 30, len: 35 });
+  }
 
   // Pre-load Grand Canyon terrain so the menu has a beautiful backdrop.
   const previewLat = 36.1069, previewLon = -112.1129;
@@ -2048,8 +2126,35 @@ function geomFromFaces(verts, faces) {
 }
 function buildAircraftMesh(flaps, gear) {
   const ac = THREEJS.aircraft;
-  for (let i = ac.children.length - 1; i >= 0; i--) { const m = ac.children[i]; ac.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }
-  const mesh = buildAirplaneMesh(flaps, gear);
+  for (let i = ac.children.length - 1; i >= 0; i--) { const m = ac.children[i]; ac.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material && !m.material._shared) m.material.dispose(); }
+
+  // Use a real GLTF model if available for this aircraft type
+  const modelUrl = AC.playerModelUrl;
+  if (modelUrl && _gltfLoader) {
+    const dims = AC.playerModelDims || { span: 30, len: 35 };
+    const rec = ensureTrafficModel(modelUrl, dims);
+    if (rec && rec.status === 'ready' && rec.obj) {
+      const clone = rec.obj.clone(true);
+      // Vertical offset: modelYOffset from JSON corrects the model above ground.
+      clone.position.y = AC.modelYOffset || 0;
+      ac.add(clone);
+      // Gear: auto-detected (or JSON gearNodes). Flaps: manual hinge rigs from JSON.
+      const flapInfo = setupFlapRigs(clone, AC.flapCfg);
+      const gearMeshes = scanGear(clone, dims.span, AC.gearNodes);
+      const flapLevel = flaps / 3;   // state.flaps is 0..3
+      applyFlapState(flapInfo, flapLevel);
+      applyGearState(gearMeshes, gear);
+      THREEJS.acGltfParts = { flaps: flapInfo, gear: gearMeshes };
+      THREEJS.acFlaps = flaps; THREEJS.acGear = gear; THREEJS.acGltf = true;
+      return;
+    }
+    THREEJS.acGltf = false; // still loading or failed — fall through to procedural
+  } else {
+    THREEJS.acGltf = false;
+  }
+
+  const builder = AIRCRAFT_MODEL_BUILDERS[selectedAircraftKey] || buildAirplaneMesh;
+  const mesh = builder(flaps, gear);
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide });
   ac.add(new THREE.Mesh(geomFromFaces(mesh.verts, mesh.faces), mat));
   const addLight = function (vi, color) {
@@ -2135,8 +2240,24 @@ function updateCamera() {
   }
   if (!spawnResolved) { THREEJS.renderer.render(THREEJS.scene, cam); return; }
 
-  // Rebuild the aircraft mesh whenever its configuration changes.
-  if (THREEJS.acFlaps !== state.flaps || THREEJS.acGear !== state.gearDown) buildAircraftMesh(state.flaps, state.gearDown);
+  // Rebuild the aircraft mesh when config changes or a pending GLTF model just finished loading.
+  const _pmUrl = AC.playerModelUrl;
+  const _pmRec = _pmUrl ? trafficModelCache[_pmUrl] : null;
+  const _pmReady = _pmRec && _pmRec.status === 'ready';
+  const _flapChanged = THREEJS.acFlaps !== state.flaps;
+  const _gearChanged = THREEJS.acGear !== state.gearDown;
+  if (_pmReady && !THREEJS.acGltf) {
+    // GLTF model just finished loading — do a full build now.
+    buildAircraftMesh(state.flaps, state.gearDown);
+  } else if (THREEJS.acGltf && THREEJS.acGltfParts && (_flapChanged || _gearChanged)) {
+    // GLTF already loaded — animate parts in-place, no rebuild needed.
+    if (_flapChanged) applyFlapState(THREEJS.acGltfParts.flaps, state.flaps / 3);
+    if (_gearChanged) applyGearState(THREEJS.acGltfParts.gear, state.gearDown);
+    THREEJS.acFlaps = state.flaps; THREEJS.acGear = state.gearDown;
+  } else if (!THREEJS.acGltf && (_flapChanged || _gearChanged)) {
+    // Procedural mesh — rebuild geometry (flaps/gear are baked into the mesh).
+    buildAircraftMesh(state.flaps, state.gearDown);
+  }
 
   // --- Vertical placement: seat the aircraft on the terrain the pilot actually sees ---
   // We don't render at an abstract MSL height (which never matches the interpolated
@@ -2621,6 +2742,7 @@ const trafficModelNodes = {};   // traffic id -> { group }
 let trafficModelLoads = 0;      // in-flight loads (throttled)
 const TRAFFIC_MODEL_MAX_CONCURRENT = 3;
 let _tmBox, _tmSize, _tmCenter; // set after THREE dynamic import
+let _tmpMat4A, _tmpMat4B, _tmpMat4C, _tmpVecA; // flap-rig math scratch
 
 // Center a freshly loaded model, scale it to real size by wingspan, and rotate it so its
 // nose points local -Z, up +Y, right +X (matching orientAircraft's expected convention).
@@ -2672,6 +2794,8 @@ function prepLoadedModel(root, dims) {
   const scaleNode = new THREE.Group(); scaleNode.add(root); scaleNode.scale.setScalar(scale);
   const orientNode = new THREE.Group(); orientNode.add(scaleNode); orientNode.quaternion.setFromRotationMatrix(Q);
   const pivot = new THREE.Group(); pivot.add(orientNode);
+  // Half-height in scene metres (bottom of model = -_halfHeight below pivot origin after centering).
+  pivot._halfHeight = _tmSize.y * scale / 2;
   return pivot;
 }
 
@@ -2687,6 +2811,104 @@ function ensureTrafficModel(url, dims) {
     function () { rec.status = 'failed'; trafficModelLoads--; console.warn('[Traffic] model load failed', url); }
   );
   return rec;
+}
+
+// ── Player GLTF aircraft: part detection + animation ──────────────────────────
+// After prepLoadedModel the coordinate convention is: +X right-wing, +Y up,
+// −Z nose, +Z tail. Both helpers below operate in that oriented pivot frame.
+
+// Accumulate a mesh's bounding box expressed in pivotClone-local coordinates.
+function _meshBoxInPivot(mesh, pivotInv, out) {
+  mesh.updateWorldMatrix(true, false);
+  const m = _tmpMat4A.multiplyMatrices(pivotInv, mesh.matrixWorld);
+  const pos = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
+  out.makeEmpty();
+  if (!pos) return out;
+  const stride = Math.max(1, Math.floor(pos.count / 400));
+  for (let i = 0; i < pos.count; i += stride) {
+    _tmpVecA.fromBufferAttribute(pos, i).applyMatrix4(m);
+    out.expandByPoint(_tmpVecA);
+  }
+  return out;
+}
+
+// Move `mesh` under `rig` while preserving its current world transform.
+function _reparentPreserving(mesh, rig) {
+  mesh.updateWorldMatrix(true, false);
+  rig.updateWorldMatrix(true, false);
+  const local = _tmpMat4A.multiplyMatrices(_tmpMat4B.copy(rig.matrixWorld).invert(), mesh.matrixWorld);
+  rig.add(mesh);
+  local.decompose(mesh.position, mesh.quaternion, mesh.scale);
+}
+
+// Gear detection stays automatic (it works well): match by name, fall back to
+// position. An optional JSON `gearNodes` list overrides both.
+function scanGear(pivotClone, spanM, gearNodes) {
+  pivotClone.updateMatrixWorld(true);
+  const gear = [];
+  if (gearNodes && gearNodes.length) {
+    const want = {}; gearNodes.forEach(function(n){ want[n] = true; });
+    pivotClone.traverse(function(o){ if (o.isMesh && want[o.name]) gear.push(o); });
+    return gear;
+  }
+  const _b = new THREE.Box3(), _c = new THREE.Vector3();
+  pivotClone.traverse(function(obj) {
+    if (!obj.isMesh) return;
+    const n = (obj.name || '').toLowerCase();
+    if (/gear|wheel|tire|strut|leg/.test(n)) gear.push(obj);
+  });
+  if (gear.length === 0) {
+    pivotClone.traverse(function(obj) {
+      if (!obj.isMesh) return;
+      _b.setFromObject(obj); _b.getCenter(_c);
+      if (_c.y < -(spanM * 0.06) && Math.abs(_c.x) < spanM * 0.45) gear.push(obj);
+    });
+  }
+  return gear;
+}
+
+// Build hinge rigs for flaps, selected MANUALLY by name via JSON `flapCfg.nodes`.
+// Each listed flap mesh is reparented under a pivot group placed at its forward
+// edge (the real hinge line) so it rotates trailing-edge-down instead of swinging
+// about the model origin. Returns { rigs, maxRad, sign }.
+function setupFlapRigs(pivotClone, flapCfg) {
+  const out = { rigs: [], maxRad: 0, sign: 1 };
+  if (!flapCfg || !flapCfg.nodes || !flapCfg.nodes.length) return out;
+  out.maxRad = (flapCfg.maxDeg != null ? flapCfg.maxDeg : 40) * DEG;
+  out.sign   = (flapCfg.sign != null ? flapCfg.sign : 1);
+
+  pivotClone.updateMatrixWorld(true);
+  const pivotInv = _tmpMat4C.copy(pivotClone.matrixWorld).invert();
+  const want = {}; flapCfg.nodes.forEach(function(n){ want[n] = true; });
+  const meshes = [];
+  pivotClone.traverse(function(o){ if (o.isMesh && want[o.name]) meshes.push(o); });
+
+  const box = new THREE.Box3(), center = new THREE.Vector3();
+  for (let i = 0; i < meshes.length; i++) {
+    const mesh = meshes[i];
+    _meshBoxInPivot(mesh, pivotInv, box);
+    if (box.isEmpty()) continue;
+    box.getCenter(center);
+    const rig = new THREE.Group();
+    // Hinge at the flap's forward edge (min Z = toward nose), spanwise across X.
+    rig.position.set(center.x, center.y, box.min.z);
+    pivotClone.add(rig);
+    _reparentPreserving(mesh, rig);
+    out.rigs.push(rig);
+  }
+  return out;
+}
+
+// Rotate every flap rig around the spanwise (X) hinge by flapLevel × maxDeg.
+function applyFlapState(flapInfo, flapLevel) {
+  if (!flapInfo || !flapInfo.rigs) return;
+  const ang = flapInfo.sign * flapLevel * flapInfo.maxRad;
+  for (let i = 0; i < flapInfo.rigs.length; i++) flapInfo.rigs[i].rotation.x = ang;
+}
+
+// Show gear meshes when gearDown; hide when retracted.
+function applyGearState(gearMeshes, gearDown) {
+  for (let i = 0; i < gearMeshes.length; i++) gearMeshes[i].visible = gearDown;
 }
 
 // Adds/positions/removes real downloaded models in the scene for nearby traffic, and
@@ -4333,6 +4555,11 @@ function drawPitchLadder(bankRad) {
 // X=right, Y=up, Z=forward/nose) for a given flap/gear state. Shared by the
 // player's own model and by AI traffic, so every aircraft in the sky looks
 // identical.
+// Maps aircraft key -> mesh builder function(flapsLevel, gearDown) -> {verts, faces, lwTip, rwTip}.
+// If a key is absent the default classic builder is used.
+// Register custom builders here when adding new aircraft with unique 3D shapes.
+const AIRCRAFT_MODEL_BUILDERS = {};
+
 function buildAirplaneMesh(flapsLevel, gearDown) {
   const verts = [];
   const faces = [];
@@ -5708,6 +5935,22 @@ function parseAnyCoords(t) {
   if (m) return _ll(+m[1], +m[2]);
   return null;
 }
+
+// Populate aircraft selector from AIRCRAFT_DEFS
+(function() {
+  const acSelector = document.getElementById('ac-selector');
+  if (!acSelector) return;
+  Object.keys(AIRCRAFT_DEFS).forEach(function(key) {
+    const def = AIRCRAFT_DEFS[key];
+    const btn = document.createElement('button');
+    btn.className = 'ac-btn';
+    btn.dataset.ac = key;
+    btn.innerHTML = def.label + '<span class="ac-sub">' + def.desc + '</span>';
+    btn.addEventListener('click', function() { applyAircraftType(key); });
+    acSelector.appendChild(btn);
+  });
+  applyAircraftType(selectedAircraftKey); // mark default selection
+})();
 
 if (startMenu) {
   startMenu.querySelectorAll('.sm-btn[data-lat]').forEach(function (btn) {
