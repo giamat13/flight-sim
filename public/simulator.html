@@ -1499,18 +1499,15 @@ const AIRCRAFT_DEFS = {
     fuelMax: 3000,      // kg — internal fuel
     rotationKts: 140,   // kt — takeoff rotation
     cruiseKts: 480,     // autopilot target cruise speed (kt) — fast jet, but not its Mach-2 Vne
-    playerModelUrl: 'https://www.get3dmodels.com/download/Fighter-jet.glb',
-    playerModelDims: { span: 11, len: 11 },     // metres — wing-tip-to-tip incl. missiles
-    modelAxes: { nose: '+z', up: '+y' },        // explicit native orientation (auto-detect is ambiguous: span≈length)
-    modelYOffset: 1.6,  // metres — lifts the centred GLB to rest on terrain
-    // Textured model with separable control surfaces (node names carry an index suffix).
-    flapCfg: {
-      nodes: ['flap_back_l.30', 'flap_back_r.29'], // trailing-edge flaps
-      maxDeg: 35,
-      sign: 1,
-    },
-    gearNodes: ['wheel_front.3', 'wheel_l.6', 'wheel_r.5',
-                'wheelparts_front.4', 'wheelparts_l.8', 'wheelparts_r.7'],
+    // Pilatus PC-21 — sleek single-seat military aerobatic trainer. Served from
+    // raw.githubusercontent (sends Access-Control-Allow-Origin: *) so it actually
+    // loads in the browser. The previous get3dmodels.com model lacked CORS headers,
+    // so on the live web build the load was blocked and the aircraft silently fell
+    // back to the generic procedural mesh — looking "classic" while flying like a jet.
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/pc21/glTF2/PC21.glb',
+    playerModelDims: { span: 9.1, len: 11.2 },  // metres — PC-21 wingspan / fuselage length
+    modelYOffset: 1.2,  // metres — lifts the centred GLB to rest on terrain
+    // Single-mesh model (one "airframe" node) — no separable flap/gear surfaces.
   },
   // Add more aircraft here — they appear in the menu automatically.
 };
