@@ -1415,6 +1415,7 @@ const AIRCRAFT_DEFS = {
     fuelFlowMax: 0.55,
     fuelMax: 800,       // kg — total fuel capacity (gameplay)
     rotationKts: 100,   // takeoff rotation speed (kt)
+    cruiseKts: 280,     // autopilot target cruise speed (kt)
   },
   boeing737: {
     label: 'BOEING 737-800',
@@ -1433,6 +1434,7 @@ const AIRCRAFT_DEFS = {
     fuelFlowMax: 3.5,   // kg/s — both engines at max takeoff thrust
     fuelMax: 5000,      // kg — gameplay fuel budget
     rotationKts: 148,   // kt — typical Vr at 65t
+    cruiseKts: 290,     // autopilot target cruise speed (kt)
     playerModelUrl: 'https://raw.githubusercontent.com/djzoom/MU5735/main/b738.glb',
     playerModelDims: { span: 35.8, len: 39.5 }, // metres (with winglets / fuselage)
     modelYOffset: 3,    // metres — lifts the centred GLB so gear sits on the terrain
@@ -1464,6 +1466,7 @@ const AIRCRAFT_DEFS = {
     fuelFlowMax: 3.3,   // kg/s — both engines max takeoff thrust
     fuelMax: 27000,     // kg — nominal fuel capacity (larger than 737)
     rotationKts: 155,   // kt — typical Vr at 73.5t MTOW
+    cruiseKts: 290,     // autopilot target cruise speed (kt)
     playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/a320/glTF2/A320.glb',
     playerModelDims: { span: 34.1, len: 37.6 }, // metres (wingspan / fuselage length)
     modelYOffset: 2,    // metres — lifts the centred GLB so it rests on the terrain
@@ -1477,6 +1480,37 @@ const AIRCRAFT_DEFS = {
     // Use the doors as the toggle proxy (visible ≈ gear deployed).
     gearNodes: ['GearLDoor', 'GearRDoor', 'GearNFwdDoorL', 'GearNFwdDoorR',
                 'GearNAftDoorL', 'GearNAftDoorR'],
+  },
+  fighter: {
+    label: 'FIGHTER JET',
+    desc: 'Aerobatic — tricks & flips',
+    m: 9500,            // kg — ~F-16 light combat weight (empty 8.5t / MTOW 19t)
+    S: 27.87,           // m² — F-16 reference wing area
+    CL_a: 3.6,          // per rad — low-aspect (AR≈3.2) thin wing
+    CL_max: 1.5,        // clean — relaxed-stability fighter
+    aStall: 22,         // deg — high AoA capability
+    Cd0: 0.022,         // parasitic drag
+    k: 0.11,            // induced drag: 1/(pi × 0.9 × 3.2) — low AR
+    incidence: 0.0,     // deg — symmetric, no built-in incidence
+    Tmax: 130000,       // N — F110 with afterburner (~T/W > 1 for vertical)
+    Vne: 330,           // m/s — ≈ 640 kt; fast but a sane game envelope (real Mach 2 is unplayable)
+    fuelFlowIdle: 0.05, // kg/s
+    fuelFlowMax: 2.0,   // kg/s — afterburner is thirsty
+    fuelMax: 3000,      // kg — internal fuel
+    rotationKts: 140,   // kt — takeoff rotation
+    cruiseKts: 480,     // autopilot target cruise speed (kt) — fast jet, but not its Mach-2 Vne
+    playerModelUrl: 'https://www.get3dmodels.com/download/Fighter-jet.glb',
+    playerModelDims: { span: 11, len: 11 },     // metres — wing-tip-to-tip incl. missiles
+    modelAxes: { nose: '+z', up: '+y' },        // explicit native orientation (auto-detect is ambiguous: span≈length)
+    modelYOffset: 1.6,  // metres — lifts the centred GLB to rest on terrain
+    // Textured model with separable control surfaces (node names carry an index suffix).
+    flapCfg: {
+      nodes: ['flap_back_l.30', 'flap_back_r.29'], // trailing-edge flaps
+      maxDeg: 35,
+      sign: 1,
+    },
+    gearNodes: ['wheel_front.3', 'wheel_l.6', 'wheel_r.5',
+                'wheelparts_front.4', 'wheelparts_l.8', 'wheelparts_r.7'],
   },
   // Add more aircraft here — they appear in the menu automatically.
 };
@@ -1503,7 +1537,7 @@ function applyAircraftType(key) {
   // If switching aircraft mid-session (after first flight), start download immediately.
   // On first launch the loader isn't ready yet — initThree() handles that case.
   if (def.playerModelUrl && _gltfLoader) {
-    ensureTrafficModel(def.playerModelUrl, def.playerModelDims || { span: 30, len: 35 });
+    ensureTrafficModel(def.playerModelUrl, def.playerModelDims || { span: 30, len: 35 }, def.modelAxes);
   }
 }
 
@@ -1723,7 +1757,7 @@ async function initThree() {
 
   // Start downloading the player aircraft model if the current type defines one.
   if (AC.playerModelUrl) {
-    ensureTrafficModel(AC.playerModelUrl, AC.playerModelDims || { span: 30, len: 35 });
+    ensureTrafficModel(AC.playerModelUrl, AC.playerModelDims || { span: 30, len: 35 }, AC.modelAxes);
   }
 
   // Pre-load Grand Canyon terrain so the menu has a beautiful backdrop.
@@ -2163,7 +2197,7 @@ function buildAircraftMesh(flaps, gear) {
   const modelUrl = AC.playerModelUrl;
   if (modelUrl && _gltfLoader) {
     const dims = AC.playerModelDims || { span: 30, len: 35 };
-    const rec = ensureTrafficModel(modelUrl, dims);
+    const rec = ensureTrafficModel(modelUrl, dims, AC.modelAxes);
     if (rec && rec.status === 'ready' && rec.obj) {
       const clone = rec.obj.clone(true);
       // Vertical offset: modelYOffset from JSON corrects the model above ground.
@@ -2777,41 +2811,56 @@ let _tmpMat4A, _tmpMat4B, _tmpMat4C, _tmpVecA; // flap-rig math scratch
 
 // Center a freshly loaded model, scale it to real size by wingspan, and rotate it so its
 // nose points local -Z, up +Y, right +X (matching orientAircraft's expected convention).
-function prepLoadedModel(root, dims) {
+function _axisVec(spec) {
+  // '+x','-x','+y','-y','+z','-z' -> unit Vector3
+  const s = (spec[0] === '-') ? -1 : 1;
+  const ax = spec[spec.length - 1].toLowerCase();
+  return new THREE.Vector3(ax === 'x' ? s : 0, ax === 'y' ? s : 0, ax === 'z' ? s : 0);
+}
+function prepLoadedModel(root, dims, opts) {
   root.updateMatrixWorld(true);
   _tmBox.setFromObject(root); _tmBox.getSize(_tmSize); _tmBox.getCenter(_tmCenter);
   const exX = _tmSize.x, exZ = _tmSize.z;      // up is consistently +Y across this set
   const span = dims.span, len = dims.len;
-  // Pick which horizontal axis is span vs length by matching real dimensions.
-  const errA = Math.abs(exZ - span) + Math.abs(exX - len);   // span=Z, len=X
-  const errB = Math.abs(exX - span) + Math.abs(exZ - len);   // span=X, len=Z
-  const spanAxis = (errA <= errB) ? 'z' : 'x';
-  const lenAxis  = (spanAxis === 'z') ? 'x' : 'z';
-  const spanExt  = (spanAxis === 'z') ? exZ : exX;
-  const scale    = (spanExt > 0.01) ? (span / spanExt) : 1;
 
-  // Nose direction: the tail end is taller (vertical stabiliser). Sample vertices,
-  // split along the length axis, and call the shorter (less-tall) half the nose.
-  const li = (lenAxis === 'x') ? 0 : 2;
-  const cL = (lenAxis === 'x') ? _tmCenter.x : _tmCenter.z;
-  let posMinY = 1e9, posMaxY = -1e9, negMinY = 1e9, negMaxY = -1e9;
-  const v = new THREE.Vector3();
-  root.traverse(function (o) {
-    if (!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
-    const p = o.geometry.attributes.position;
-    const stride = Math.max(1, Math.floor(p.count / 600));
-    for (let i = 0; i < p.count; i += stride) {
-      v.fromBufferAttribute(p, i); o.localToWorld(v);
-      const lv = (li === 0) ? v.x : v.z;
-      if (lv >= cL) { if (v.y < posMinY) posMinY = v.y; if (v.y > posMaxY) posMaxY = v.y; }
-      else          { if (v.y < negMinY) negMinY = v.y; if (v.y > negMaxY) negMaxY = v.y; }
-    }
-  });
-  const noseAtPositive = (posMaxY - posMinY) < (negMaxY - negMinY);
+  let mNose, mUp;
+  if (opts && opts.nose && opts.up) {
+    // Explicit orientation from JSON — robust when auto-detect is ambiguous.
+    mNose = _axisVec(opts.nose);
+    mUp   = _axisVec(opts.up);
+  } else {
+    // Auto-detect: pick which horizontal axis is span vs length by matching real dims.
+    const errA = Math.abs(exZ - span) + Math.abs(exX - len);   // span=Z, len=X
+    const errB = Math.abs(exX - span) + Math.abs(exZ - len);   // span=X, len=Z
+    const lenAxis = (errA <= errB) ? 'x' : 'z';
+    // Nose direction: the tail end is taller (vertical stabiliser). Sample vertices,
+    // split along the length axis, and call the shorter (less-tall) half the nose.
+    const li = (lenAxis === 'x') ? 0 : 2;
+    const cL = (lenAxis === 'x') ? _tmCenter.x : _tmCenter.z;
+    let posMinY = 1e9, posMaxY = -1e9, negMinY = 1e9, negMaxY = -1e9;
+    const v = new THREE.Vector3();
+    root.traverse(function (o) {
+      if (!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+      const p = o.geometry.attributes.position;
+      const stride = Math.max(1, Math.floor(p.count / 600));
+      for (let i = 0; i < p.count; i += stride) {
+        v.fromBufferAttribute(p, i); o.localToWorld(v);
+        const lv = (li === 0) ? v.x : v.z;
+        if (lv >= cL) { if (v.y < posMinY) posMinY = v.y; if (v.y > posMaxY) posMaxY = v.y; }
+        else          { if (v.y < negMinY) negMinY = v.y; if (v.y > negMaxY) negMaxY = v.y; }
+      }
+    });
+    const noseAtPositive = (posMaxY - posMinY) < (negMaxY - negMinY);
+    mUp = new THREE.Vector3(0, 1, 0);
+    mNose = new THREE.Vector3(); mNose[lenAxis] = noseAtPositive ? 1 : -1;
+  }
+
+  // Span axis = nose × up; scale so that span extent matches the real wingspan.
+  const spanDir = new THREE.Vector3().copy(mNose).cross(mUp);
+  const spanExt = Math.abs(spanDir.x) > 0.5 ? exX : exZ;
+  const scale   = (spanExt > 0.01) ? (span / spanExt) : 1;
 
   // Fixed rotation mapping model basis (nose, up, nose×up) → target (-Z, +Y, +X).
-  const mUp = new THREE.Vector3(0, 1, 0);
-  const mNose = new THREE.Vector3(); mNose[lenAxis] = noseAtPositive ? 1 : -1;
   const mRight = new THREE.Vector3().copy(mNose).cross(mUp);
   const S = new THREE.Matrix4().makeBasis(mNose, mUp, mRight);
   const tFwd = new THREE.Vector3(0, 0, -1), tUp = new THREE.Vector3(0, 1, 0);
@@ -2830,14 +2879,14 @@ function prepLoadedModel(root, dims) {
   return pivot;
 }
 
-function ensureTrafficModel(url, dims) {
+function ensureTrafficModel(url, dims, opts) {
   let rec = trafficModelCache[url];
   if (rec) return rec;
   if (trafficModelLoads >= TRAFFIC_MODEL_MAX_CONCURRENT) return null; // retry a later frame
   if (!_gltfLoader) { trafficModelCache[url] = { obj: null, status: 'failed' }; return trafficModelCache[url]; }
   rec = { obj: null, status: 'loading' }; trafficModelCache[url] = rec; trafficModelLoads++;
   _gltfLoader.load(url,
-    function (gltf) { try { rec.obj = prepLoadedModel(gltf.scene || gltf.scenes[0], dims); rec.status = 'ready'; } catch (e) { rec.status = 'failed'; console.warn('[Traffic] model prep failed', url, e); } trafficModelLoads--; },
+    function (gltf) { try { rec.obj = prepLoadedModel(gltf.scene || gltf.scenes[0], dims, opts); rec.status = 'ready'; } catch (e) { rec.status = 'failed'; console.warn('[Traffic] model prep failed', url, e); } trafficModelLoads--; },
     undefined,
     function () { rec.status = 'failed'; trafficModelLoads--; console.warn('[Traffic] model load failed', url); }
   );
@@ -3085,7 +3134,7 @@ function toggleAutopilot() {
   ap.on = !ap.on;
   if (ap.on) {
     ap.targetAlt = state.altitude;
-    ap.targetSpd = Math.max(stallSpeedKts() + 20, state.speed);
+    ap.targetSpd = Math.max(stallSpeedKts() + 20, Math.min(state.speed, cruiseKtsFor()));
     ap.targetHdg = currentTrackDeg();
     ap.altI = 0; ap.spdI = 0; ap.hdgI = 0;
     ap.econThr   = state.throttle;
@@ -3659,11 +3708,17 @@ function cruiseFuelPerMeter(Vkts, altFt) {
 
 // Work out the trip: fastest speed that still lands with >=10% fuel; if that's
 // impossible even flown for best economy, flag a refuel stop.
+// Autopilot target cruise speed for the active aircraft (knots). Falls back to a
+// VNE-derived cap so the AP never aspires to an unrealistic speed for the type.
+function cruiseKtsFor() {
+  return AC.cruiseKts || Math.min(VNE_KTS - 30, 430);
+}
+
 function planNavRoute(distM, altFt) {
   const reserve = NAV_RESERVE * state.fuelMax;
   const avail = Math.max(0, state.fuel - reserve);
   const Vlo = Math.round(stallSpeedKts() + 60);
-  const Vhi = Math.min(VNE_KTS - 30, 430);
+  const Vhi = Math.min(VNE_KTS - 30, cruiseKtsFor());
   const OVERHEAD = 1.18;                 // climb/descent/maneuvering vs. ideal cruise
   const CLIMB_KG = state.onGround ? 14 : 4; // extra for an initial climb from the ground
   const tripFuel = function (V) { return distM * cruiseFuelPerMeter(V, altFt).perM * OVERHEAD + CLIMB_KG; };
