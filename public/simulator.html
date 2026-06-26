@@ -457,8 +457,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="sm-btn" id="pm-resume">▶ Resume</button>
     <button class="sm-btn" id="pm-restart">↻ Restart Flight</button>
     <button class="sm-btn" id="pm-maps">🗺 Open in Google Maps</button>
+    <button class="sm-btn" id="pm-menu">⌂ Return to Main Menu</button>
   </div>
-  <div class="sm-hint">P or ☰ to resume</div>
+  <div class="sm-hint">ESC or P or ☰ to resume</div>
 </div>
 
 <script type="importmap">
@@ -725,7 +726,7 @@ window.addEventListener('keydown', e => {
     if (code === 'KeyF') cycleFlaps();
     if (code === 'KeyG') toggleGear();
     if (code === 'KeyP') togglePause();
-    if (code === 'Escape' && paused) setPaused(false);
+    if (e.key === 'Escape') { togglePause(); e.preventDefault(); return; }
   }
   // Only swallow the keys we actually use, and never when a modifier is held,
   // so browser shortcuts (F12 devtools, Ctrl+R, Ctrl+Shift+I, etc.) keep working.
