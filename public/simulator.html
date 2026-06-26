@@ -5603,6 +5603,47 @@ function beginFlight(loc) {
   document.getElementById('stp-night') && document.getElementById('stp-night').addEventListener('click', function () { setTimeOverride('night'); });
 })();
 
+// ---- Coordinate parser — shared by start menu and nav-map picker ----
+function _ll(lat, lon) { return (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) ? { lat, lon } : null; }
+function _dms(d1, m1, s1, ns, d2, m2, s2, ew) {
+  const la = +d1 + +m1 / 60 + +s1 / 3600, lo = +d2 + +m2 / 60 + +s2 / 3600;
+  return _ll(/[Ss]/.test(ns) ? -la : la, /[Ww]/.test(ew) ? -lo : lo);
+}
+function parseAnyCoords(t) {
+  let m;
+  // Google Maps URLs
+  m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (m) return _ll(+m[1], +m[2]);
+  m = t.match(/[?&](?:q|query|ll|center|destination|sll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+  if (m) return _ll(+m[1], +m[2]);
+  m = t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (m) return _ll(+m[1], +m[2]);
+  const s = t.trim();
+  // DMS — degrees° min' sec" N/S , degrees° min' sec" E/W  (direction after)
+  // Accepts " ″ '' or any combo of quotes/spaces after seconds.
+  m = s.match(/^(\d{1,3})[°\s]\s*(\d{1,2})['′\s]\s*(\d{1,2}(?:\.\d+)?)['"″'\s]*([NnSs])[,;\s]+(\d{1,3})[°\s]\s*(\d{1,2})['′\s]\s*(\d{1,2}(?:\.\d+)?)['"″'\s]*([EeWw])$/);
+  if (m) return _dms(m[1],m[2],m[3],m[4], m[5],m[6],m[7],m[8]);
+  // DMS — N/S degrees° min' sec" , E/W degrees° min' sec"  (direction before)
+  m = s.match(/^([NnSs])\s*(\d{1,3})[°\s]\s*(\d{1,2})['′\s]\s*(\d{1,2}(?:\.\d+)?)['"″'\s]*[,;\s]+([EeWw])\s*(\d{1,3})[°\s]\s*(\d{1,2})['′\s]\s*(\d{1,2}(?:\.\d+)?)['"″'\s]*$/);
+  if (m) return _dms(m[2],m[3],m[4],m[1], m[6],m[7],m[8],m[5]);
+  // DM — degrees° decimal-min' N/S , degrees° decimal-min' E/W  (direction after)
+  m = s.match(/^(\d{1,3})[°\s]\s*(\d{1,2}(?:\.\d+)?)['′\s]*([NnSs])[,;\s]+(\d{1,3})[°\s]\s*(\d{1,2}(?:\.\d+)?)['′\s]*([EeWw])$/);
+  if (m) { const la = +m[1]+m[2]/60, lo = +m[4]+m[5]/60; return _ll(/[Ss]/.test(m[3])?-la:la, /[Ww]/.test(m[6])?-lo:lo); }
+  // DM — N/S degrees° decimal-min'  (direction before)
+  m = s.match(/^([NnSs])\s*(\d{1,3})[°\s]\s*(\d{1,2}(?:\.\d+)?)['′\s]*[,;\s]+([EeWw])\s*(\d{1,3})[°\s]\s*(\d{1,2}(?:\.\d+)?)['′\s]*$/);
+  if (m) { const la = +m[2]+m[3]/60, lo = +m[5]+m[6]/60; return _ll(/[Ss]/.test(m[1])?-la:la, /[Ww]/.test(m[4])?-lo:lo); }
+  // Decimal + direction suffix: 31.7767N 35.2345E
+  m = s.match(/^(\d{1,2}(?:\.\d+)?)\s*([NnSs])\s*[,;\s]\s*(\d{1,3}(?:\.\d+)?)\s*([EeWw])$/);
+  if (m) return _ll(/[Ss]/.test(m[2])?-+m[1]:+m[1], /[Ww]/.test(m[4])?-+m[3]:+m[3]);
+  // Decimal + direction prefix: N31.7767 E35.2345
+  m = s.match(/^([NnSs])\s*(\d{1,2}(?:\.\d+)?)\s*[,;\s]\s*([EeWw])\s*(\d{1,3}(?:\.\d+)?)$/);
+  if (m) return _ll(/[Ss]/.test(m[1])?-+m[2]:+m[2], /[Ww]/.test(m[3])?-+m[4]:+m[4]);
+  // Plain decimal: lat, lon  or  lat lon
+  m = s.match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)$/);
+  if (m) return _ll(+m[1], +m[2]);
+  return null;
+}
+
 if (startMenu) {
   startMenu.querySelectorAll('.sm-btn[data-lat]').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -5637,26 +5678,6 @@ if (startMenu) {
     statusEl.textContent = msg || '';
     statusEl.className = isErr ? 'sm-err' : '';
   }
-
-  // Pull "lat,lon" out of common Google Maps URL shapes.
-  function parseGoogleMaps(t) {
-    let m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);                 // /maps/@lat,lon,zoom
-    if (m) return { lat: +m[1], lon: +m[2] };
-    m = t.match(/[?&](?:q|query|ll|center|destination|sll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
-    if (m) return { lat: +m[1], lon: +m[2] };
-    m = t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);                 // place data
-    if (m) return { lat: +m[1], lon: +m[2] };
-    return null;
-  }
-  // Plain "lat, lon" / "lat lon".
-  function parseCoords(t) {
-    const m = t.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
-    if (!m) return null;
-    const lat = +m[1], lon = +m[2];
-    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) return { lat, lon };
-    return null;
-  }
-  // Geocode a place name via OpenStreetMap Nominatim (free, no API key).
   function geocode(q) {
     const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q);
     return fetch(url, { headers: { 'Accept': 'application/json' } })
@@ -5669,28 +5690,16 @@ if (startMenu) {
         return null;
       });
   }
-
   function submitCustom() {
     const raw = (input && input.value || '').trim();
-    if (!raw) { setStatus('Type a city, coordinates, or a Maps link', true); return; }
-
-    // 1) Google Maps link
-    if (/https?:\/\/|google\.|maps\.|goo\.gl|@-?\d/.test(raw)) {
-      const g = parseGoogleMaps(raw);
-      if (g) { setStatus('FOUND — LAUNCHING…');
-        beginFlight({ name: 'CUSTOM ' + g.lat.toFixed(3) + ',' + g.lon.toFixed(3), lat: g.lat, lon: g.lon, alt: 2000, hdg: 90 });
-        return;
-      }
-      // shortened goo.gl links can't be expanded in-browser (CORS)
-      if (/goo\.gl|maps\.app/.test(raw)) { setStatus('Short links unsupported — paste the full URL or a city name', true); return; }
-    }
-    // 2) Plain coordinates
-    const c = parseCoords(raw);
-    if (c) { setStatus('LAUNCHING…');
-      beginFlight({ name: c.lat.toFixed(3) + ', ' + c.lon.toFixed(3), lat: c.lat, lon: c.lon, alt: 2000, hdg: 90 });
+    if (!raw) { setStatus('Type a city, coords, or a Maps link', true); return; }
+    const c = parseAnyCoords(raw);
+    if (c) {
+      setStatus('FOUND — LAUNCHING…');
+      beginFlight({ name: c.lat.toFixed(4) + ', ' + c.lon.toFixed(4), lat: c.lat, lon: c.lon, alt: 2000, hdg: 90 });
       return;
     }
-    // 3) City / place name -> geocode
+    if (/goo\.gl|maps\.app/.test(raw)) { setStatus('Short links unsupported — paste the full URL or a city name', true); return; }
     setStatus('SEARCHING “' + raw + '”…');
     geocode(raw)
       .then(function (loc) {
@@ -5700,12 +5709,11 @@ if (startMenu) {
       })
       .catch(function () { setStatus('Search failed — check connection', true); });
   }
-
   if (goBtn) goBtn.addEventListener('click', submitCustom);
   if (input) input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); submitCustom(); }
   });
-  runSubmitCustom = submitCustom; // let the virtual keyboard's GO key submit too
+  runSubmitCustom = submitCustom;
 }
 
 // ===== Pause / Google Maps / return to menu =====
@@ -5943,19 +5951,12 @@ function nmJustFly() {
 }
 
 // ----- Picker search box: city name / coordinates / Google Maps link -----
-function nmParseLoc(t) {
-  let m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);                 if (m) return { lat: +m[1], lon: +m[2] };
-  m = t.match(/[?&](?:q|query|ll|center|destination|sll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/); if (m) return { lat: +m[1], lon: +m[2] };
-  m = t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);                 if (m) return { lat: +m[1], lon: +m[2] };
-  m = t.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
-  if (m) { const la = +m[1], lo = +m[2]; if (la >= -90 && la <= 90 && lo >= -180 && lo <= 180) return { lat: la, lon: lo }; }
-  return null;
-}
+// Reuses parseAnyCoords defined in the start-menu block above.
 function nmSearch() {
   const input = document.getElementById('nm-input');
   const raw = (input && input.value || '').trim();
   if (!raw) return;
-  const c = nmParseLoc(raw);
+  const c = parseAnyCoords(raw);
   if (c) { nmView.lat = nmClampLat(c.lat); nmView.lon = c.lon; nmView.zoom = Math.max(nmView.zoom, 10); nmDestName = raw.toUpperCase(); nmElevKey = ''; return; }
   const info = document.getElementById('nm-info'); if (info) info.textContent = 'SEARCHING “' + raw + '”…';
   fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(raw), { headers: { 'Accept': 'application/json' } })
