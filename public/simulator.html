@@ -3744,7 +3744,7 @@ function planNavRoute(distM, altFt) {
   return {
     mode: mode,
     cruiseSpd: cruiseSpd,
-    etaSec: distM / Math.max(cruiseSpd * KTS_TO_MPS, 1),
+    etaSec: distM / Math.max(cruiseSpd * KTS_TO_MPS, 1) * 1.12, // incl. climb/descent overhead
     arriveFrac: (state.fuel - fuelUse) / Math.max(state.fuelMax, 1)
   };
 }
@@ -4078,7 +4078,11 @@ function navUpdateHud() {
       const nm = db.dist / 1852;
       const distStr = nm >= 1 ? (nm < 10 ? nm.toFixed(1) : Math.round(nm)) + ' nm' : Math.round(db.dist) + ' m';
       const brgStr = String(Math.round(db.brg) % 360 || 360).padStart(3, '0') + '°';
-      const eta = state.speed > 10 ? db.dist / (state.speed * KTS_TO_MPS) : Infinity;
+      // ETA estimate: fly at the current speed once we're actually moving, but
+      // fall back to this aircraft's cruise speed when slow/stationary so the
+      // number stays realistic instead of blowing up to infinity.
+      const estV = state.speed > 30 ? state.speed : cruiseKtsFor();
+      const eta = db.dist / (estV * KTS_TO_MPS);
       if (ind) {
         ind.innerHTML = '<span style="color:#aad4ff">✈ MANUAL NAV</span> &nbsp;→ <b>' + (navLastDest.name || 'DEST') + '</b>';
         ind.style.display = 'block';
@@ -4098,7 +4102,10 @@ function navUpdateHud() {
   const plan = ap.nav.plan || {};
   const phaseLabel = { takeoff: 'TAKEOFF', cruise: 'EN ROUTE', descent: 'DESCENT', land: 'LANDING', refuel: 'REFUELING' }[ap.nav.phase] || ap.nav.phase;
   const modeTag = plan.mode === 'fast' ? 'MAX SPEED' : plan.mode === 'refuel' ? 'REFUEL PLAN' : plan.mode === 'optimal' ? 'OPTIMAL' : '';
-  const eta = (plan.cruiseSpd ? dDest / (plan.cruiseSpd * KTS_TO_MPS) : 0);
+  // ETA at this aircraft's planned cruise speed, padded by the same climb/descent/
+  // maneuvering overhead the fuel plan assumes so the time estimate stays honest.
+  const NAV_ETA_OVERHEAD = 1.12;
+  const eta = (plan.cruiseSpd ? (dDest / (plan.cruiseSpd * KTS_TO_MPS)) * NAV_ETA_OVERHEAD : 0);
   const arrPct = (plan.arriveFrac != null) ? Math.round(plan.arriveFrac * 100) : null;
   const arrCls = (arrPct != null && arrPct < 10) ? ' class="nh-fuel-lo"' : '';
   const distStr = nm >= 1 ? (nm < 10 ? nm.toFixed(1) : Math.round(nm)) + ' nm' : Math.round(dDest) + ' m';
