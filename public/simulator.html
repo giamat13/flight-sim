@@ -622,6 +622,7 @@ function resetState() {
   state.flaps = 0;
   state.gearDown = true; // gear down on the ground
   state.gearBroken = false;
+  state.fuelMax = (AC && AC.fuelMax) ? AC.fuelMax : 800;
   state.fuel = state.fuelMax;
   state.onGround = true;
   state.groundTimer = 0;
@@ -1412,8 +1413,29 @@ const AIRCRAFT_DEFS = {
     Vne: 320,           // never-exceed speed (m/s) ≈ 622 kt
     fuelFlowIdle: 0.025,
     fuelFlowMax: 0.55,
+    fuelMax: 800,       // kg — total fuel capacity (gameplay)
     rotationKts: 100,   // takeoff rotation speed (kt)
-  }
+  },
+  boeing737: {
+    label: 'BOEING 737-800',
+    desc: 'Narrow-body airliner',
+    m: 65000,           // kg — typical operating weight (OEW 41,145 / MTOW 70,535)
+    S: 125.0,           // m² — reference wing area (boeing.com)
+    CL_a: 4.8,          // per rad — swept 25-deg wing, AR=9.5
+    CL_max: 2.4,        // slats + partial flaps (approach config)
+    aStall: 13,         // deg — clean stall AoA
+    Cd0: 0.019,         // parasitic drag (clean transonic)
+    k: 0.040,           // induced drag: 1/(pi × 0.85 × 9.5)
+    incidence: 1.5,     // deg — wing mounting incidence
+    Tmax: 243000,       // N — 2× CFM56-7B27 at 121.4 kN each
+    Vne: 175,           // m/s — VMO 340 KIAS
+    fuelFlowIdle: 0.15, // kg/s — both engines idle
+    fuelFlowMax: 3.5,   // kg/s — both engines at max takeoff thrust
+    fuelMax: 5000,      // kg — gameplay fuel budget
+    rotationKts: 148,   // kt — typical Vr at 65t
+    playerModelUrl: 'https://raw.githubusercontent.com/djzoom/MU5735/main/b738.glb',
+    playerModelDims: { span: 35.8, len: 39.5 }, // metres (with winglets / fuselage)
+  },
   // Add more aircraft here — they appear in the menu automatically.
 };
 
@@ -1436,6 +1458,11 @@ function applyAircraftType(key) {
   document.querySelectorAll('.ac-btn').forEach(function(b) {
     b.classList.toggle('ac-active', b.dataset.ac === key);
   });
+  // If switching aircraft mid-session (after first flight), start download immediately.
+  // On first launch the loader isn't ready yet — initThree() handles that case.
+  if (def.playerModelUrl && _gltfLoader) {
+    ensureTrafficModel(def.playerModelUrl, def.playerModelDims || { span: 30, len: 35 });
+  }
 }
 
 // Current 1g stall speed (knots) at the present altitude — rises with altitude.
@@ -1650,6 +1677,11 @@ async function initThree() {
     THREEJS.camera.updateProjectionMatrix();
     THREEJS.renderer.setSize(window.innerWidth, window.innerHeight);
   });
+
+  // Start downloading the player aircraft model if the current type defines one.
+  if (AC.playerModelUrl) {
+    ensureTrafficModel(AC.playerModelUrl, AC.playerModelDims || { span: 30, len: 35 });
+  }
 
   // Pre-load Grand Canyon terrain so the menu has a beautiful backdrop.
   const previewLat = 36.1069, previewLon = -112.1129;
@@ -2082,7 +2114,23 @@ function geomFromFaces(verts, faces) {
 }
 function buildAircraftMesh(flaps, gear) {
   const ac = THREEJS.aircraft;
-  for (let i = ac.children.length - 1; i >= 0; i--) { const m = ac.children[i]; ac.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }
+  for (let i = ac.children.length - 1; i >= 0; i--) { const m = ac.children[i]; ac.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material && !m.material._shared) m.material.dispose(); }
+
+  // Use a real GLTF model if available for this aircraft type
+  const modelUrl = AC.playerModelUrl;
+  if (modelUrl && _gltfLoader) {
+    const dims = AC.playerModelDims || { span: 30, len: 35 };
+    const rec = ensureTrafficModel(modelUrl, dims);
+    if (rec && rec.status === 'ready' && rec.obj) {
+      ac.add(rec.obj.clone(true));
+      THREEJS.acFlaps = flaps; THREEJS.acGear = gear; THREEJS.acGltf = true;
+      return;
+    }
+    THREEJS.acGltf = false; // loading or failed — fall through to procedural
+  } else {
+    THREEJS.acGltf = false;
+  }
+
   const builder = AIRCRAFT_MODEL_BUILDERS[selectedAircraftKey] || buildAirplaneMesh;
   const mesh = builder(flaps, gear);
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide });
@@ -2170,8 +2218,13 @@ function updateCamera() {
   }
   if (!spawnResolved) { THREEJS.renderer.render(THREEJS.scene, cam); return; }
 
-  // Rebuild the aircraft mesh whenever its configuration changes.
-  if (THREEJS.acFlaps !== state.flaps || THREEJS.acGear !== state.gearDown) buildAircraftMesh(state.flaps, state.gearDown);
+  // Rebuild the aircraft mesh when config changes or a pending GLTF model just finished loading.
+  const _pmUrl = AC.playerModelUrl;
+  const _pmRec = _pmUrl ? trafficModelCache[_pmUrl] : null;
+  const _pmReady = _pmRec && _pmRec.status === 'ready';
+  if (THREEJS.acFlaps !== state.flaps || THREEJS.acGear !== state.gearDown || (_pmReady && !THREEJS.acGltf)) {
+    buildAircraftMesh(state.flaps, state.gearDown);
+  }
 
   // --- Vertical placement: seat the aircraft on the terrain the pilot actually sees ---
   // We don't render at an abstract MSL height (which never matches the interpolated
