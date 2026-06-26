@@ -1435,6 +1435,17 @@ const AIRCRAFT_DEFS = {
     rotationKts: 148,   // kt — typical Vr at 65t
     playerModelUrl: 'https://raw.githubusercontent.com/djzoom/MU5735/main/b738.glb',
     playerModelDims: { span: 35.8, len: 39.5 }, // metres (with winglets / fuselage)
+    modelYOffset: 3,    // metres — lifts the centred GLB so gear sits on the terrain
+    // Flaps: pick the trailing-edge flap meshes by exact GLB node name. Each is
+    // hinged at its own forward edge and rotated trailing-edge-down. Tune maxDeg
+    // (full-flap angle) and sign (flip if they deflect up) here — pure JSON.
+    flapCfg: {
+      nodes: ['flapI_B', 'flapO_B', 'aftflapI_B', 'aftflapO_B',
+              'rhflapI_B', 'rhflapO_B', 'rhaftflapI_B', 'rhaftflapO_B'],
+      maxDeg: 40,   // deflection at full flaps (state.flaps = 3)
+      sign: 1,      // +1 = trailing edge down; flip to -1 if it lifts
+    },
+    // gearNodes: [...]  // optional — omit to let gear auto-detect
   },
   // Add more aircraft here — they appear in the menu automatically.
 };
@@ -1630,6 +1641,7 @@ async function initThree() {
     _worldUp = new THREE.Vector3(0, 1, 0);
     _camEuler = new THREE.Euler();
     _tmBox = new THREE.Box3(); _tmSize = new THREE.Vector3(); _tmCenter = new THREE.Vector3();
+    _tmpMat4A = new THREE.Matrix4(); _tmpMat4B = new THREE.Matrix4(); _tmpMat4C = new THREE.Matrix4(); _tmpVecA = new THREE.Vector3();
   } catch(e) {
     if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) { s.style.color='#ff5555'; s.textContent = '3D ENGINE FAILED TO LOAD'; } }
     return;
@@ -2122,11 +2134,21 @@ function buildAircraftMesh(flaps, gear) {
     const dims = AC.playerModelDims || { span: 30, len: 35 };
     const rec = ensureTrafficModel(modelUrl, dims);
     if (rec && rec.status === 'ready' && rec.obj) {
-      ac.add(rec.obj.clone(true));
+      const clone = rec.obj.clone(true);
+      // Vertical offset: modelYOffset from JSON corrects the model above ground.
+      clone.position.y = AC.modelYOffset || 0;
+      ac.add(clone);
+      // Gear: auto-detected (or JSON gearNodes). Flaps: manual hinge rigs from JSON.
+      const flapInfo = setupFlapRigs(clone, AC.flapCfg);
+      const gearMeshes = scanGear(clone, dims.span, AC.gearNodes);
+      const flapLevel = flaps / 3;   // state.flaps is 0..3
+      applyFlapState(flapInfo, flapLevel);
+      applyGearState(gearMeshes, gear);
+      THREEJS.acGltfParts = { flaps: flapInfo, gear: gearMeshes };
       THREEJS.acFlaps = flaps; THREEJS.acGear = gear; THREEJS.acGltf = true;
       return;
     }
-    THREEJS.acGltf = false; // loading or failed — fall through to procedural
+    THREEJS.acGltf = false; // still loading or failed — fall through to procedural
   } else {
     THREEJS.acGltf = false;
   }
@@ -2222,7 +2244,18 @@ function updateCamera() {
   const _pmUrl = AC.playerModelUrl;
   const _pmRec = _pmUrl ? trafficModelCache[_pmUrl] : null;
   const _pmReady = _pmRec && _pmRec.status === 'ready';
-  if (THREEJS.acFlaps !== state.flaps || THREEJS.acGear !== state.gearDown || (_pmReady && !THREEJS.acGltf)) {
+  const _flapChanged = THREEJS.acFlaps !== state.flaps;
+  const _gearChanged = THREEJS.acGear !== state.gearDown;
+  if (_pmReady && !THREEJS.acGltf) {
+    // GLTF model just finished loading — do a full build now.
+    buildAircraftMesh(state.flaps, state.gearDown);
+  } else if (THREEJS.acGltf && THREEJS.acGltfParts && (_flapChanged || _gearChanged)) {
+    // GLTF already loaded — animate parts in-place, no rebuild needed.
+    if (_flapChanged) applyFlapState(THREEJS.acGltfParts.flaps, state.flaps / 3);
+    if (_gearChanged) applyGearState(THREEJS.acGltfParts.gear, state.gearDown);
+    THREEJS.acFlaps = state.flaps; THREEJS.acGear = state.gearDown;
+  } else if (!THREEJS.acGltf && (_flapChanged || _gearChanged)) {
+    // Procedural mesh — rebuild geometry (flaps/gear are baked into the mesh).
     buildAircraftMesh(state.flaps, state.gearDown);
   }
 
@@ -2709,6 +2742,7 @@ const trafficModelNodes = {};   // traffic id -> { group }
 let trafficModelLoads = 0;      // in-flight loads (throttled)
 const TRAFFIC_MODEL_MAX_CONCURRENT = 3;
 let _tmBox, _tmSize, _tmCenter; // set after THREE dynamic import
+let _tmpMat4A, _tmpMat4B, _tmpMat4C, _tmpVecA; // flap-rig math scratch
 
 // Center a freshly loaded model, scale it to real size by wingspan, and rotate it so its
 // nose points local -Z, up +Y, right +X (matching orientAircraft's expected convention).
@@ -2760,6 +2794,8 @@ function prepLoadedModel(root, dims) {
   const scaleNode = new THREE.Group(); scaleNode.add(root); scaleNode.scale.setScalar(scale);
   const orientNode = new THREE.Group(); orientNode.add(scaleNode); orientNode.quaternion.setFromRotationMatrix(Q);
   const pivot = new THREE.Group(); pivot.add(orientNode);
+  // Half-height in scene metres (bottom of model = -_halfHeight below pivot origin after centering).
+  pivot._halfHeight = _tmSize.y * scale / 2;
   return pivot;
 }
 
@@ -2775,6 +2811,104 @@ function ensureTrafficModel(url, dims) {
     function () { rec.status = 'failed'; trafficModelLoads--; console.warn('[Traffic] model load failed', url); }
   );
   return rec;
+}
+
+// ── Player GLTF aircraft: part detection + animation ──────────────────────────
+// After prepLoadedModel the coordinate convention is: +X right-wing, +Y up,
+// −Z nose, +Z tail. Both helpers below operate in that oriented pivot frame.
+
+// Accumulate a mesh's bounding box expressed in pivotClone-local coordinates.
+function _meshBoxInPivot(mesh, pivotInv, out) {
+  mesh.updateWorldMatrix(true, false);
+  const m = _tmpMat4A.multiplyMatrices(pivotInv, mesh.matrixWorld);
+  const pos = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
+  out.makeEmpty();
+  if (!pos) return out;
+  const stride = Math.max(1, Math.floor(pos.count / 400));
+  for (let i = 0; i < pos.count; i += stride) {
+    _tmpVecA.fromBufferAttribute(pos, i).applyMatrix4(m);
+    out.expandByPoint(_tmpVecA);
+  }
+  return out;
+}
+
+// Move `mesh` under `rig` while preserving its current world transform.
+function _reparentPreserving(mesh, rig) {
+  mesh.updateWorldMatrix(true, false);
+  rig.updateWorldMatrix(true, false);
+  const local = _tmpMat4A.multiplyMatrices(_tmpMat4B.copy(rig.matrixWorld).invert(), mesh.matrixWorld);
+  rig.add(mesh);
+  local.decompose(mesh.position, mesh.quaternion, mesh.scale);
+}
+
+// Gear detection stays automatic (it works well): match by name, fall back to
+// position. An optional JSON `gearNodes` list overrides both.
+function scanGear(pivotClone, spanM, gearNodes) {
+  pivotClone.updateMatrixWorld(true);
+  const gear = [];
+  if (gearNodes && gearNodes.length) {
+    const want = {}; gearNodes.forEach(function(n){ want[n] = true; });
+    pivotClone.traverse(function(o){ if (o.isMesh && want[o.name]) gear.push(o); });
+    return gear;
+  }
+  const _b = new THREE.Box3(), _c = new THREE.Vector3();
+  pivotClone.traverse(function(obj) {
+    if (!obj.isMesh) return;
+    const n = (obj.name || '').toLowerCase();
+    if (/gear|wheel|tire|strut|leg/.test(n)) gear.push(obj);
+  });
+  if (gear.length === 0) {
+    pivotClone.traverse(function(obj) {
+      if (!obj.isMesh) return;
+      _b.setFromObject(obj); _b.getCenter(_c);
+      if (_c.y < -(spanM * 0.06) && Math.abs(_c.x) < spanM * 0.45) gear.push(obj);
+    });
+  }
+  return gear;
+}
+
+// Build hinge rigs for flaps, selected MANUALLY by name via JSON `flapCfg.nodes`.
+// Each listed flap mesh is reparented under a pivot group placed at its forward
+// edge (the real hinge line) so it rotates trailing-edge-down instead of swinging
+// about the model origin. Returns { rigs, maxRad, sign }.
+function setupFlapRigs(pivotClone, flapCfg) {
+  const out = { rigs: [], maxRad: 0, sign: 1 };
+  if (!flapCfg || !flapCfg.nodes || !flapCfg.nodes.length) return out;
+  out.maxRad = (flapCfg.maxDeg != null ? flapCfg.maxDeg : 40) * DEG;
+  out.sign   = (flapCfg.sign != null ? flapCfg.sign : 1);
+
+  pivotClone.updateMatrixWorld(true);
+  const pivotInv = _tmpMat4C.copy(pivotClone.matrixWorld).invert();
+  const want = {}; flapCfg.nodes.forEach(function(n){ want[n] = true; });
+  const meshes = [];
+  pivotClone.traverse(function(o){ if (o.isMesh && want[o.name]) meshes.push(o); });
+
+  const box = new THREE.Box3(), center = new THREE.Vector3();
+  for (let i = 0; i < meshes.length; i++) {
+    const mesh = meshes[i];
+    _meshBoxInPivot(mesh, pivotInv, box);
+    if (box.isEmpty()) continue;
+    box.getCenter(center);
+    const rig = new THREE.Group();
+    // Hinge at the flap's forward edge (min Z = toward nose), spanwise across X.
+    rig.position.set(center.x, center.y, box.min.z);
+    pivotClone.add(rig);
+    _reparentPreserving(mesh, rig);
+    out.rigs.push(rig);
+  }
+  return out;
+}
+
+// Rotate every flap rig around the spanwise (X) hinge by flapLevel × maxDeg.
+function applyFlapState(flapInfo, flapLevel) {
+  if (!flapInfo || !flapInfo.rigs) return;
+  const ang = flapInfo.sign * flapLevel * flapInfo.maxRad;
+  for (let i = 0; i < flapInfo.rigs.length; i++) flapInfo.rigs[i].rotation.x = ang;
+}
+
+// Show gear meshes when gearDown; hide when retracted.
+function applyGearState(gearMeshes, gearDown) {
+  for (let i = 0; i < gearMeshes.length; i++) gearMeshes[i].visible = gearDown;
 }
 
 // Adds/positions/removes real downloaded models in the scene for nearby traffic, and
