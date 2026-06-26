@@ -1,0 +1,27 @@
+appId: com.flightsim.desktop
+productName: Flight Simulator
+
+directories:
+  output: ${env.FLIGHTSIM_OUT}
+
+files:
+  - electron/main.cjs
+  - public/simulator.html
+  - public/**
+
+win:
+  target:
+    - target: nsis
+      arch: x64
+  artifactName: FlightSimulator-Setup.exe
+
+nsis:
+  oneClick: false
+  perMachine: false
+  # Reuse the previous install location so updates overwrite in place
+  allowToChangeInstallationDirectory: false
+  # Remove the previously installed version before installing the new one
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  menuCategory: false
