@@ -53,6 +53,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .sys-val{font-size:15px;font-weight:600}
 .sys-ok{color:#00FF41}.sys-warn{color:#ffaa00}.sys-off{color:rgba(0,255,65,0.3)}.sys-red{color:#ff3030}
 #fire-warn{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:44px;font-weight:700;color:#ff3000;text-shadow:0 0 40px rgba(255,50,0,0.9);font-family:'JetBrains Mono',monospace;letter-spacing:5px;pointer-events:none;display:none}
+#wing-warn{position:fixed;top:38%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:38px;font-weight:700;color:#ff6600;text-shadow:0 0 35px rgba(255,100,0,0.9);font-family:'JetBrains Mono',monospace;letter-spacing:4px;pointer-events:none;display:none}
 #gear-warn{position:fixed;top:68%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:30px;font-weight:700;color:#ff6a00;text-shadow:0 0 30px rgba(255,106,0,0.6);font-family:'JetBrains Mono',monospace;letter-spacing:4px;pointer-events:none;display:none}
 /* ===== Touch controls (mobile) ===== */
 #touch-controls{position:fixed;inset:0;z-index:25;pointer-events:none;display:none}
@@ -124,6 +125,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .nm-act{cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;letter-spacing:1px;padding:12px 20px;border-radius:6px;background:rgba(6,12,8,0.85);border:1px solid rgba(0,255,65,0.35);color:#00FF41}
 .nm-act:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
 .nm-act.nm-go{background:rgba(0,255,65,0.18);border-color:#00FF41;box-shadow:0 0 14px rgba(0,255,65,0.25)}
+.nm-act.nm-justfly{background:rgba(0,200,255,0.12);border-color:rgba(0,200,255,0.6);color:#7fd0ff}
 .nm-act.nm-resume{background:rgba(80,180,255,0.14);border-color:rgba(80,180,255,0.55);color:#7fd0ff}
 .nm-act.nm-resume:hover{background:rgba(80,180,255,0.28)}
 .nm-act.nm-focus{outline:2px solid #ffe066;outline-offset:2px}
@@ -143,6 +145,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sm-geo{grid-column:1 / -1;background:rgba(0,160,255,0.06);border-color:rgba(80,180,255,0.45);color:#7fd0ff}
 #sm-geo:hover{background:rgba(0,160,255,0.18);border-color:#7fd0ff;box-shadow:0 0 14px rgba(80,180,255,0.3)}
 #startmenu .sm-hint{font-size:9px;opacity:0.4;letter-spacing:2px;margin-top:8px}
+#sm-settings-btn{cursor:pointer;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);color:rgba(0,255,65,0.5);font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
+#sm-settings-btn:hover{background:rgba(0,255,65,0.12);color:#00FF41;border-color:rgba(0,255,65,0.5)}
+#settings-panel{position:fixed;inset:0;z-index:52;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:rgba(8,10,14,0.92);backdrop-filter:blur(4px);color:#00FF41;font-family:'JetBrains Mono',monospace}
+.stp-section{display:flex;flex-direction:column;align-items:center;gap:10px}
+.stp-label{font-size:10px;letter-spacing:3px;opacity:0.6}
+.stp-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.stp-btn{cursor:pointer;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:inherit;font-size:11px;letter-spacing:1px;padding:10px 16px;border-radius:5px;transition:all .15s}
+.stp-btn:hover{background:rgba(0,255,65,0.16);border-color:#00FF41}
+.stp-btn.stp-active{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 12px rgba(0,255,65,0.3)}
+.stp-close{cursor:pointer;background:transparent;border:1px solid rgba(0,255,65,0.25);color:rgba(0,255,65,0.5);font-family:inherit;font-size:11px;letter-spacing:2px;padding:8px 20px;border-radius:5px;margin-top:10px;transition:all .15s}
+.stp-close:hover{background:rgba(0,255,65,0.1);color:#00FF41}
 /* In-flight buttons (pause / open in Google Maps) */
 #flight-btns{position:fixed;top:80px;right:16px;z-index:30;display:none;flex-direction:column;gap:8px}
 .fb-btn{width:40px;height:40px;font-size:18px;cursor:pointer;color:#00FF41;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.3);border-radius:6px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s}
@@ -238,6 +251,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <div id="stall-warn" class="flashing">STALL</div>
 <div id="overspeed-warn" class="flashing">OVERSPEED</div>
 <div id="fire-warn" class="flashing">ENGINE FIRE</div>
+<div id="wing-warn" class="flashing">WING FAILURE</div>
 <div id="gear-warn" class="flashing">GEAR FAILURE</div>
 <div id="terrain-warn"><div class="tw-main">TERRAIN</div><div class="tw-sub">PULL UP</div></div>
 
@@ -285,6 +299,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div id="nm-actions">
     <button class="nm-act nm-resume" id="nm-resume">▶ RESUME</button>
     <button class="nm-act nm-go" id="nm-fly">✈ FLY HERE</button>
+    <button class="nm-act nm-justfly" id="nm-justfly">⟳ JUST FLY</button>
     <button class="nm-act" id="nm-cancel">✕ CANCEL</button>
   </div>
   <div id="nm-hint">DRAG / ARROWS = PAN &nbsp;·&nbsp; WHEEL / ± = ZOOM &nbsp;·&nbsp; CLICK = SET &nbsp;·&nbsp; 🎮 L-STICK PAN · RT/LT ZOOM · A FLY · B CANCEL</div>
@@ -417,7 +432,23 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   </div>
   <div id="sm-status"></div>
   <div id="wx-status" style="font-size:9px;letter-spacing:2px;color:rgba(0,255,65,0.45);min-height:14px;text-align:center"></div>
+  <button id="sm-settings-btn">⚙ SETTINGS</button>
   <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
+</div>
+
+<div id="settings-panel" style="display:none">
+  <div class="sm-title" style="font-size:18px">⚙ SETTINGS</div>
+  <div class="stp-section">
+    <div class="stp-label">TIME OF DAY</div>
+    <div class="stp-row">
+      <button class="stp-btn" id="stp-auto">AUTO</button>
+      <button class="stp-btn" id="stp-day">☀ DAY</button>
+      <button class="stp-btn" id="stp-dawn">🌅 DAWN</button>
+      <button class="stp-btn" id="stp-dusk">🌇 DUSK</button>
+      <button class="stp-btn" id="stp-night">🌙 NIGHT</button>
+    </div>
+  </div>
+  <button id="stp-close" class="stp-close">✕ CLOSE</button>
 </div>
 
 <div id="pausemenu">
@@ -527,6 +558,9 @@ let state = {
   // On-ground state (landing / ground roll / takeoff)
   onGround: false,
   groundTimer: 0,  // seconds spent continuously on the ground (for refueling)
+  // Wing structural integrity
+  wingBroken: false,   // true once overspeed sheared a wing
+  wingBreakSide: 0,    // +1 = right wing, -1 = left wing
   // Fuel (kg)
   fuel: 800,
   fuelMax: 800
@@ -549,6 +583,8 @@ function resetState() {
   state.vs = 0;
   state.stall = false;
   state.overspeed = false;
+  state.wingBroken = false;
+  state.wingBreakSide = 0;
   state.terrainHit = false;
   state.terrainTimer = 0;
   state.engineState = 'off'; // reset = back on the ground, engine off
@@ -862,6 +898,7 @@ window.addEventListener('orientationchange', function () { if (tiltEnabled) setT
 let env = {
   time: 'day',
   weather: 'clear',
+  timeOverride: false,   // true when user has manually set time of day
   wind: { speedKts: 0, fromDeg: 0, toDeg: 0, n: 0, e: 0 },
   windState: { active: false, baseSpeedKts: 0, baseFromDeg: 0, speedKts: 0, fromDeg: 0, targetSpeedKts: 0, targetFromDeg: 0, timer: 0 }
 };
@@ -923,9 +960,9 @@ function fetchRealWeather(lat, lon, isFirst) {
         timeOfDay = classifyTimeOfDay(d.daily.sunrise[0], d.daily.sunset[0]);
       }
 
-      const timeChanged = env.time    !== timeOfDay;
+      const timeChanged = !env.timeOverride && env.time !== timeOfDay;
       const wxChanged   = env.weather !== wxKind;
-      env.time    = timeOfDay;
+      if (!env.timeOverride) env.time = timeOfDay;
       env.weather = wxKind;
 
       // Update base wind for the stochastic model
@@ -2542,7 +2579,7 @@ function prepLoadedModel(root, dims) {
       else          { if (v.y < negMinY) negMinY = v.y; if (v.y > negMaxY) negMaxY = v.y; }
     }
   });
-  const noseAtPositive = !((posMaxY - posMinY) < (negMaxY - negMinY));
+  const noseAtPositive = (posMaxY - posMinY) < (negMaxY - negMinY);
 
   // Fixed rotation mapping model basis (nose, up, nose×up) → target (-Z, +Y, +X).
   const mUp = new THREE.Vector3(0, 1, 0);
@@ -3852,6 +3889,10 @@ function update(dt) {
   // Full-circle attitude: hold elevator -> loop, hold aileron -> roll.
   state.pitch = normDeg(state.pitch + pitchIn * pitchRate * dt);
   state.bank = normDeg(state.bank + rollIn * bankRate * dt);
+  // Broken wing: uncontrollable roll towards the missing side (overrides pilot/AP input)
+  if (state.wingBroken && !state.onGround) {
+    state.bank = normDeg(state.bank + state.wingBreakSide * 160 * dt);
+  }
   state.throttle = Math.max(0, Math.min(100, state.throttle + thrIn * throttleRate * dt));
 
   // ---- Longitudinal handling ----
@@ -3919,10 +3960,14 @@ function update(dt) {
     // RPM tracks throttle with spool lag; minimum idle is 18% (engine is spinning)
     const targetRpm = Math.max(18, state.throttle);
     state.rpm += (targetRpm - state.rpm) * Math.min(1, dt * 1.8);
-    // Engine fire if severely overspeeding for extended time
+    // Wing structural failure if severely overspeeding for extended time
     if (state.overspeed) {
       state.engineTimer = (state.engineTimer || 0) + dt;
-      if (state.engineTimer > 8) { state.engineState = 'fire'; state.engineTimer = 0; }
+      if (state.engineTimer > 8 && !state.wingBroken) {
+        state.wingBroken = true;
+        state.wingBreakSide = Math.random() > 0.5 ? 1 : -1;
+        state.engineTimer = 0;
+      }
     } else {
       state.engineTimer = Math.max(0, (state.engineTimer || 0) - dt * 2);
     }
@@ -3940,7 +3985,7 @@ function update(dt) {
   // that it just snaps off — gone for the rest of the flight, no relanding.
   const GEAR_SAFE_KTS = 250;  // no risk at or below this speed
   const GEAR_FAIL_KTS = 420;  // up here, failure is near-certain within ~1s
-  if (state.gearDown && !state.gearBroken && state.speed > GEAR_SAFE_KTS) {
+  if (state.gearDown && !state.gearBroken && !state.onGround && state.speed > GEAR_SAFE_KTS) {
     const overFrac = Math.min(1, (state.speed - GEAR_SAFE_KTS) / (GEAR_FAIL_KTS - GEAR_SAFE_KTS));
     const failChancePerSec = overFrac * overFrac * 4; // ramps up quickly with speed
     if (Math.random() < failChancePerSec * dt) {
@@ -5182,11 +5227,13 @@ function render() {
     fuelPctEl.textContent = Math.round(fuelPct) + '%';
   }
 
-  // Stall + overspeed + fire warnings (suppressed on the ground)
+  // Stall + overspeed + fire + wing failure warnings (suppressed on the ground)
   stallWarn.style.display = state.stall && !state.terrainHit && !state.onGround ? 'block' : 'none';
   if (overspeedWarn) overspeedWarn.style.display = state.overspeed && !state.terrainHit && !state.onGround ? 'block' : 'none';
   const fireEl = document.getElementById('fire-warn');
   if (fireEl) fireEl.style.display = state.engineState === 'fire' ? 'block' : 'none';
+  const wingWarnEl = document.getElementById('wing-warn');
+  if (wingWarnEl) wingWarnEl.style.display = state.wingBroken && !state.terrainHit ? 'block' : 'none';
   const gearWarnEl = document.getElementById('gear-warn');
   if (gearWarnEl) gearWarnEl.style.display = state.gearBroken && !state.onGround ? 'block' : 'none';
 
@@ -5495,6 +5542,47 @@ function beginFlight(loc) {
   fetchRealWeather(loc.lat, loc.lon, true);
   try { window.focus(); } catch (e) {} // capture keyboard for flight controls
 }
+
+// ===================== Settings panel =====================
+(function () {
+  const settingsPanel = document.getElementById('settings-panel');
+  const settingsBtn   = document.getElementById('sm-settings-btn');
+  const closeBtn      = document.getElementById('stp-close');
+  if (!settingsPanel || !settingsBtn) return;
+
+  function updateStpButtons() {
+    const ids = { auto: !env.timeOverride, day: env.timeOverride && env.time === 'day',
+                  dawn: env.timeOverride && env.time === 'dawn',
+                  dusk: env.timeOverride && env.time === 'dusk',
+                  night: env.timeOverride && env.time === 'night' };
+    for (const k in ids) {
+      const el = document.getElementById('stp-' + k);
+      if (el) el.classList.toggle('stp-active', ids[k]);
+    }
+  }
+
+  function setTimeOverride(t) {
+    env.timeOverride = !!t;
+    if (t) env.time = t;
+    applyEnvironment(false);
+    updateStpButtons();
+  }
+
+  settingsBtn.addEventListener('click', function () {
+    updateStpButtons();
+    if (startMenu) startMenu.style.display = 'none';
+    settingsPanel.style.display = 'flex';
+  });
+  if (closeBtn) closeBtn.addEventListener('click', function () {
+    settingsPanel.style.display = 'none';
+    if (startMenu && !chosen) startMenu.style.display = 'flex';
+  });
+  document.getElementById('stp-auto')  && document.getElementById('stp-auto').addEventListener('click',  function () { setTimeOverride(null); });
+  document.getElementById('stp-day')   && document.getElementById('stp-day').addEventListener('click',   function () { setTimeOverride('day'); });
+  document.getElementById('stp-dawn')  && document.getElementById('stp-dawn').addEventListener('click',  function () { setTimeOverride('dawn'); });
+  document.getElementById('stp-dusk')  && document.getElementById('stp-dusk').addEventListener('click',  function () { setTimeOverride('dusk'); });
+  document.getElementById('stp-night') && document.getElementById('stp-night').addEventListener('click', function () { setTimeOverride('night'); });
+})();
 
 if (startMenu) {
   startMenu.querySelectorAll('.sm-btn[data-lat]').forEach(function (btn) {
@@ -5823,6 +5911,17 @@ function nmResume() {
   closeNavPicker();
   navEngage({ lat: d.lat, lon: d.lon, name: d.name });
 }
+function nmJustFly() {
+  closeNavPicker();
+  if (!ap.on) toggleAutopilot();
+  // If already in nav mode, switch to simple cruise
+  if (ap.mode === 'nav') {
+    navOnDisengage();
+    ap.mode = state.onGround ? 'takeoff' : 'cruise';
+    updateApPanel();
+  }
+  showToast('✈ AUTOPILOT — JUST FLYING', 3000);
+}
 
 // ----- Picker search box: city name / coordinates / Google Maps link -----
 function nmParseLoc(t) {
@@ -5885,6 +5984,7 @@ function initNavPicker() {
   nmCtx = nmCanvas.getContext('2d');
   const wire = function (id, fn) { const el = document.getElementById(id); if (el) el.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); fn(); }); };
   wire('nm-fly', nmFly);
+  wire('nm-justfly', nmJustFly);
   wire('nm-cancel', closeNavPicker);
   wire('nm-resume', nmResume);
   wire('nm-zin', function () { nmZoom(1); });
