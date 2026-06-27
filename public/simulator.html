@@ -474,6 +474,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
       <button class="stp-btn" id="stp-night">🌙 NIGHT</button>
     </div>
   </div>
+  <div class="stp-section">
+    <div class="stp-label">SEASON</div>
+    <div class="stp-row">
+      <button class="stp-btn" id="stp-season-auto">AUTO</button>
+      <button class="stp-btn" id="stp-season-spring">🌸 SPRING</button>
+      <button class="stp-btn" id="stp-season-summer">☀ SUMMER</button>
+      <button class="stp-btn" id="stp-season-autumn">🍂 AUTUMN</button>
+      <button class="stp-btn" id="stp-season-winter">❄ WINTER</button>
+    </div>
+  </div>
   <button id="stp-close" class="stp-close">✕ CLOSE</button>
 </div>
 
@@ -929,6 +939,7 @@ let env = {
   time: 'day',
   weather: 'clear',
   timeOverride: false,   // true when user has manually set time of day
+  season: 'auto',        // 'auto'|'spring'|'summer'|'autumn'|'winter'
   wind: { speedKts: 0, fromDeg: 0, toDeg: 0, n: 0, e: 0 },
   windState: { active: false, baseSpeedKts: 0, baseFromDeg: 0, speedKts: 0, fromDeg: 0, targetSpeedKts: 0, targetFromDeg: 0, timer: 0 }
 };
@@ -1910,7 +1921,7 @@ function disposeTile(m) {
 // momentary network glitch no longer leaves the area stuck as a blank placeholder.
 const TILE_MAX_TRIES = 4;
 let _maxAniso = 0;
-function loadTileTexture(mat, z, y, wx, tries) {
+function loadTileTexture(mat, z, y, wx, tries, maxElevM) {
   _imgLoader.load(
     'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + wx,
     function (tex) {
@@ -1920,12 +1931,14 @@ function loadTileTexture(mat, z, y, wx, tries) {
       // angles you fly at — without it distant terrain smears into a blur.
       if (!_maxAniso && THREEJS && THREEJS.renderer) _maxAniso = THREEJS.renderer.capabilities.getMaxAnisotropy() || 1;
       tex.anisotropy = Math.min(8, _maxAniso || 1);
-      mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true; groundTileLoadedCount++;
+      mat.map = tex;
+      mat.color.set(terrainSeasonTint(maxElevM || 0));
+      mat.needsUpdate = true; groundTileLoadedCount++;
     },
     undefined,
     function () {
       if (mat.userData.dead || tries >= TILE_MAX_TRIES) return;
-      setTimeout(function () { if (!mat.userData.dead) loadTileTexture(mat, z, y, wx, tries + 1); }, 1200 * (tries + 1));
+      setTimeout(function () { if (!mat.userData.dead) loadTileTexture(mat, z, y, wx, tries + 1, maxElevM); }, 1200 * (tries + 1));
     }
   );
 }
@@ -1939,6 +1952,7 @@ function buildGroundTile(z, x, y, seg, keepTex) {
   const latN = tileYfToLat(y, z), latS = tileYfToLat(y + 1, z);
   const tmp = new THREE.Vector3();
   let needElev = false;
+  let maxElevM = 0;
   for (let i = 0; i < pos.count; i++) {
     const u = pos.getX(i) + 0.5;     // 0..1 west->east
     const v = pos.getY(i) + 0.5;     // 0..1 south->north
@@ -1946,19 +1960,22 @@ function buildGroundTile(z, x, y, seg, keepTex) {
     const lat = latS + (latN - latS) * v;
     let h = sampleElev(lat, lon);
     if (h == null) { h = 0; needElev = true; }
+    if (h > maxElevM) maxElevM = h;
     enuVec(lat, lon, h, tmp);
     pos.setXYZ(i, tmp.x, tmp.y, tmp.z);
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x6b7355, roughness: 1.0, metalness: 0.0 });
+  // Pre-apply seasonal placeholder colour before texture loads.
+  const placeholderCol = needElev ? 0x6b7355 : terrainSeasonTint(maxElevM);
+  const mat = new THREE.MeshStandardMaterial({ color: placeholderCol, roughness: 1.0, metalness: 0.0 });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.userData = { z: z, x: x, y: y, seg: seg, needElev: needElev };
+  mesh.userData = { z: z, x: x, y: y, seg: seg, needElev: needElev, maxElevM: maxElevM };
   if (keepTex) {
     // Reuse an already-loaded texture (render reload) — no network fetch.
-    mat.map = keepTex; mat.color.set(0xffffff); mat.needsUpdate = true;
+    mat.map = keepTex; mat.color.set(terrainSeasonTint(maxElevM)); mat.needsUpdate = true;
   } else {
-    loadTileTexture(mat, z, y, wx, 0);
+    loadTileTexture(mat, z, y, wx, 0, maxElevM);
   }
   return mesh;
 }
@@ -2434,9 +2451,27 @@ function updateCamera() {
     setCamOrient(cam, azimDeg, -9 + lookPitchOff * 0.5, 0);
   }
 
-  // Keep the sun anchored relative to the aircraft so shading stays consistent.
-  THREEJS.sun.position.set(acPos.x - 400, acPos.y + 800, acPos.z + 550);
-  THREEJS.sun.target.position.copy(acPos);
+  // Position sun using real solar azimuth/elevation for current lat/lon/UTC time.
+  {
+    const solar = solarPosition(state.lat || 0, state.lon || 0, new Date());
+    const dist = 2000;
+    const elevR = solar.elevDeg * DEG;
+    const azimR = solar.azimDeg * DEG;
+    // enuVec convention: East=+X, Up=+Y, North=-Z
+    const sX = Math.sin(azimR) * Math.cos(elevR) * dist;
+    const sY = Math.sin(elevR) * dist;
+    const sZ = -Math.cos(azimR) * Math.cos(elevR) * dist;
+    THREEJS.sun.position.set(acPos.x + sX, acPos.y + Math.max(sY, 100), acPos.z + sZ);
+    THREEJS.sun.target.position.copy(acPos);
+    // Sun colour: deep orange at horizon, warm white overhead
+    const elev = solar.elevDeg;
+    const sunCol = elev < 0 ? 0x001030
+      : elev < 5  ? 0xff4400
+      : elev < 15 ? 0xff8833
+      : elev < 30 ? 0xffcc77
+      : 0xfff3e0;
+    THREEJS.sun.color.set(sunCol);
+  }
   cam.updateMatrixWorld();
 
   updateGround();
@@ -2449,6 +2484,97 @@ const DEG = Math.PI / 180;
 // Wrap an angle to (-180, 180] so attitude can rotate full circle (loops/rolls).
 function normDeg(a) { a = ((a + 180) % 360 + 360) % 360 - 180; return a; }
 function wrap360(a) { a = ((a % 360) + 360) % 360; return a; }
+
+// ===================== Solar position (no API key, pure math) =====================
+// Returns { azimDeg (0=N, 90=E, 180=S, 270=W), elevDeg (above horizon) }
+function solarPosition(lat, lon, date) {
+  const latR = lat * DEG;
+  const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const dayOfYear = Math.round((date - start) / 86400000) + 1;
+  // Solar declination
+  const declR = -23.45 * DEG * Math.cos(2 * Math.PI / 365 * (dayOfYear + 10));
+  // Equation of time (minutes, simplified)
+  const B = (360 / 365 * (dayOfYear - 81)) * DEG;
+  const eotMin = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
+  // Solar time (hours)
+  const utcH = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  const solarH = utcH + lon / 15 + eotMin / 60;
+  // Hour angle (0 = solar noon, ±15°/hr)
+  const hourR = (solarH - 12) * 15 * DEG;
+  // Elevation
+  const sinElev = Math.sin(latR) * Math.sin(declR) + Math.cos(latR) * Math.cos(declR) * Math.cos(hourR);
+  const elevR = Math.asin(Math.max(-1, Math.min(1, sinElev)));
+  // Azimuth (measured from south, then converted to from-north)
+  const cosAz = Math.cos(latR) === 0 ? 0
+    : (Math.sin(declR) - sinElev * Math.sin(latR)) / (Math.cos(elevR) * Math.cos(latR));
+  let azDeg = Math.acos(Math.max(-1, Math.min(1, cosAz))) / DEG;
+  if (Math.sin(hourR) > 0) azDeg = 360 - azDeg; // PM: sun west of south
+  return { azimDeg: azDeg, elevDeg: elevR / DEG };
+}
+
+// Returns the effective season string based on env.season + current month + hemisphere.
+function effectiveSeason() {
+  if (env.season !== 'auto') return env.season;
+  const m = new Date().getMonth(); // 0-11
+  const lat = (state && state.lat) || 0;
+  const isNorth = lat >= 0;
+  // Northern: Dec-Feb=winter, Mar-May=spring, Jun-Aug=summer, Sep-Nov=autumn
+  // Southern: flip by 6 months
+  const idx = isNorth ? m : (m + 6) % 12;
+  if (idx <= 1 || idx === 11) return 'winter';
+  if (idx <= 4) return 'spring';
+  if (idx <= 7) return 'summer';
+  return 'autumn';
+}
+
+// Snow-line elevation (metres) varies by season.
+function snowLineM() {
+  const s = effectiveSeason();
+  return s === 'winter' ? 1600 : s === 'spring' ? 2200 : s === 'autumn' ? 2000 : 3400;
+}
+
+// Returns a hex tint colour for terrain tiles based on max elevation and season.
+// White texture multiplier → no change; tinted → applies colour cast.
+function terrainSeasonTint(maxElevM) {
+  const s = effectiveSeason();
+  const snowM = snowLineM();
+  // Above snow line: blue-white cast to simulate snow cap
+  if (maxElevM > snowM) {
+    const t = Math.min(1, (maxElevM - snowM) / 800); // 0..1 over 800m above line
+    if (t > 0.6) return 0xf4f8ff;   // heavy snow: nearly white
+    if (t > 0.2) return 0xf0f4fc;   // partial snow
+  }
+  // Season base tint (subtle, doesn't fight with satellite imagery)
+  if (s === 'winter') return 0xddeeff;   // cool blue
+  if (s === 'autumn') return 0xffe8cc;   // warm amber
+  if (s === 'spring') return 0xeeffee;   // soft green
+  return 0xffffff;                        // summer: no tint
+}
+
+// ===================== Destination weather forecast (TAF) via Open-Meteo =====================
+let destForecast = null; // { wxKind, windKts, windDir, closed, fetchedAt }
+
+function fetchDestForecast(lat, lon, etaSec) {
+  const hour = Math.max(0, Math.min(23, Math.round(etaSec / 3600)));
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat.toFixed(4) +
+    '&longitude=' + lon.toFixed(4) +
+    '&hourly=weathercode,windspeed_10m,winddirection_10m' +
+    '&timezone=UTC&forecast_days=2';
+  fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || !d.hourly) return;
+    const h = d.hourly;
+    // Pick the index matching our ETA (hour offset from now, capped at 47)
+    const nowUTCHour = new Date().getUTCHours();
+    const idx = Math.min(47, nowUTCHour + hour);
+    const wxKind = wmoToWeather(h.weathercode && h.weathercode[idx] || 0);
+    const windKts = (h.windspeed_10m && h.windspeed_10m[idx] || 0) * 0.539957;
+    const windDir = h.winddirection_10m && h.winddirection_10m[idx] || 0;
+    const code = h.weathercode && h.weathercode[idx] || 0;
+    const closed = (code === 45 || code === 48 || code === 75 || code === 77 || code === 95 || code === 96 || code === 99);
+    destForecast = { wxKind, windKts, windDir, closed, fetchedAt: Date.now() };
+    navUpdateHud();
+  }).catch(function () { destForecast = null; });
+}
 
 function groundVectorFromHeading(headingDeg, airspeedMps) {
   const wind = getWindVector();
@@ -3899,6 +4025,10 @@ function navEngage(dest) {
   navRecomputePlan();
   updateApPanel();
   navUpdateHud();
+  // Fetch weather forecast for destination (TAF-style via Open-Meteo)
+  destForecast = null;
+  const etaGuess = distToDestM() / ((cruiseKtsFor() || 200) * KTS_TO_MPS);
+  fetchDestForecast(dest.lat, dest.lon, etaGuess);
 }
 
 // Disengaged by the pilot (manual override / single-press off): remember the
@@ -4213,6 +4343,15 @@ function navUpdateHud() {
     if (arrPct != null) html += ' &nbsp;·&nbsp; FUEL@ARR <span' + arrCls + '>' + arrPct + '%</span>';
     if (modeTag) html += ' &nbsp;·&nbsp; <span class="nh-mode">' + modeTag + '</span>';
     if (ap.nav.phase === 'refuel') html += ' &nbsp;·&nbsp; <span class="nh-mode">FILLING TANK…</span>';
+    // Destination forecast (TAF)
+    if (destForecast) {
+      const wxIcons = { clear:'☀', clouds:'☁', rain:'🌧', snow:'❄', fog:'🌫' };
+      const fcWind = destForecast.windKts < 1 ? 'CALM' : Math.round(destForecast.windKts) + 'KT ' + String(Math.round(destForecast.windDir)).padStart(3,'0') + '°';
+      const fcTag  = destForecast.closed
+        ? '<span style="color:#ff4444">⚠ DEST CLOSED</span>'
+        : '<span style="color:#aad4ff">DEST FCST: ' + (wxIcons[destForecast.wxKind] || '') + ' ' + destForecast.wxKind.toUpperCase() + ' ' + fcWind + '</span>';
+      html += ' &nbsp;·&nbsp; ' + fcTag;
+    }
     hud.innerHTML = html;
     hud.style.display = 'block';
   }
@@ -6297,6 +6436,26 @@ function beginFlight(loc) {
       const el = document.getElementById('stp-' + k);
       if (el) el.classList.toggle('stp-active', ids[k]);
     }
+    const seasons = ['auto', 'spring', 'summer', 'autumn', 'winter'];
+    seasons.forEach(function (s) {
+      const el = document.getElementById('stp-season-' + s);
+      if (el) el.classList.toggle('stp-active', env.season === s);
+    });
+  }
+
+  function setSeason(s) {
+    env.season = s;
+    // Re-tint all currently loaded tiles.
+    if (THREEJS && THREEJS.groundTiles) {
+      for (const key in THREEJS.groundTiles) {
+        const m = THREEJS.groundTiles[key];
+        if (m && m.isObject3D && m.material) {
+          m.material.color.set(terrainSeasonTint(m.userData.maxElevM || 0));
+          m.material.needsUpdate = true;
+        }
+      }
+    }
+    updateStpButtons();
   }
 
   function setTimeOverride(t) {
@@ -6320,6 +6479,10 @@ function beginFlight(loc) {
   document.getElementById('stp-dawn')  && document.getElementById('stp-dawn').addEventListener('click',  function () { setTimeOverride('dawn'); });
   document.getElementById('stp-dusk')  && document.getElementById('stp-dusk').addEventListener('click',  function () { setTimeOverride('dusk'); });
   document.getElementById('stp-night') && document.getElementById('stp-night').addEventListener('click', function () { setTimeOverride('night'); });
+  ['auto','spring','summer','autumn','winter'].forEach(function (s) {
+    const el = document.getElementById('stp-season-' + s);
+    if (el) el.addEventListener('click', function () { setSeason(s); });
+  });
 })();
 
 // ---- Coordinate parser — shared by start menu and nav-map picker ----
