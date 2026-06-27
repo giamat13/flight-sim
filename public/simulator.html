@@ -4509,9 +4509,22 @@ function update(dt) {
 
   if (keys['KeyR'] || (gp && gp.reset)) { resetState(); return; }
 
-  // Full-circle attitude: hold elevator -> loop, hold aileron -> roll.
-  state.pitch = normDeg(state.pitch + pitchIn * pitchRate * dt);
-  state.bank = normDeg(state.bank + rollIn * bankRate * dt);
+  // Body-frame attitude kinematics (Euler angle rates from body angular rates).
+  // Controls act on aircraft axes: elevator = body pitch (q), aileron = body roll (p).
+  // This ensures pulling back always raises the nose in the aircraft's own reference
+  // frame — correct through banks, loops, and inverted flight.
+  {
+    const phi_k  = state.bank  * DEG;   // bank  in radians
+    const theta_k = state.pitch * DEG;  // pitch in radians
+    const q_k = pitchIn * pitchRate;    // body pitch rate (deg/s)
+    const p_k = rollIn  * bankRate;     // body roll rate  (deg/s)
+    const cosTh = Math.cos(theta_k);
+    const tanTh = Math.abs(cosTh) > 0.017 ? Math.tan(theta_k) : Math.sign(Math.sin(theta_k)) * 57;
+    state.pitch   = normDeg(state.pitch   + q_k * Math.cos(phi_k) * dt);
+    state.bank    = normDeg(state.bank    + (p_k + q_k * Math.sin(phi_k) * tanTh) * dt);
+    // Kinematic yaw: elevator while banked rotates the nose in the heading axis.
+    if (Math.abs(cosTh) > 0.017) state.heading = normDeg(state.heading + q_k * Math.sin(phi_k) / cosTh * dt);
+  }
   // Broken wing: uncontrollable roll towards the missing side (overrides pilot/AP input)
   if (state.wingBroken && !state.onGround) {
     state.bank = normDeg(state.bank + state.wingBreakSide * 160 * dt);
