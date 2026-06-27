@@ -5805,6 +5805,46 @@ function updateMinimap() {
     mmCtx.restore();
   }
 
+  // Airport markers — shown on minimap, clamped to edge when outside range
+  mmFetchAirports();
+  if (mmAirports.length) {
+    const d = 0.035; // minimap visible range in degrees
+    const R = s / 2 - 8; // clamp radius (pixels)
+    mmCtx.save();
+    mmCtx.translate(s / 2, s / 2);
+    mmAirports.forEach(function(ap){
+      const dLat = ap.lat - state.lat;
+      const dLon = (ap.lon - state.lon) * Math.cos(state.lat * Math.PI / 180);
+      const distDeg = Math.hypot(dLat, dLon);
+      if (distDeg > 0.6) return; // skip truly distant
+      let px = (dLon / d) * (s / 2);
+      let py = -(dLat / d) * (s / 2);
+      const onMap = Math.hypot(px, py) <= R;
+      // Clamp to minimap edge
+      if (!onMap) {
+        const mag = Math.hypot(px, py);
+        px = (px / mag) * R; py = (py / mag) * R;
+      }
+      mmCtx.strokeStyle = onMap ? 'rgba(0,255,65,0.9)' : 'rgba(0,255,65,0.5)';
+      mmCtx.lineWidth = onMap ? 1.5 : 1;
+      const r = onMap ? 5 : 3;
+      mmCtx.beginPath(); mmCtx.arc(px, py, r, 0, Math.PI * 2); mmCtx.stroke();
+      if (onMap) {
+        mmCtx.beginPath(); mmCtx.moveTo(px - 4, py); mmCtx.lineTo(px + 4, py); mmCtx.stroke();
+        mmCtx.beginPath(); mmCtx.moveTo(px, py - 4); mmCtx.lineTo(px, py + 4); mmCtx.stroke();
+      }
+      const label = ap.icao || ap.name.slice(0, 4).toUpperCase();
+      if (label) {
+        mmCtx.font = (onMap ? '7px' : '6px') + ' "JetBrains Mono", monospace';
+        mmCtx.strokeStyle = 'rgba(0,0,0,0.8)'; mmCtx.lineWidth = 2.5;
+        mmCtx.strokeText(label, px + r + 2, py + 3);
+        mmCtx.fillStyle = onMap ? '#00FF41' : 'rgba(0,255,65,0.5)';
+        mmCtx.fillText(label, px + r + 2, py + 3);
+      }
+    });
+    mmCtx.restore();
+  }
+
   // Heading-up aircraft marker at the centre
   mmCtx.save();
   mmCtx.translate(s / 2, s / 2);
@@ -6203,6 +6243,106 @@ const nmTiles = {};
 let nmDestName = null;
 let nmElevFt = null, nmElevWater = false, nmElevKey = '', nmElevTimer = null;
 
+// Airport markers fetched from Overpass API
+let nmAirports = [];          // [{icao, name, lat, lon}]
+let nmAirportFetchKey = '';   // bbox string of last fetch
+let nmAirportFetching = false;
+
+function nmGetViewBbox() {
+  const z = nmView.zoom, cw = (nmCanvas && nmCanvas.width) || window.innerWidth, ch = (nmCanvas && nmCanvas.height) || window.innerHeight;
+  const pad = 1.3; // fetch slightly outside visible area
+  const cgx = lon2tileX(nmView.lon, z) * 256, cgy = lat2tileY(nmView.lat, z) * 256;
+  const minLon = tileX2lon((cgx - cw / 2 * pad) / 256, z);
+  const maxLon = tileX2lon((cgx + cw / 2 * pad) / 256, z);
+  const minLat = nmClampLat(tileY2lat((cgy + ch / 2 * pad) / 256, z));
+  const maxLat = nmClampLat(tileY2lat((cgy - ch / 2 * pad) / 256, z));
+  return { minLat, maxLat, minLon, maxLon };
+}
+
+function fetchAirportsForBbox(minLat, minLon, maxLat, maxLon, callback) {
+  const bbox = minLat + ',' + minLon + ',' + maxLat + ',' + maxLon;
+  const query = '[out:json][timeout:20];(node[aeroway=aerodrome](' + bbox + ');way[aeroway=aerodrome](' + bbox + ');relation[aeroway=aerodrome](' + bbox + '););out center tags;';
+  const ctrl = new AbortController();
+  const tid = setTimeout(function(){ ctrl.abort(); callback([]); }, 22000);
+  fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    body: 'data=' + encodeURIComponent(query),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    signal: ctrl.signal
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      clearTimeout(tid);
+      const airports = (d.elements || []).map(function(el){
+        const lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat);
+        const lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
+        if (!lat || !lon) return null;
+        return { lat: lat, lon: lon, icao: ((el.tags && (el.tags.icao || el.tags.ref)) || '').toUpperCase(), name: (el.tags && (el.tags.name || el.tags['name:en'] || '')) || '' };
+      }).filter(Boolean);
+      callback(airports);
+    })
+    .catch(function(){ clearTimeout(tid); callback([]); });
+}
+
+function nmFetchAirports() {
+  if (nmView.zoom < 6) { nmAirports = []; return; }
+  const bb = nmGetViewBbox();
+  const key = [bb.minLat, bb.minLon, bb.maxLat, bb.maxLon].map(function(v){ return v.toFixed(3); }).join(',');
+  if (key === nmAirportFetchKey || nmAirportFetching) return;
+  nmAirportFetchKey = key;
+  nmAirportFetching = true;
+  fetchAirportsForBbox(bb.minLat, bb.minLon, bb.maxLat, bb.maxLon, function(airports){
+    nmAirports = airports;
+    nmAirportFetching = false;
+  });
+}
+
+// Minimap airport markers — fetch radius ~55km, keyed per ~11km grid
+let mmAirports = [], mmAirportKey = '', mmAirportFetching = false;
+function mmFetchAirports() {
+  const d = 0.5; // ~55 km radius
+  const key = state.lat.toFixed(1) + ',' + state.lon.toFixed(1);
+  if (key === mmAirportKey) return;
+  if (mmAirportFetching) return;
+  mmAirportKey = key;
+  mmAirportFetching = true;
+  const dLon = d / Math.max(0.2, Math.cos(state.lat * Math.PI / 180));
+  fetchAirportsForBbox(state.lat - d, state.lon - dLon, state.lat + d, state.lon + dLon, function(airports){
+    mmAirports = airports;
+    mmAirportFetching = false;
+  });
+}
+
+function nmDrawAirports(ctx, originX, originY) {
+  if (!nmAirports.length) return;
+  const z = nmView.zoom;
+  nmAirports.forEach(function(ap){
+    const sx = lon2tileX(ap.lon, z) * 256 - originX;
+    const sy = lat2tileY(ap.lat, z) * 256 - originY;
+    const cw = nmCanvas ? nmCanvas.width : window.innerWidth, ch = nmCanvas ? nmCanvas.height : window.innerHeight;
+    if (sx < -30 || sx > cw + 30 || sy < -30 || sy > ch + 30) return;
+    // Outer ring
+    ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+    ctx.strokeStyle = '#00FF41'; ctx.lineWidth = 1.5; ctx.stroke();
+    // Inner dot
+    ctx.beginPath(); ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#00FF41'; ctx.fill();
+    // Runway cross
+    ctx.strokeStyle = '#00FF41'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(sx - 6, sy); ctx.lineTo(sx + 6, sy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx, sy + 6); ctx.stroke();
+    // Label
+    const label = ap.icao || ap.name.slice(0, 6).toUpperCase();
+    if (label) {
+      ctx.font = 'bold 10px "JetBrains Mono", monospace';
+      ctx.fillStyle = '#00FF41';
+      ctx.strokeStyle = 'rgba(6,8,12,0.8)'; ctx.lineWidth = 3;
+      ctx.strokeText(label, sx + 11, sy + 4);
+      ctx.fillText(label, sx + 11, sy + 4);
+    }
+  });
+}
+
 function lon2tileX(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
 function lat2tileY(lat, z) { const r = lat * DEG; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z); }
 function tileX2lon(x, z) { return x / Math.pow(2, z) * 360 - 180; }
@@ -6258,6 +6398,9 @@ function drawNavMap() {
       else { ctx.fillStyle = 'rgba(0,40,10,0.3)'; ctx.fillRect(dx, dy, 256, 256); }
     }
   }
+  // Airport markers from Overpass API
+  nmDrawAirports(ctx, originX, originY);
+
   // Aircraft marker + a dashed line to the chosen point (canvas centre).
   const apx = lon2tileX(state.lon, z) * 256 - originX;
   const apy = lat2tileY(state.lat, z) * 256 - originY;
@@ -6270,6 +6413,7 @@ function drawNavMap() {
     ctx.fill(); ctx.stroke(); ctx.restore();
   }
   navPickerUpdateInfo();
+  nmFetchAirports();
 }
 
 // Precise (async) elevation/water for the selected point, debounced while panning.
@@ -6309,7 +6453,7 @@ function openNavPicker() {
   ov.style.display = 'block';
   document.body.style.cursor = 'crosshair';
   nmView.lat = state.lat; nmView.lon = state.lon; nmView.zoom = state.onGround ? 11 : 9;
-  nmDestName = null; nmElevFt = null; nmElevKey = '';
+  nmDestName = null; nmElevFt = null; nmElevKey = ''; nmAirportFetchKey = ''; nmAirports = []; nmAirportFetching = false;
   const rb = document.getElementById('nm-resume');
   if (rb) {
     if (navLastDest) { rb.style.display = 'block'; rb.textContent = '▶ RESUME: ' + (navLastDest.name || (navLastDest.lat.toFixed(2) + ',' + navLastDest.lon.toFixed(2))); }
@@ -6440,7 +6584,29 @@ function initNavPicker() {
     if (e.pointerId in nmPointers) {
       const wasDrag = e.pointerId === nmDragId, moved = nmDragMoved;
       delete nmPointers[e.pointerId];
-      if (wasDrag) { nmDragId = null; if (moved < 6) nmRecenterToScreen(e.offsetX, e.offsetY); }
+      if (wasDrag) {
+        nmDragId = null;
+        if (moved < 6) {
+          // Check if click is near an airport marker
+          const z = nmView.zoom, cw = nmCanvas.width, ch = nmCanvas.height;
+          const cgx = lon2tileX(nmView.lon, z) * 256, cgy = lat2tileY(nmView.lat, z) * 256;
+          const originX = cgx - cw / 2, originY = cgy - ch / 2;
+          let nearest = null, nearDist = 18;
+          nmAirports.forEach(function(ap){
+            const sx = lon2tileX(ap.lon, z) * 256 - originX;
+            const sy = lat2tileY(ap.lat, z) * 256 - originY;
+            const d = Math.hypot(sx - e.offsetX, sy - e.offsetY);
+            if (d < nearDist) { nearDist = d; nearest = ap; }
+          });
+          if (nearest) {
+            nmView.lat = nearest.lat; nmView.lon = nearest.lon;
+            nmDestName = (nearest.icao || nearest.name || 'AIRPORT').toUpperCase();
+            nmElevKey = '';
+          } else {
+            nmRecenterToScreen(e.offsetX, e.offsetY);
+          }
+        }
+      }
     }
     if (Object.keys(nmPointers).length < 2) nmPinchStart = 0;
   };
