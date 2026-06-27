@@ -198,21 +198,61 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .ac-btn.ac-active{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 14px rgba(0,255,65,0.35)}
 .ac-btn .ac-sub{display:block;font-size:8px;opacity:0.5;margin-top:4px;letter-spacing:1px}
 /* ===== Aircraft selection full-screen ===== */
-#aircraft-screen{position:fixed;inset:0;z-index:51;display:none;flex-direction:column;align-items:center;justify-content:center;gap:24px;background:radial-gradient(ellipse at 40% 55%,#051018 0%,#020407 100%);color:#00FF41;font-family:'JetBrains Mono',monospace;overflow:hidden;cursor:auto}
+#aircraft-screen{position:fixed;inset:0;z-index:51;display:none;flex-direction:column;align-items:center;background:radial-gradient(ellipse at 40% 55%,#051018 0%,#020407 100%);color:#00FF41;font-family:'JetBrains Mono',monospace;overflow:hidden;cursor:auto;gap:0}
+.acs-top{width:94%;max-width:1260px;display:flex;flex-direction:column;align-items:center;gap:12px;flex-shrink:0;padding:26px 0 10px}
 .acs-title{font-size:20px;letter-spacing:8px;text-shadow:0 0 18px rgba(0,255,65,0.5)}
-.acs-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;width:94%;max-width:860px}
-.acs-card{cursor:pointer;background:rgba(0,255,65,0.03);border:1px solid rgba(0,255,65,0.18);border-radius:8px;overflow:hidden;transition:border-color .18s,box-shadow .18s,background .18s;pointer-events:auto;-webkit-user-select:none;user-select:none;display:flex;flex-direction:column}
+.acs-toolbar{display:flex;gap:8px;align-items:center;width:100%;flex-wrap:wrap}
+.acs-search{flex:1;min-width:130px;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.28);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 12px;border-radius:5px;outline:none;letter-spacing:1px}
+.acs-search::placeholder{opacity:0.32;color:#00FF41}
+.acs-search:focus{border-color:rgba(0,255,65,0.55)}
+.acs-sort{background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.28);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:10px;padding:8px 10px;border-radius:5px;outline:none;letter-spacing:1px;cursor:pointer;-webkit-appearance:none}
+.acs-sort option{background:#020407;color:#00FF41}
+.acs-toolbar-btn{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.07);border:1px solid rgba(0,255,65,0.35);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:2px;padding:8px 16px;border-radius:5px;transition:all .15s;white-space:nowrap}
+.acs-toolbar-btn:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
+.acs-scroll{flex:1;overflow-y:auto;width:100%;min-height:0;display:flex;flex-direction:column;align-items:center;padding:8px 0 16px;scrollbar-width:thin;scrollbar-color:rgba(0,255,65,0.25) transparent}
+.acs-scroll::-webkit-scrollbar{width:5px}.acs-scroll::-webkit-scrollbar-thumb{background:rgba(0,255,65,0.22);border-radius:3px}
+.acs-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;width:94%;max-width:1260px}
+.acs-empty{color:rgba(0,255,65,0.28);font-size:11px;letter-spacing:2px;padding:48px;text-align:center}
+.acs-card{cursor:pointer;background:rgba(0,255,65,0.03);border:1px solid rgba(0,255,65,0.18);border-radius:8px;overflow:hidden;transition:border-color .18s,box-shadow .18s,background .18s;pointer-events:auto;-webkit-user-select:none;user-select:none;display:flex;flex-direction:column;position:relative}
 .acs-card:hover{border-color:rgba(0,255,65,0.5);background:rgba(0,255,65,0.06)}
 .acs-card.acs-sel{border-color:#00FF41;box-shadow:0 0 22px rgba(0,255,65,0.22);background:rgba(0,255,65,0.08)}
 .acs-card-canvas{display:block;width:100%;height:auto;background:transparent}
-.acs-card-info{padding:12px 16px 14px;border-top:1px solid rgba(0,255,65,0.10)}
-.acs-card-name{font-size:12px;letter-spacing:3px;font-weight:700;text-transform:uppercase;margin-bottom:4px}
-.acs-card-cat{font-size:8px;letter-spacing:2px;opacity:0.4;text-transform:uppercase;margin-bottom:7px}
+.acs-card-info{padding:10px 14px 12px;border-top:1px solid rgba(0,255,65,0.10)}
+.acs-card-name{font-size:11px;letter-spacing:3px;font-weight:700;text-transform:uppercase;margin-bottom:3px}
+.acs-card-cat{font-size:8px;letter-spacing:2px;opacity:0.4;text-transform:uppercase;margin-bottom:6px}
 .acs-card-str{font-size:9px;letter-spacing:1px;color:rgba(0,255,65,0.65);line-height:1.6}
 .acs-card-str::before{content:'▶  ';opacity:0.4;font-size:7px}
+.acs-card-badge{position:absolute;top:7px;left:8px;font-size:7px;letter-spacing:2px;background:rgba(0,255,65,0.14);border:1px solid rgba(0,255,65,0.28);padding:2px 6px;border-radius:3px;pointer-events:none}
+.acs-card-actions{position:absolute;top:5px;right:6px;display:flex;gap:4px;opacity:0;transition:opacity .15s}
+.acs-card:hover .acs-card-actions{opacity:1}
+.acs-card-act{cursor:pointer;background:rgba(2,4,7,0.82);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:1px;padding:3px 7px;border-radius:3px;transition:all .12s}
+.acs-card-act:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
+.acs-card-act.del{border-color:rgba(255,60,60,0.35);color:rgba(255,100,100,0.9)}
+.acs-card-act.del:hover{background:rgba(255,60,60,0.14)}
+.acs-footer{flex-shrink:0;padding:10px 0 18px;display:flex;gap:12px;align-items:center}
 #acs-continue{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.10);border:1px solid rgba(0,255,65,0.5);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:3px;padding:13px 44px;border-radius:5px;transition:all .18s;text-transform:uppercase}
 #acs-continue:hover{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 22px rgba(0,255,65,0.28)}
-@media(max-width:600px){.acs-grid{grid-template-columns:1fr}}
+/* Custom aircraft modal */
+#acs-custom-modal{position:absolute;inset:0;z-index:10;display:none;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:30px;background:rgba(2,4,7,0.97);overflow-y:auto}
+.acm-inner{background:rgba(0,255,65,0.025);border:1px solid rgba(0,255,65,0.22);border-radius:10px;padding:24px 28px;width:92%;max-width:700px;display:flex;flex-direction:column;gap:14px;margin-bottom:30px}
+.acm-title{font-size:14px;letter-spacing:6px;text-align:center;font-weight:700;text-shadow:0 0 12px rgba(0,255,65,0.4)}
+.acm-section{font-size:8px;letter-spacing:3px;opacity:0.4;border-bottom:1px solid rgba(0,255,65,0.12);padding-bottom:6px;margin-top:4px}
+.acm-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.acm-grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.acm-full{grid-column:1/-1}
+.acm-group{display:flex;flex-direction:column;gap:4px}
+.acm-label{font-size:8px;letter-spacing:2px;opacity:0.48}
+.acm-input{background:rgba(0,255,65,0.055);border:1px solid rgba(0,255,65,0.18);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;padding:7px 10px;border-radius:4px;outline:none;width:100%;box-sizing:border-box}
+.acm-input:focus{border-color:rgba(0,255,65,0.5)}
+.acm-input::placeholder{opacity:0.3;color:#00FF41}
+.acm-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px}
+.acm-btn{cursor:pointer;background:rgba(0,255,65,0.08);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:2px;padding:9px 22px;border-radius:5px;transition:all .15s}
+.acm-btn:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
+.acm-btn.danger{border-color:rgba(255,60,60,0.4);color:rgba(255,110,110,0.9)}
+.acm-btn.danger:hover{background:rgba(255,60,60,0.12);border-color:rgba(255,110,110,0.8)}
+.acm-err{font-size:9px;color:rgba(255,100,100,0.85);text-align:center;min-height:14px;letter-spacing:1px}
+@media(max-width:900px){.acs-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:580px){.acs-grid{grid-template-columns:1fr}.acm-grid{grid-template-columns:1fr}.acm-grid3{grid-template-columns:1fr 1fr}}
 .env-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:460px;width:94%}
 .env-btn{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.25);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 11px;border-radius:5px;transition:all .15s}
 .env-btn:hover{background:rgba(0,255,65,0.14);border-color:#00FF41}
@@ -332,7 +372,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   </div>
   <div id="nm-zoom">
     <button class="nm-zbtn" id="nm-zin">+</button>
-    <button class="nm-zbtn" id="nm-zout">−</button>
+    <button class="nm-zbtn" id="nm-zout">-</button>
   </div>
   <div id="nm-actions">
     <button class="nm-act nm-resume" id="nm-resume">▶ RESUME</button>
@@ -452,16 +492,95 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 </div>
 
 <div id="aircraft-screen" style="display:none">
-  <div class="acs-title">SELECT YOUR AIRCRAFT</div>
-  <div class="acs-grid" id="acs-grid"></div>
-  <button id="acs-continue">CHOOSE DEPARTURE ›</button>
+  <div class="acs-top">
+    <div class="acs-title">SELECT YOUR AIRCRAFT</div>
+    <div class="acs-toolbar">
+      <input id="acs-search" class="acs-search" type="text" placeholder="SEARCH AIRCRAFT..." autocomplete="off" spellcheck="false">
+      <select id="acs-sort" class="acs-sort">
+        <option value="default">SORT: DEFAULT</option>
+        <option value="agile">MOST AGILE</option>
+        <option value="accel">FASTEST ACCELERATION</option>
+        <option value="speed">TOP SPEED</option>
+        <option value="heavy">HEAVIEST</option>
+        <option value="range">LONGEST RANGE</option>
+        <option value="easy">EASIEST TO FLY</option>
+      </select>
+      <button id="acs-archive-btn" class="acs-toolbar-btn" style="opacity:0.45;font-size:9px;padding:8px 11px">📦 ARCHIVE</button>
+      <button id="acs-custom-btn" class="acs-toolbar-btn">+ CUSTOM</button>
+    </div>
+  </div>
+  <div class="acs-scroll">
+    <div class="acs-grid" id="acs-grid"></div>
+    <div class="acs-empty" id="acs-empty" style="display:none">NO AIRCRAFT MATCH YOUR SEARCH</div>
+  </div>
+  <div class="acs-footer">
+    <button id="acs-continue">CHOOSE DEPARTURE ›</button>
+  </div>
+
+  <!-- Custom aircraft editor modal (inside aircraft-screen so it overlays it) -->
+  <div id="acs-custom-modal" style="display:none">
+    <div class="acm-inner">
+      <div class="acm-title" id="acm-title">CREATE CUSTOM AIRCRAFT</div>
+      <input type="hidden" id="acm-edit-key">
+
+      <div class="acm-section">IDENTITY</div>
+      <div class="acm-grid">
+        <div class="acm-group acm-full"><span class="acm-label">NAME</span><input class="acm-input" id="acm-label" placeholder="MY AIRCRAFT" maxlength="40"></div>
+        <div class="acm-group"><span class="acm-label">SHORT DESCRIPTION</span><input class="acm-input" id="acm-desc" placeholder="Custom design" maxlength="40"></div>
+        <div class="acm-group"><span class="acm-label">STRENGTHS (one line)</span><input class="acm-input" id="acm-strengths" placeholder="What it excels at..." maxlength="100"></div>
+      </div>
+
+      <div class="acm-section">AIRFRAME (required)</div>
+      <div class="acm-grid3">
+        <div class="acm-group"><span class="acm-label">MASS (kg)</span><input class="acm-input" id="acm-m" type="number" placeholder="5000" min="50" max="600000"></div>
+        <div class="acm-group"><span class="acm-label">WING AREA (m²)</span><input class="acm-input" id="acm-S" type="number" placeholder="30" min="5" max="1000"></div>
+        <div class="acm-group"><span class="acm-label">MAX THRUST (N)</span><input class="acm-input" id="acm-Tmax" type="number" placeholder="52000" min="100"></div>
+        <div class="acm-group"><span class="acm-label">Vne (m/s)</span><input class="acm-input" id="acm-Vne" type="number" placeholder="320" min="20" max="1200"></div>
+        <div class="acm-group"><span class="acm-label">ROTATION SPEED (kt)</span><input class="acm-input" id="acm-rotKts" type="number" placeholder="100" min="30" max="300"></div>
+        <div class="acm-group"><span class="acm-label">CRUISE SPEED (kt)</span><input class="acm-input" id="acm-cruiseKts" type="number" placeholder="280" min="30" max="1400"></div>
+      </div>
+
+      <div class="acm-section">AERODYNAMICS (optional — defaults auto-filled)</div>
+      <div class="acm-grid3">
+        <div class="acm-group"><span class="acm-label">CL_a (per rad)</span><input class="acm-input" id="acm-CL_a" type="number" placeholder="5.2" step="0.1"></div>
+        <div class="acm-group"><span class="acm-label">CL_max</span><input class="acm-input" id="acm-CL_max" type="number" placeholder="1.5" step="0.1"></div>
+        <div class="acm-group"><span class="acm-label">STALL AoA (°)</span><input class="acm-input" id="acm-aStall" type="number" placeholder="15" min="5" max="40"></div>
+        <div class="acm-group"><span class="acm-label">Cd0 (parasitic drag)</span><input class="acm-input" id="acm-Cd0" type="number" placeholder="0.025" step="0.001"></div>
+        <div class="acm-group"><span class="acm-label">k (induced drag)</span><input class="acm-input" id="acm-k" type="number" placeholder="0.05" step="0.005"></div>
+        <div class="acm-group"><span class="acm-label">WING INCIDENCE (°)</span><input class="acm-input" id="acm-incidence" type="number" placeholder="1.5" step="0.5"></div>
+      </div>
+
+      <div class="acm-section">FUEL</div>
+      <div class="acm-grid3">
+        <div class="acm-group"><span class="acm-label">FUEL CAPACITY (kg)</span><input class="acm-input" id="acm-fuelMax" type="number" placeholder="1000" min="10"></div>
+        <div class="acm-group"><span class="acm-label">FUEL FLOW MAX (kg/s)</span><input class="acm-input" id="acm-ffMax" type="number" placeholder="0.5" step="0.01"></div>
+        <div class="acm-group"><span class="acm-label">FUEL FLOW IDLE (kg/s)</span><input class="acm-input" id="acm-ffIdle" type="number" placeholder="0.02" step="0.005"></div>
+      </div>
+
+      <div class="acm-section">3D MODEL (optional — paste a .glb URL)</div>
+      <div class="acm-grid">
+        <div class="acm-group acm-full"><span class="acm-label">GLB URL (must have CORS — raw.githubusercontent.com or huggingface.co works)</span><input class="acm-input" id="acm-modelUrl" placeholder="https://raw.githubusercontent.com/.../model.glb"></div>
+        <div class="acm-group"><span class="acm-label">WINGSPAN (m)</span><input class="acm-input" id="acm-span" type="number" placeholder="30" step="0.1"></div>
+        <div class="acm-group"><span class="acm-label">LENGTH (m)</span><input class="acm-input" id="acm-len" type="number" placeholder="35" step="0.1"></div>
+      </div>
+
+      <div class="acm-err" id="acm-err"></div>
+      <div class="acm-row">
+        <button class="acm-btn" id="acm-save">SAVE AIRCRAFT</button>
+        <button class="acm-btn" id="acm-export">EXPORT JSON</button>
+        <label class="acm-btn" style="cursor:pointer">IMPORT JSON<input type="file" id="acm-import-file" accept=".json" style="display:none"></label>
+        <button class="acm-btn danger" id="acm-delete" style="display:none">DELETE</button>
+        <button class="acm-btn" id="acm-cancel">CANCEL</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="startmenu" style="display:none">
   <div class="sm-title">FLIGHT SIM</div>
   <div id="ac-selector" style="display:none"><!-- aircraft selector kept for applyAircraftType compat --></div>
   <button id="sm-aircraft-btn" style="cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.35);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:2px;padding:10px 28px;border-radius:5px;transition:all .15s;margin-bottom:2px">✈ SELECT AIRCRAFT</button>
-  <div id="sm-ac-current" style="font-size:9px;letter-spacing:2px;opacity:0.45;margin-top:-6px;margin-bottom:4px">CLASSIC JET</div>
+  <div id="sm-ac-current" style="font-size:9px;letter-spacing:2px;opacity:0.45;margin-top:-6px;margin-bottom:4px">CESSNA 172 SKYHAWK</div>
   <div class="sm-sub" style="margin-top:4px">SELECT DEPARTURE POINT</div>
   <div id="sm-grid">
     <button class="sm-btn" data-name="GRAND CANYON, AZ" data-lat="36.1069" data-lon="-112.1129" data-alt="1500" data-hdg="90">Grand Canyon<span class="sm-sub2">USA</span></button>
@@ -1503,6 +1622,7 @@ const AIRCRAFT_DEFS = {
     label: 'CLASSIC JET',
     desc: 'Light business jet',
     strengths: 'Nimble and forgiving — perfect for beginners, canyon runs and low-altitude scenic exploration',
+    archive: true,
     m: 5200,            // mass (kg)
     S: 30,              // wing area (m^2)
     CL_a: 5.2,          // lift-curve slope (per rad)
@@ -1612,15 +1732,164 @@ const AIRCRAFT_DEFS = {
     modelYOffset: 1.2,  // metres — lifts the centred GLB to rest on terrain
     // Single-mesh model — no separable flap/gear surfaces.
   },
+  cessna172: {
+    label: 'CESSNA 172 SKYHAWK',
+    desc: 'Single-engine prop plane',
+    strengths: 'Ultra-low and slow — perfect for sightseeing, landmarks and practising short-field landings at treetop height',
+    m: 1000,           // kg — mid-load (OEW 767 kg, MTOW 1,111 kg per POH)
+    S: 16.2,           // m² — POH confirmed (174 sq ft)
+    CL_a: 5.7,         // per rad — high-AR (AR≈7.4) flat wing
+    CL_max: 1.9,       // with flaps 30
+    aStall: 17,        // deg — POH
+    Cd0: 0.032,        // fixed-gear drag penalty
+    k: 0.059,          // 1/(π × 0.85 × 7.4)
+    incidence: 1.5,
+    Tmax: 2400,        // N — Lycoming O-360 134 kW; static prop thrust estimate
+    Vne: 84,           // m/s — 163 kt (POH Vne)
+    fuelFlowIdle: 0.003,
+    fuelFlowMax: 0.030,
+    fuelMax: 115,      // kg — ~170 l usable fuel
+    rotationKts: 55,
+    cruiseKts: 122,    // kt — 75% power per POH
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/c182/glTF2/C182.glb',
+    playerModelDims: { span: 11.0, len: 8.6 },  // metres — C182 ≈ C172 (high-wing single engine)
+    modelAxes: { nose: '+z', up: '+y' },
+    modelYOffset: 1.0,
+  },
+  boeing747: {
+    label: 'BOEING 747-400',
+    desc: 'Wide-body jumbo jet',
+    strengths: 'Queen of the skies — massive scale, 4-engine endurance and the longest legs of any plane in the sim',
+    m: 375000,         // kg — typical heavy takeoff weight (MTOW 396,890 kg per Boeing)
+    S: 541.2,          // m² — Boeing Aircraft Characteristics document
+    CL_a: 5.0,
+    CL_max: 2.6,
+    aStall: 12,
+    Cd0: 0.018,
+    k: 0.034,
+    incidence: 1.5,
+    Tmax: 1128000,     // N — 4× PW4062 at 282 kN each (Boeing data)
+    Vne: 175,          // m/s — VMO 340 KIAS ≈ 175 m/s
+    fuelFlowIdle: 0.50,
+    fuelFlowMax: 12.0,
+    fuelMax: 18000,
+    rotationKts: 182,  // kt — typical Vr at 375t
+    cruiseKts: 290,    // kt — IAS at FL350 (TAS ≈ 491 kt, M0.855)
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/b744/glTF2/B747.glb',
+    playerModelDims: { span: 64.4, len: 70.7 },  // metres — 747-400 (with winglets / fuselage)
+    modelYOffset: 6,
+  },
+  concorde: {
+    label: 'CONCORDE',
+    desc: 'Supersonic airliner',
+    strengths: 'Faster than sound — crosses oceans in 3 hours, cruises at 60,000 ft above weather and far above interception',
+    m: 130000,         // kg — typical cruise weight (MTOW 187,700 kg)
+    S: 358.25,         // m² — ogival delta wing (confirmed multiple sources)
+    CL_a: 2.2,         // per rad — slender delta AR≈1.7; vortex lift supplements
+    CL_max: 1.2,       // high-AoA vortex; no leading-edge slats
+    aStall: 27,
+    Cd0: 0.013,        // area-ruled supersonic fuselage
+    k: 0.11,
+    incidence: 0,
+    Tmax: 680000,      // N — 4× Rolls-Royce/SNECMA Olympus 593 at ~169 kN each (dry)
+    Vne: 596,          // m/s — Mach 2.02 at cruise alt (T=-56°C, a=295 m/s × 2.02)
+    fuelFlowIdle: 0.30,
+    fuelFlowMax: 9.0,  // kg/s — 4 Olympus at max power
+    fuelMax: 14000,
+    rotationKts: 195,  // kt — Vr per Air France/BA operational data (Wikipedia: 199 kt)
+    cruiseKts: 600,    // kt — high-speed autopilot target (supersonic cruise; IAS varies with altitude)
+  },
+  spitfire: {
+    label: 'SPITFIRE MK.IX',
+    desc: 'WWII supermarine fighter',
+    strengths: 'Elliptical wings and Merlin power — tightest sustained turns in the sim, built for low-altitude dogfighting',
+    m: 3350,           // kg — Mk.IX loaded weight (empty 2,313 kg + fuel + pilot)
+    S: 22.48,          // m² — elliptical wing (242 sq ft; Jane's All the World's Aircraft)
+    CL_a: 5.5,
+    CL_max: 1.9,
+    aStall: 16,
+    Cd0: 0.025,
+    k: 0.057,
+    incidence: 1.0,
+    Tmax: 14500,       // N — Merlin 66 at 1,705 hp = 1,272 kW; static prop thrust ~14–15 kN
+    Vne: 220,          // m/s — ~428 kt; actual POH Vne ~450+ kt, capped for playability
+    fuelFlowIdle: 0.008,
+    fuelFlowMax: 0.12,
+    fuelMax: 300,
+    rotationKts: 90,
+    cruiseKts: 240,    // kt — typical economical cruise
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/p40/glTF2/P40.glb',
+    playerModelDims: { span: 11.4, len: 9.7 },   // metres — P-40 (WWII inline fighter, era-appropriate stand-in)
+    modelAxes: { nose: '+z', up: '+y' },
+    modelYOffset: 1.2,
+  },
+  sr71: {
+    label: 'SR-71 BLACKBIRD',
+    desc: 'Strategic reconnaissance aircraft',
+    strengths: 'World\'s fastest jet — Mach 3+ at 85,000 ft, no missile can catch it and no radar can track it in time',
+    m: 60000,          // kg — typical mission weight (MTOW ~77,000 kg; takes off lighter, refuels aloft)
+    S: 167.2,          // m² — full chined-delta planform (~1,800 sq ft; multiple sources)
+    CL_a: 2.8,
+    CL_max: 1.1,
+    aStall: 22,
+    Cd0: 0.010,        // extremely clean titanium body designed for Mach 3+
+    k: 0.10,
+    incidence: 0,
+    Tmax: 295000,      // N — 2× P&W J58 at ~144.6 kN each (dry; some sources cite 32,500 lbf each)
+    Vne: 1010,         // m/s — Mach 3.3 at 80,000 ft (a≈297 m/s × 3.3 ≈ 980; sea-level ref ≈1010)
+    fuelFlowIdle: 0.20,
+    fuelFlowMax: 6.0,  // kg/s — 2 J58 at full power (JP-7 burn rate)
+    fuelMax: 10000,
+    rotationKts: 200,
+    cruiseKts: 750,    // kt — supersonic cruise autopilot target
+  },
   // Add more aircraft here — they appear in the menu automatically.
 };
+
+// ===================== Custom aircraft (localStorage) =====================
+// Custom aircraft keys are prefixed 'custom_'. On load they are merged into AIRCRAFT_DEFS.
+const CUSTOM_AC_KEY = 'flightsim_custom_aircraft';
+(function loadCustomAircraft() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(CUSTOM_AC_KEY) || '[]');
+    arr.forEach(function(e) {
+      if (e && e._key && e.label && e.m > 0 && e.Tmax > 0)
+        AIRCRAFT_DEFS[e._key] = e;
+    });
+  } catch(ex) {}
+})();
+function _saveCustomAircraft() {
+  try {
+    const arr = Object.keys(AIRCRAFT_DEFS)
+      .filter(function(k){ return k.startsWith('custom_'); })
+      .map(function(k){ return AIRCRAFT_DEFS[k]; });
+    localStorage.setItem(CUSTOM_AC_KEY, JSON.stringify(arr));
+  } catch(ex) {}
+}
+function _newCustomKey() {
+  return 'custom_' + Math.random().toString(36).slice(2,10);
+}
+function _acSortScore(key, sortType) {
+  const d = AIRCRAFT_DEFS[key] || {};
+  const m = d.m || 1000, Tmax = d.Tmax || 10000, Vne = d.Vne || 100;
+  const cruiseKts = d.cruiseKts || 100, fuelMax = d.fuelMax || 1000;
+  const ffMax = d.fuelFlowMax || 0.1, rotKts = d.rotationKts || 100;
+  const CLmax = d.CL_max || 1.5, k = d.k || 0.05;
+  if (sortType === 'agile')  return (Tmax / (m * 9.81)) * (CLmax / k);
+  if (sortType === 'accel')  return Tmax / m;
+  if (sortType === 'speed')  return Vne;
+  if (sortType === 'heavy')  return m;
+  if (sortType === 'range')  return (fuelMax / ffMax) * cruiseKts;
+  if (sortType === 'easy')   return -rotKts;
+  return 0;
+}
 
 // ===================== Active aircraft / aerodynamics model (SI) =====================
 // Physics constants shared by all aircraft (not user-configurable per type):
 const AC_PHYS = { g: 9.81, rho0: 1.225, scaleH: 9200 };
 
-let selectedAircraftKey = 'classic';
-let AC = Object.assign({}, AC_PHYS, AIRCRAFT_DEFS.classic);
+let selectedAircraftKey = 'cessna172';
+let AC = Object.assign({}, AC_PHYS, AIRCRAFT_DEFS.cessna172);
 
 let VNE_KTS = AC.Vne / 0.514444;
 let ROTATION_KTS = AC.rotationKts;   // ground-roll takeoff rotation speed (knots)
@@ -3202,7 +3471,7 @@ function ensureTrafficModel(url, dims, opts) {
 
 // ── Player GLTF aircraft: part detection + animation ──────────────────────────
 // After prepLoadedModel the coordinate convention is: +X right-wing, +Y up,
-// −Z nose, +Z tail. Both helpers below operate in that oriented pivot frame.
+// -Z nose, +Z tail. Both helpers below operate in that oriented pivot frame.
 
 // Accumulate a mesh's bounding box expressed in pivotClone-local coordinates.
 function _meshBoxInPivot(mesh, pivotInv, out) {
@@ -5041,6 +5310,524 @@ function drawPitchLadder(bankRad) {
 // If a key is absent the default classic builder is used.
 // Register custom builders here when adding new aircraft with unique 3D shapes.
 const AIRCRAFT_MODEL_BUILDERS = {};
+
+// ── Cessna 172: high-wing prop plane ──────────────────────────────────────────
+AIRCRAFT_MODEL_BUILDERS.cessna172 = function() {
+  const verts = [], faces = [];
+  const fus  = [0.56, 0.54, 0.32];
+  const wing = [0.50, 0.48, 0.28];
+  const dark = [0.20, 0.20, 0.16];
+  function quad(a,b,c,d,col){faces.push({v:[a,b,c,d],c:col});}
+  function tri(a,b,c,col){faces.push({v:[a,b,c],c:col});}
+  function dim(col,f){return [col[0]*f,col[1]*f,col[2]*f];}
+
+  // Rectangular fuselage cross-sections: [z, halfW, topY, botY]
+  const secs=[
+    [2.3, 0.04, 0.04,-0.04],
+    [1.8, 0.18, 0.16,-0.22],
+    [0.9, 0.22, 0.30,-0.28],
+    [0.0, 0.22, 0.30,-0.28],
+    [-0.9,0.20, 0.28,-0.26],
+    [-1.7,0.13, 0.20,-0.18],
+    [-2.4,0.05, 0.10,-0.06],
+  ];
+  const pts = secs.map(([z,hw,ty,by])=>{
+    const i=verts.length;
+    verts.push([hw,ty,z],[-hw,ty,z],[-hw,by,z],[hw,by,z]);
+    return [i,i+1,i+2,i+3];
+  });
+  for(let s=0;s<pts.length-1;s++){
+    const [tr,tl,bl,br]=pts[s], [TR,TL,BL,BR]=pts[s+1];
+    quad(tl,tr,TR,TL,fus);
+    quad(br,bl,BL,BR,dim(fus,0.70));
+    quad(tr,br,BR,TR,dim(fus,0.82));
+    quad(tl,TL,BL,bl,dim(fus,0.82));
+  }
+
+  // High wing (sits on top of cabin)
+  let lwTip=0, rwTip=0;
+  [-1,1].forEach(side=>{
+    const ry=0.30, wt=0.05;
+    const rl=verts.length; verts.push([side*0.22,ry+wt, 0.55]);
+    const rt=verts.length; verts.push([side*0.22,ry+wt,-0.45]);
+    const tl=verts.length; verts.push([side*3.7, ry+wt, 0.25]);
+    const tt=verts.length; verts.push([side*3.7, ry+wt,-0.55]);
+    const rlb=verts.length; verts.push([side*0.22,ry-wt, 0.55]);
+    const rtb=verts.length; verts.push([side*0.22,ry-wt,-0.45]);
+    const tlb=verts.length; verts.push([side*3.7, ry-wt, 0.25]);
+    const ttb=verts.length; verts.push([side*3.7, ry-wt,-0.55]);
+    quad(rl,tl,tt,rt,wing);
+    quad(rlb,rtb,ttb,tlb,dim(wing,0.70));
+    quad(tl,tlb,ttb,tt,dim(wing,0.80));
+    quad(rl,rlb,tlb,tl,dim(wing,0.88));
+    if(side<0) lwTip=tl; else rwTip=tl;
+  });
+
+  // Horizontal stabiliser
+  [-1,1].forEach(side=>{
+    const zy=-2.0, ty=-0.04, wt=0.03;
+    const rl=verts.length; verts.push([side*0.08,ty+wt,zy+0.18]);
+    const rt=verts.length; verts.push([side*0.08,ty+wt,zy-0.18]);
+    const tl=verts.length; verts.push([side*1.3, ty+wt,zy+0.08]);
+    const tt=verts.length; verts.push([side*1.3, ty+wt,zy-0.18]);
+    const rlb=verts.length; verts.push([side*0.08,ty-wt,zy+0.18]);
+    const rtb=verts.length; verts.push([side*0.08,ty-wt,zy-0.18]);
+    const tlb=verts.length; verts.push([side*1.3, ty-wt,zy+0.08]);
+    const ttb=verts.length; verts.push([side*1.3, ty-wt,zy-0.18]);
+    quad(rl,tl,tt,rt,wing);
+    quad(tl,tlb,ttb,tt,dim(wing,0.80));
+  });
+
+  // Vertical fin
+  {const bz=-1.6,c=dim(fus,0.80);
+   const f0=verts.length;verts.push([0,0.06,bz]);
+   const f1=verts.length;verts.push([0,0.06,bz-0.65]);
+   const f2=verts.length;verts.push([0,0.82,bz-0.52]);
+   const f3=verts.length;verts.push([0,0.82,bz-0.15]);
+   quad(f0,f1,f2,f3,c);}
+
+  // Prop disc
+  {const pz=2.32,pr=0.80;
+   const cx=verts.length;verts.push([0,0,pz]);
+   for(let i=0;i<8;i++){
+     const a0=(i/8)*Math.PI*2,a1=((i+1)/8)*Math.PI*2;
+     const p0=verts.length;verts.push([Math.cos(a0)*pr,Math.sin(a0)*pr,pz]);
+     const p1=verts.length;verts.push([Math.cos(a1)*pr,Math.sin(a1)*pr,pz]);
+     tri(cx,p0,p1,i%2===0?dark:dim(dark,0.4));
+   }}
+
+  // Fixed gear (always down)
+  {const gc=dim(dark,1.2);
+   [-0.32,0.32].forEach(gx=>{
+     const t=verts.length;verts.push([gx,-0.28,0.35]);
+     const b=verts.length;verts.push([gx,-0.62,0.35]);
+     tri(t,b,b,gc);
+     const w0=verts.length;verts.push([gx-0.06,-0.62,0.22]);
+     const w1=verts.length;verts.push([gx+0.06,-0.62,0.22]);
+     const w2=verts.length;verts.push([gx+0.06,-0.62,0.48]);
+     const w3=verts.length;verts.push([gx-0.06,-0.62,0.48]);
+     quad(w0,w1,w2,w3,gc);
+   });
+   const t=verts.length;verts.push([0,-0.22,1.6]);
+   const b=verts.length;verts.push([0,-0.55,1.6]);
+   tri(t,b,b,gc);}
+
+  return {verts,faces,lwTip,rwTip};
+};
+
+// ── Concorde: needle nose + ogival delta wing ─────────────────────────────────
+AIRCRAFT_MODEL_BUILDERS.concorde = function() {
+  const verts=[], faces=[];
+  const fus  =[0.72,0.72,0.68];
+  const wing =[0.55,0.55,0.50];
+  const dark =[0.18,0.18,0.16];
+  function quad(a,b,c,d,col){faces.push({v:[a,b,c,d],c:col});}
+  function tri(a,b,c,col){faces.push({v:[a,b,c],c:col});}
+  function dim(c,f){return[c[0]*f,c[1]*f,c[2]*f];}
+  const sides=6;
+  function ring(z,r){
+    const i0=verts.length;
+    if(r<0.01){verts.push([0,0,z]);return[i0];}
+    const idx=[];
+    for(let i=0;i<sides;i++){
+      const a=(i/sides)*Math.PI*2+Math.PI/6;
+      idx.push(i0+i);
+      verts.push([Math.cos(a)*r,Math.sin(a)*r,z]);
+    }
+    return idx;
+  }
+  function connect(a,b,col){
+    if(a.length===1){
+      for(let i=0;i<b.length;i++)tri(a[0],b[i],b[(i+1)%b.length],col);
+    }else if(b.length===1){
+      for(let i=0;i<a.length;i++)tri(a[i],a[(i+1)%a.length],b[0],col);
+    }else{
+      for(let i=0;i<a.length;i++){
+        const ni=(i+1)%a.length;
+        quad(a[i],a[ni],b[ni],b[i],col);
+      }
+    }
+  }
+
+  // Very long, slender fuselage — Concorde is ~62m; scale: nose at z=4.5, tail at z=-4.5
+  const rs=[
+    [4.5,0],[4.0,0.04],[3.2,0.10],[2.2,0.16],[1.0,0.21],
+    [0.0,0.24],[-1.2,0.24],[-2.4,0.22],[-3.4,0.16],[-4.0,0.10],[-4.5,0.02],
+  ];
+  const segs=rs.map(([z,r])=>ring(z,r));
+  for(let i=0;i<segs.length-1;i++)connect(segs[i],segs[i+1],fus);
+
+  // Ogival delta wing: LE sweeps from near-nose (z=3.0) to tip at z=-3.5, then TE is straight
+  let lwTip=0,rwTip=0;
+  [-1,1].forEach(side=>{
+    const wt=0.04;
+    // 3 spanwise stations: root (narrow, near fuselage), mid, tip
+    const rLE=verts.length; verts.push([side*0.24, wt, 2.8]);
+    const rTE=verts.length; verts.push([side*0.24, wt,-3.8]);
+    const mLE=verts.length; verts.push([side*1.80, wt, 0.5]);
+    const mTE=verts.length; verts.push([side*1.80, wt,-3.5]);
+    const tLE=verts.length; verts.push([side*3.20, wt,-1.5]);
+    const tTE=verts.length; verts.push([side*3.20, wt,-3.5]);
+
+    const rLEb=verts.length; verts.push([side*0.24,-wt, 2.8]);
+    const rTEb=verts.length; verts.push([side*0.24,-wt,-3.8]);
+    const mLEb=verts.length; verts.push([side*1.80,-wt, 0.5]);
+    const mTEb=verts.length; verts.push([side*1.80,-wt,-3.5]);
+    const tLEb=verts.length; verts.push([side*3.20,-wt,-1.5]);
+    const tTEb=verts.length; verts.push([side*3.20,-wt,-3.5]);
+
+    quad(rLE,mLE,mTE,rTE,wing);
+    quad(mLE,tLE,tTE,mTE,wing);
+    quad(rLEb,rTEb,mTEb,mLEb,dim(wing,0.72));
+    quad(mLEb,mTEb,tTEb,tLEb,dim(wing,0.72));
+    quad(tLE,tLEb,tTEb,tTE,dim(wing,0.80));
+    quad(rLE,rLEb,mLEb,mLE,dim(wing,0.85));
+    quad(mLE,mLEb,tLEb,tLE,dim(wing,0.85));
+
+    // 4 engine nacelles grouped under the inboard delta
+    [0.55,1.05].forEach((ex,ei)=>{
+      const nz_f=1.5-(ei*0.4), nz_r=-2.8, nr=0.12;
+      const ec=[dark[0]*(0.9-ei*0.05),dark[1]*(0.9-ei*0.05),dark[2]];
+      const nf=ring(nz_f+0.05,nr).map(vi=>{const v=verts[vi];return v;});
+      // Simple nacelle tube as a series of rings
+      const nr0=ring(nz_f, nr);
+      const nr1=ring(nz_r, nr);
+      // offset to x=side*ex, y=-0.18
+      [nr0,nr1].forEach(r=>r.forEach(vi=>{verts[vi][0]+=side*ex;verts[vi][1]-=0.20;}));
+      connect(nr0,nr1,ec);
+    });
+
+    if(side<0) lwTip=tLE; else rwTip=tLE;
+  });
+
+  // Small vertical fin
+  {const c=dim(fus,0.80);
+   const f0=verts.length;verts.push([0,0.24,-3.0]);
+   const f1=verts.length;verts.push([0,0.24,-4.2]);
+   const f2=verts.length;verts.push([0,1.20,-3.6]);
+   const f3=verts.length;verts.push([0,1.20,-3.1]);
+   quad(f0,f1,f2,f3,c);}
+
+  return {verts,faces,lwTip,rwTip};
+};
+
+// ── SR-71 Blackbird: chined fuselage + twin nacelles ─────────────────────────
+AIRCRAFT_MODEL_BUILDERS.sr71 = function() {
+  const verts=[], faces=[];
+  const fus  =[0.12,0.12,0.10];  // dark titanium black
+  const wing =[0.10,0.10,0.09];
+  const hot  =[0.45,0.25,0.10];  // engine glow
+  function quad(a,b,c,d,col){faces.push({v:[a,b,c,d],c:col});}
+  function tri(a,b,c,col){faces.push({v:[a,b,c],c:col});}
+  function dim(c,f){return[c[0]*f,c[1]*f,c[2]*f];}
+
+  // Chined fuselage: flat-bottom near nose, oval behind cockpit
+  // Cross-section shape: [z, halfW_top, halfW_bot, topY, botY]
+  const secs=[
+    [ 4.5, 0.02, 0.01, 0.02,-0.01],
+    [ 3.8, 0.06, 0.06, 0.04,-0.04],
+    [ 3.0, 0.14, 0.22, 0.08,-0.06],  // chine widens at nose
+    [ 2.0, 0.18, 0.28, 0.12,-0.06],
+    [ 1.0, 0.20, 0.30, 0.14,-0.04],
+    [ 0.0, 0.20, 0.30, 0.16,-0.04],
+    [-1.0, 0.20, 0.28, 0.14,-0.04],
+    [-2.0, 0.18, 0.26, 0.12,-0.04],
+    [-3.0, 0.14, 0.22, 0.10,-0.04],
+    [-4.0, 0.08, 0.12, 0.08,-0.04],
+    [-4.5, 0.03, 0.03, 0.03,-0.03],
+  ];
+  function fusSec(z,hwT,hwB,ty,by){
+    const i=verts.length;
+    verts.push([hwT,ty,z],[0,ty+0.02,z],[-hwT,ty,z],
+               [-hwB,by,z],[0,by-0.01,z],[hwB,by,z]);
+    return[i,i+1,i+2,i+3,i+4,i+5];
+  }
+  const segs=secs.map(([z,hwT,hwB,ty,by])=>fusSec(z,hwT,hwB,ty,by));
+  for(let s=0;s<segs.length-1;s++){
+    const a=segs[s],b=segs[s+1];
+    for(let i=0;i<a.length;i++){
+      const ni=(i+1)%a.length;
+      quad(a[i],a[ni],b[ni],b[i],i<3?fus:dim(fus,0.80));
+    }
+  }
+
+  // Delta wing: LE from z=3.0 down to wingtip at z=-2.0, TE at z=-4.0
+  let lwTip=0,rwTip=0;
+  [-1,1].forEach(side=>{
+    const wt=0.03;
+    const rLE=verts.length; verts.push([side*0.30,wt, 2.8]);
+    const tLE=verts.length; verts.push([side*2.40,wt,-2.0]);
+    const tTE=verts.length; verts.push([side*2.40,wt,-4.0]);
+    const rTE=verts.length; verts.push([side*0.30,wt,-4.0]);
+    const rLEb=verts.length; verts.push([side*0.30,-wt, 2.8]);
+    const tLEb=verts.length; verts.push([side*2.40,-wt,-2.0]);
+    const tTEb=verts.length; verts.push([side*2.40,-wt,-4.0]);
+    const rTEb=verts.length; verts.push([side*0.30,-wt,-4.0]);
+    quad(rLE,tLE,tTE,rTE,wing);
+    quad(rLEb,rTEb,tTEb,tLEb,dim(wing,0.72));
+    quad(tLE,tLEb,tTEb,tTE,dim(wing,0.82));
+    quad(rLE,rLEb,tLEb,tLE,dim(wing,0.85));
+    if(side<0) lwTip=tLE; else rwTip=tLE;
+
+    // Engine nacelle (large, cigar-shaped, canted outboard)
+    const nx=side*1.45, ny=-0.05;
+    const nr=0.20, sides6=8;
+    function nacRing(z){
+      const i0=verts.length;
+      for(let i=0;i<sides6;i++){
+        const a=(i/sides6)*Math.PI*2;
+        verts.push([nx+Math.cos(a)*nr*0.7, ny+Math.sin(a)*nr, z]);
+      }
+      return Array.from({length:sides6},(_,i)=>i0+i);
+    }
+    const na=nacRing(2.5), nb=nacRing(0.5), nc=nacRing(-2.5), nd=nacRing(-4.2);
+    function connectRings(r0,r1,col){
+      for(let i=0;i<r0.length;i++){const ni=(i+1)%r0.length;quad(r0[i],r0[ni],r1[ni],r1[i],col);}
+    }
+    connectRings(na,nb,fus);
+    connectRings(nb,nc,fus);
+    connectRings(nc,nd,fus);
+    // Inlet glow
+    const ic=verts.length;verts.push([nx,ny,2.55]);
+    na.forEach((vi,i)=>tri(ic,vi,na[(i+1)%na.length],hot));
+    // Exhaust glow
+    const ec=verts.length;verts.push([nx,ny,-4.25]);
+    nd.forEach((vi,i)=>tri(ec,vi,nd[(i+1)%nd.length],hot));
+  });
+
+  // Twin vertical fins on nacelle tops
+  [-1.45,1.45].forEach(nx=>{
+    const c=dim(fus,1.5);
+    const f0=verts.length;verts.push([nx,0.05,-2.5]);
+    const f1=verts.length;verts.push([nx,0.05,-4.1]);
+    const f2=verts.length;verts.push([nx,0.80,-3.7]);
+    const f3=verts.length;verts.push([nx,0.80,-2.8]);
+    quad(f0,f1,f2,f3,c);
+  });
+
+  return {verts,faces,lwTip,rwTip};
+};
+
+// ── Boeing 747: wide-body with 4-engine pods ──────────────────────────────────
+AIRCRAFT_MODEL_BUILDERS.boeing747 = function(flapsLevel, gearDown) {
+  const verts=[], faces=[];
+  const fus  =[0.52,0.54,0.58];
+  const wing =[0.40,0.44,0.50];
+  const dark =[0.22,0.22,0.20];
+  function quad(a,b,c,d,col){faces.push({v:[a,b,c,d],c:col});}
+  function tri(a,b,c,col){faces.push({v:[a,b,c],c:col});}
+  function dim(c,f){return[c[0]*f,c[1]*f,c[2]*f];}
+  const sides=8;
+  function ring(z,rx,ry){
+    const i0=verts.length;
+    if(!ry)ry=rx;
+    const idx=[];
+    for(let i=0;i<sides;i++){
+      const a=(i/sides)*Math.PI*2;
+      idx.push(i0+i);
+      verts.push([Math.cos(a)*rx,Math.sin(a)*ry,z]);
+    }
+    return idx;
+  }
+  function connect(a,b,col){
+    for(let i=0;i<a.length;i++){const ni=(i+1)%a.length;quad(a[i],a[ni],b[ni],b[i],col);}
+  }
+
+  // Wide, fat fuselage — oval cross section (wider than tall)
+  const profile=[
+    [4.0,0.02,0.02],[3.4,0.22,0.22],[2.6,0.38,0.38],
+    [1.5,0.45,0.45],[0.0,0.45,0.45],[-1.5,0.44,0.44],
+    [-2.6,0.40,0.40],[-3.4,0.26,0.24],[-4.0,0.10,0.10],
+  ];
+  // Distinctive 747 hump (upper deck) on the front third
+  const segs=profile.map(([z,rx,ry],idx)=>{
+    const r=ring(z,rx,ry);
+    // raise the top verts slightly on front sections for the hump effect
+    if(z>1.0){r.slice(0,3).forEach(vi=>{verts[vi][1]+=0.10;});}
+    return r;
+  });
+  for(let i=0;i<segs.length-1;i++)connect(segs[i],segs[i+1],fus);
+
+  // Swept wings with 4 engine pods
+  let lwTip=0,rwTip=0;
+  [-1,1].forEach(side=>{
+    const wt=0.05,sweep=-0.55;
+    const rLE=verts.length; verts.push([side*0.45,wt*0.5, 1.0]);
+    const rTE=verts.length; verts.push([side*0.45,wt*0.5,-1.0]);
+    const tLE=verts.length; verts.push([side*4.5, wt*0.3, 1.0+4.5*sweep]);
+    const tTE=verts.length; verts.push([side*4.5, wt*0.3,-1.3+4.5*sweep]);
+    const rLEb=verts.length; verts.push([side*0.45,-wt, 1.0]);
+    const rTEb=verts.length; verts.push([side*0.45,-wt,-1.0]);
+    const tLEb=verts.length; verts.push([side*4.5,-wt*0.6, 1.0+4.5*sweep]);
+    const tTEb=verts.length; verts.push([side*4.5,-wt*0.6,-1.3+4.5*sweep]);
+    quad(rLE,tLE,tTE,rTE,wing);
+    quad(rLEb,rTEb,tTEb,tLEb,dim(wing,0.72));
+    quad(tLE,tLEb,tTEb,tTE,dim(wing,0.82));
+    quad(rLE,rLEb,tLEb,tLE,dim(wing,0.88));
+    if(side<0) lwTip=tLE; else rwTip=tLE;
+
+    // 4 engine pods (2 inboard, 2 outboard)
+    [1.2,2.4].forEach((ex,ei)=>{
+      const exs=side*ex, py=-0.22, nr=0.13;
+      const pz_f=0.8+4.5*sweep*(ex/4.5), pz_r=pz_f-0.8;
+      function eRing(z){
+        const i0=verts.length;
+        for(let i=0;i<6;i++){const a=(i/6)*Math.PI*2;verts.push([exs+Math.cos(a)*nr,py+Math.sin(a)*nr,z]);}
+        return Array.from({length:6},(_,i)=>i0+i);
+      }
+      const e0=eRing(pz_f+0.05),e1=eRing(pz_r);
+      for(let i=0;i<6;i++){const ni=(i+1)%6;quad(e0[i],e0[ni],e1[ni],e1[i],dark);}
+      const ic=verts.length;verts.push([exs,py,pz_f+0.08]);
+      e0.forEach((vi,i)=>tri(ic,vi,e0[(i+1)%6],dim(dark,0.5)));
+    });
+
+    // Flap (if deployed)
+    if(flapsLevel>0){
+      const frac=flapsLevel/3;
+      const fy=-wt-0.02*frac, frot=0.25*frac;
+      const f0=verts.length;verts.push([side*0.50,fy,-1.0]);
+      const f1=verts.length;verts.push([side*3.8, fy,-1.2+4.5*sweep*0.8]);
+      const f2=verts.length;verts.push([side*3.8, fy-frot,-1.2+4.5*sweep*0.8-0.3]);
+      const f3=verts.length;verts.push([side*0.50,fy-frot,-1.0-0.3]);
+      quad(f0,f3,f2,f1,dim(wing,0.90));
+    }
+  });
+
+  // Horizontal stabiliser
+  [-1,1].forEach(side=>{
+    const wt=0.03;
+    const rLE=verts.length;verts.push([side*0.25,wt,-3.2]);
+    const rTE=verts.length;verts.push([side*0.25,wt,-3.9]);
+    const tLE=verts.length;verts.push([side*1.8, wt,-3.4]);
+    const tTE=verts.length;verts.push([side*1.8, wt,-3.9]);
+    const rLEb=verts.length;verts.push([side*0.25,-wt,-3.2]);
+    const rTEb=verts.length;verts.push([side*0.25,-wt,-3.9]);
+    const tLEb=verts.length;verts.push([side*1.8, -wt,-3.4]);
+    const tTEb=verts.length;verts.push([side*1.8, -wt,-3.9]);
+    quad(rLE,tLE,tTE,rTE,wing);
+    quad(rLEb,rTEb,tTEb,tLEb,dim(wing,0.72));
+    quad(tLE,tLEb,tTEb,tTE,dim(wing,0.82));
+  });
+
+  // Vertical fin
+  {const c=dim(fus,0.85);
+   const f0=verts.length;verts.push([0,0.38,-2.6]);
+   const f1=verts.length;verts.push([0,0.38,-3.9]);
+   const f2=verts.length;verts.push([0,1.50,-3.4]);
+   const f3=verts.length;verts.push([0,1.50,-2.9]);
+   quad(f0,f1,f2,f3,c);}
+
+  // Landing gear
+  if(gearDown){
+    const gc=dark;
+    [[0,-0.45,0.5],[-0.35,-0.45,0.0],[0.35,-0.45,0.0]].forEach(([gx,gy,gz])=>{
+      const t=verts.length;verts.push([gx,gy+0.45,gz]);
+      const b=verts.length;verts.push([gx,gy,gz]);
+      tri(t,b,b,gc);
+    });
+  }
+
+  return {verts,faces,lwTip,rwTip};
+};
+
+// ── Spitfire: elliptical wing silhouette ──────────────────────────────────────
+AIRCRAFT_MODEL_BUILDERS.spitfire = function() {
+  const verts=[], faces=[];
+  const fus  =[0.34,0.38,0.42];  // dark WWII camo
+  const wing =[0.28,0.32,0.20];
+  const dark =[0.18,0.16,0.12];
+  function quad(a,b,c,d,col){faces.push({v:[a,b,c,d],c:col});}
+  function tri(a,b,c,col){faces.push({v:[a,b,c],c:col});}
+  function dim(c,f){return[c[0]*f,c[1]*f,c[2]*f];}
+  const sides=6;
+  function ring(z,r){
+    const i0=verts.length;
+    if(r<0.01){verts.push([0,0,z]);return[i0];}
+    const idx=[];
+    for(let i=0;i<sides;i++){
+      const a=(i/sides)*Math.PI*2+Math.PI/6;
+      idx.push(i0+i); verts.push([Math.cos(a)*r,Math.sin(a)*r,z]);
+    }
+    return idx;
+  }
+  function connect(a,b,col){
+    if(a.length===1){for(let i=0;i<b.length;i++)tri(a[0],b[i],b[(i+1)%b.length],col);}
+    else if(b.length===1){for(let i=0;i<a.length;i++)tri(a[i],a[(i+1)%a.length],b[0],col);}
+    else{for(let i=0;i<a.length;i++){const ni=(i+1)%a.length;quad(a[i],a[ni],b[ni],b[i],col);}}
+  }
+  // Short, round fuselage typical of WWII fighters
+  [[2.4,0],[2.1,0.10],[1.5,0.25],[0.8,0.32],[0.0,0.30],
+   [-0.8,0.26],[-1.6,0.18],[-2.2,0.10],[-2.6,0.04],[-2.9,0]
+  ].reduce((prev,cur,i,arr)=>{
+    if(i===0)return[ring(cur[0],cur[1])];
+    const r=ring(cur[0],cur[1]);
+    connect(prev[prev.length-1],r,fus);
+    prev.push(r);return prev;
+  },[]);
+
+  // Elliptical wings — approximate with 4 stations
+  let lwTip=0,rwTip=0;
+  [-1,1].forEach(side=>{
+    const wt=0.05;
+    // Wing chord narrows in an ellipse: chord(y) = chord0 * sqrt(1-(y/b)^2)
+    function wSta(ey,spanFrac){
+      const ch=0.60*Math.sqrt(1-spanFrac*spanFrac)*1.6;
+      const LE=0.3*ch, TE=-ch+LE;
+      return{LE,TE,x:side*ey};
+    }
+    const s0=wSta(0.22,0.0), s1=wSta(1.00,0.33), s2=wSta(1.80,0.62), s3=wSta(2.50,0.88), s4=wSta(2.90,1.0);
+    [s0,s1,s2,s3,s4].forEach((s,i,arr)=>{
+      if(i===0)return;
+      const p=arr[i-1];
+      const a0=verts.length;verts.push([p.x,wt,p.LE]);
+      const a1=verts.length;verts.push([p.x,wt,p.TE]);
+      const b0=verts.length;verts.push([s.x,wt,s.LE]);
+      const b1=verts.length;verts.push([s.x,wt,s.TE]);
+      const a0b=verts.length;verts.push([p.x,-wt,p.LE]);
+      const a1b=verts.length;verts.push([p.x,-wt,p.TE]);
+      const b0b=verts.length;verts.push([s.x,-wt,s.LE]);
+      const b1b=verts.length;verts.push([s.x,-wt,s.TE]);
+      quad(a0,b0,b1,a1,wing);
+      quad(a0b,a1b,b1b,b0b,dim(wing,0.72));
+      quad(b0,b0b,b1b,b1,dim(wing,0.82));
+      if(i===4){if(side<0)lwTip=b0;else rwTip=b0;}
+    });
+  });
+
+  // Horizontal tail
+  [-1,1].forEach(side=>{
+    const wt=0.04,tz=-2.2;
+    const r=verts.length;verts.push([side*0.08,wt,tz+0.20]);
+    const re=verts.length;verts.push([side*0.08,wt,tz-0.15]);
+    const t=verts.length;verts.push([side*1.10,wt,tz+0.10]);
+    const te=verts.length;verts.push([side*1.10,wt,tz-0.15]);
+    const rb=verts.length;verts.push([side*0.08,-wt,tz+0.20]);
+    const reb=verts.length;verts.push([side*0.08,-wt,tz-0.15]);
+    const tb=verts.length;verts.push([side*1.10,-wt,tz+0.10]);
+    quad(r,t,te,re,wing);
+    quad(t,tb,te,te,dim(wing,0.80));
+  });
+
+  // Vertical fin
+  {const c=dim(fus,0.80);
+   const f0=verts.length;verts.push([0,0.08,-1.5]);
+   const f1=verts.length;verts.push([0,0.08,-2.6]);
+   const f2=verts.length;verts.push([0,0.80,-2.2]);
+   const f3=verts.length;verts.push([0,0.80,-1.6]);
+   quad(f0,f1,f2,f3,c);}
+
+  // Prop disc
+  {const pz=2.42,pr=0.85,pc=dark;
+   const cx=verts.length;verts.push([0,0,pz]);
+   for(let i=0;i<8;i++){
+     const a=(i/8)*Math.PI*2,na=((i+1)/8)*Math.PI*2;
+     const p0=verts.length;verts.push([Math.cos(a)*pr,Math.sin(a)*pr,pz]);
+     const p1=verts.length;verts.push([Math.cos(na)*pr,Math.sin(na)*pr,pz]);
+     tri(cx,p0,p1,i%2===0?pc:dim(pc,0.4));
+   }}
+
+  return {verts,faces,lwTip,rwTip};
+};
 
 function buildAirplaneMesh(flapsLevel, gearDown) {
   const verts = [];
@@ -7375,9 +8162,15 @@ function initAircraftScreen() {
   if (_acPreviewInitDone) return;
   _acPreviewInitDone = true;
 
-  const screen = document.getElementById('aircraft-screen');
-  const gridEl = document.getElementById('acs-grid');
+  const screen    = document.getElementById('aircraft-screen');
+  const gridEl    = document.getElementById('acs-grid');
+  const emptyEl   = document.getElementById('acs-empty');
   const continueBtn = document.getElementById('acs-continue');
+  const searchEl  = document.getElementById('acs-search');
+  const sortEl    = document.getElementById('acs-sort');
+  const customBtn  = document.getElementById('acs-custom-btn');
+  const archiveBtn = document.getElementById('acs-archive-btn');
+  let showArchive = false;
   if (!screen || !gridEl || !continueBtn) {
     if (screen) screen.style.display = 'none';
     if (startMenu) startMenu.style.display = 'flex';
@@ -7385,32 +8178,54 @@ function initAircraftScreen() {
   }
 
   gridEl.innerHTML = '';
-
-  const previews = []; // { renderer, scene, camera, mesh, angle }
+  const CW = 280, CH = 175;
+  const previews = [];  // { renderer, scene, camera, mesh, angle, acKey }
   let acAnimRunning = true;
-  const CW = 320, CH = 200; // canvas internal resolution
 
-  Object.keys(AIRCRAFT_DEFS).forEach(function(acKey) {
+  // ── Build one card ──────────────────────────────────────────────────────────
+  function buildCard(acKey) {
     const def = AIRCRAFT_DEFS[acKey];
+    const isCustom = acKey.startsWith('custom_');
 
-    // Card container
     const card = document.createElement('div');
     card.className = 'acs-card' + (acKey === selectedAircraftKey ? ' acs-sel' : '');
     card.dataset.ac = acKey;
 
-    // Canvas for 3D model
+    if (isCustom) {
+      const badge = document.createElement('div');
+      badge.className = 'acs-card-badge';
+      badge.textContent = 'CUSTOM';
+      card.appendChild(badge);
+      const acts = document.createElement('div');
+      acts.className = 'acs-card-actions';
+      const editBtn = document.createElement('button');
+      editBtn.className = 'acs-card-act'; editBtn.textContent = 'EDIT';
+      editBtn.addEventListener('click', function(e) { e.stopPropagation(); openCustomModal(acKey); });
+      const delBtn = document.createElement('button');
+      delBtn.className = 'acs-card-act del'; delBtn.textContent = '✕';
+      delBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (!confirm('Delete "' + def.label + '"?')) return;
+        delete AIRCRAFT_DEFS[acKey];
+        _saveCustomAircraft();
+        if (selectedAircraftKey === acKey) applyAircraftType('classic');
+        _acPreviewInitDone = false;
+        rebuildGrid();
+      });
+      acts.appendChild(editBtn); acts.appendChild(delBtn);
+      card.appendChild(acts);
+    }
+
     const canvas = document.createElement('canvas');
     canvas.className = 'acs-card-canvas';
-    canvas.width = CW;
-    canvas.height = CH;
+    canvas.width = CW; canvas.height = CH;
 
-    // Info section
     const info = document.createElement('div');
     info.className = 'acs-card-info';
     info.innerHTML =
-      '<div class="acs-card-name">' + def.label + '</div>' +
-      '<div class="acs-card-cat">' + def.desc + '</div>' +
-      '<div class="acs-card-str">' + (def.strengths || '') + '</div>';
+      '<div class="acs-card-name">' + escHtml(def.label) + '</div>' +
+      '<div class="acs-card-cat">'  + escHtml(def.desc || '')  + '</div>' +
+      '<div class="acs-card-str">'  + escHtml(def.strengths || '') + '</div>';
 
     card.appendChild(canvas);
     card.appendChild(info);
@@ -7421,38 +8236,28 @@ function initAircraftScreen() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(CW, CH);
     renderer.setClearColor(0x000000, 0);
-
-    const scene = new THREE.Scene();
+    const scene  = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(42, CW / CH, 0.1, 2000);
-    camera.position.set(14, 6, 20);
-    camera.lookAt(0, 0, 0);
-
+    camera.position.set(14, 6, 20); camera.lookAt(0, 0, 0);
     scene.add(new THREE.AmbientLight(0x003010, 2.0));
-    const kl = new THREE.DirectionalLight(0x80ffa0, 2.2); kl.position.set(8, 12, 10); scene.add(kl);
-    const rl = new THREE.DirectionalLight(0x004420, 0.8); rl.position.set(-10, 3, -8); scene.add(rl);
-    const fl = new THREE.DirectionalLight(0x002218, 0.5); fl.position.set(0, -5, 6); scene.add(fl);
+    const kl = new THREE.DirectionalLight(0x80ffa0, 2.2); kl.position.set(8,12,10); scene.add(kl);
+    const rl = new THREE.DirectionalLight(0x004420, 0.8); rl.position.set(-10,3,-8); scene.add(rl);
+    const fl = new THREE.DirectionalLight(0x002218, 0.5); fl.position.set(0,-5,6); scene.add(fl);
 
-    // Procedural mesh (immediate, no network)
-    const raw = buildAirplaneMesh(0, false);
-    const geo = geomFromFaces(raw.verts, raw.faces);
-    const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: 0.45, metalness: 0.5,
-      side: THREE.DoubleSide,
-      emissive: new THREE.Color(0x003808), emissiveIntensity: 0.3
-    });
-    let mesh = new THREE.Mesh(geo, mat);
-    (function centerMesh(m) {
+    function centerMesh(m) {
       const b = new THREE.Box3().setFromObject(m);
-      m.scale.setScalar(14 / b.getSize(new THREE.Vector3()).length());
-      b.setFromObject(m);
-      m.position.sub(b.getCenter(new THREE.Vector3()));
-    })(mesh);
-    scene.add(mesh);
+      m.scale.setScalar(14 / Math.max(b.getSize(new THREE.Vector3()).length(), 0.1));
+      b.setFromObject(m); m.position.sub(b.getCenter(new THREE.Vector3()));
+    }
+    const builder = AIRCRAFT_MODEL_BUILDERS[acKey] || buildAirplaneMesh;
+    const raw = builder(0, false);
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.5, side: THREE.DoubleSide, emissive: new THREE.Color(0x003808), emissiveIntensity: 0.3 });
+    let mesh = new THREE.Mesh(geomFromFaces(raw.verts, raw.faces), mat);
+    centerMesh(mesh); scene.add(mesh);
 
-    const preview = { renderer, scene, camera, mesh, angle: Math.PI / 5 };
+    const preview = { renderer, scene, camera, mesh, angle: Math.PI / 5, acKey };
     previews.push(preview);
 
-    // Upgrade to real GLB when loaded
     if (def.playerModelUrl && _gltfLoader) {
       const dims = def.playerModelDims || { span: 30, len: 35 };
       const rec = ensureTrafficModel(def.playerModelUrl, dims, def.modelAxes);
@@ -7463,30 +8268,64 @@ function initAircraftScreen() {
           if (rec.status === 'ready' && rec.obj) {
             scene.remove(preview.mesh);
             const clone = rec.obj.clone(true);
-            (function centerMesh(m) {
-              const b = new THREE.Box3().setFromObject(m);
-              m.scale.setScalar(14 / b.getSize(new THREE.Vector3()).length());
-              b.setFromObject(m);
-              m.position.sub(b.getCenter(new THREE.Vector3()));
-            })(clone);
-            scene.add(clone);
-            preview.mesh = clone;
-          } else if (rec.status === 'loading' && ++polls < 60) {
-            setTimeout(poll, 500);
-          }
+            centerMesh(clone); scene.add(clone); preview.mesh = clone;
+          } else if (rec.status === 'loading' && ++polls < 60) setTimeout(poll, 500);
         })();
       }
     }
 
-    // Select on click
     card.addEventListener('click', function() {
-      gridEl.querySelectorAll('.acs-card').forEach(function(c) { c.classList.remove('acs-sel'); });
+      gridEl.querySelectorAll('.acs-card').forEach(function(c){ c.classList.remove('acs-sel'); });
       card.classList.add('acs-sel');
       applyAircraftType(acKey);
     });
+  }
+
+  function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // ── Render / re-filter grid ─────────────────────────────────────────────────
+  function rebuildGrid() {
+    previews.forEach(function(p){ try { p.renderer.dispose(); } catch(e){} });
+    previews.length = 0;
+    gridEl.innerHTML = '';
+
+    const search = (searchEl ? searchEl.value : '').trim().toLowerCase();
+    const sortType = sortEl ? sortEl.value : 'default';
+
+    let keys = Object.keys(AIRCRAFT_DEFS);
+
+    // Hide archived aircraft unless the toggle is on
+    if (!showArchive) {
+      keys = keys.filter(function(k){ return !AIRCRAFT_DEFS[k].archive; });
+    }
+
+    if (search) {
+      keys = keys.filter(function(k) {
+        const d = AIRCRAFT_DEFS[k] || {};
+        return (d.label + ' ' + (d.desc || '') + ' ' + (d.strengths || '')).toLowerCase().includes(search);
+      });
+    }
+
+    if (sortType !== 'default') {
+      keys.sort(function(a, b) { return _acSortScore(b, sortType) - _acSortScore(a, sortType); });
+    }
+
+    if (emptyEl) emptyEl.style.display = keys.length === 0 ? '' : 'none';
+    keys.forEach(buildCard);
+  }
+
+  rebuildGrid();
+
+  if (searchEl) searchEl.addEventListener('input', rebuildGrid);
+  if (sortEl)   sortEl.addEventListener('change', rebuildGrid);
+  if (archiveBtn) archiveBtn.addEventListener('click', function() {
+    showArchive = !showArchive;
+    archiveBtn.style.opacity  = showArchive ? '1' : '0.45';
+    archiveBtn.style.outline  = showArchive ? '1px solid #00ff41' : 'none';
+    rebuildGrid();
   });
 
-  // Single shared rAF loop renders all cards
+  // rAF loop
   function previewLoop() {
     if (!acAnimRunning) return;
     requestAnimationFrame(previewLoop);
@@ -7498,15 +8337,181 @@ function initAircraftScreen() {
   }
   previewLoop();
 
-  // Continue → return to start menu
+  // ── Continue button ─────────────────────────────────────────────────────────
   continueBtn.addEventListener('click', function() {
     acAnimRunning = false;
-    previews.forEach(function(p) { p.renderer.dispose(); });
+    previews.forEach(function(p){ try { p.renderer.dispose(); } catch(e){} });
     screen.style.display = 'none';
     const cur = document.getElementById('sm-ac-current');
     if (cur) cur.textContent = (AIRCRAFT_DEFS[selectedAircraftKey] || {}).label || '';
     if (startMenu) startMenu.style.display = 'flex';
   });
+
+  // ── Custom aircraft modal ───────────────────────────────────────────────────
+  const modal    = document.getElementById('acs-custom-modal');
+  const modalTitle = document.getElementById('acm-title');
+  const editKeyIn  = document.getElementById('acm-edit-key');
+  const errEl      = document.getElementById('acm-err');
+  const deleteBtn  = document.getElementById('acm-delete');
+
+  function f(id){ return document.getElementById(id); }
+
+  function openCustomModal(editKey) {
+    if (!modal) return;
+    const isEdit = !!editKey;
+    const def = isEdit ? (AIRCRAFT_DEFS[editKey] || {}) : {};
+    modalTitle.textContent = isEdit ? 'EDIT AIRCRAFT' : 'CREATE CUSTOM AIRCRAFT';
+    editKeyIn.value = editKey || '';
+    deleteBtn.style.display = isEdit ? '' : 'none';
+    errEl.textContent = '';
+
+    f('acm-label').value     = def.label       || '';
+    f('acm-desc').value      = def.desc        || '';
+    f('acm-strengths').value = def.strengths   || '';
+    f('acm-m').value         = def.m           || '';
+    f('acm-S').value         = def.S           || '';
+    f('acm-Tmax').value      = def.Tmax        || '';
+    f('acm-Vne').value       = def.Vne         || '';
+    f('acm-rotKts').value    = def.rotationKts || '';
+    f('acm-cruiseKts').value = def.cruiseKts   || '';
+    f('acm-CL_a').value      = def.CL_a        || '';
+    f('acm-CL_max').value    = def.CL_max      || '';
+    f('acm-aStall').value    = def.aStall      || '';
+    f('acm-Cd0').value       = def.Cd0         || '';
+    f('acm-k').value         = def.k           || '';
+    f('acm-incidence').value = def.incidence   || '';
+    f('acm-fuelMax').value   = def.fuelMax     || '';
+    f('acm-ffMax').value     = def.fuelFlowMax || '';
+    f('acm-ffIdle').value    = def.fuelFlowIdle|| '';
+    f('acm-modelUrl').value  = def.playerModelUrl || '';
+    f('acm-span').value      = (def.playerModelDims || {}).span || '';
+    f('acm-len').value       = (def.playerModelDims || {}).len  || '';
+
+    modal.style.display = 'flex';
+  }
+
+  if (customBtn) customBtn.addEventListener('click', function(){ openCustomModal(null); });
+  if (f('acm-cancel')) f('acm-cancel').addEventListener('click', function(){ modal.style.display = 'none'; });
+
+  if (f('acm-save')) f('acm-save').addEventListener('click', function() {
+    errEl.textContent = '';
+    const label = f('acm-label').value.trim();
+    const m     = parseFloat(f('acm-m').value);
+    const S     = parseFloat(f('acm-S').value);
+    const Tmax  = parseFloat(f('acm-Tmax').value);
+    const Vne   = parseFloat(f('acm-Vne').value);
+    const rotKts= parseFloat(f('acm-rotKts').value);
+    const cruKts= parseFloat(f('acm-cruiseKts').value);
+    if (!label)                  { errEl.textContent = 'NAME is required'; return; }
+    if (!m   || m   <= 0)        { errEl.textContent = 'MASS must be > 0'; return; }
+    if (!S   || S   <= 0)        { errEl.textContent = 'WING AREA must be > 0'; return; }
+    if (!Tmax|| Tmax<= 0)        { errEl.textContent = 'MAX THRUST must be > 0'; return; }
+    if (!Vne || Vne <= 0)        { errEl.textContent = 'Vne must be > 0'; return; }
+    if (!rotKts|| rotKts<= 0)    { errEl.textContent = 'ROTATION SPEED must be > 0'; return; }
+    if (!cruKts|| cruKts<= 0)    { errEl.textContent = 'CRUISE SPEED must be > 0'; return; }
+
+    const key = editKeyIn.value || _newCustomKey();
+    const modelUrl = f('acm-modelUrl').value.trim();
+    const spanV = parseFloat(f('acm-span').value);
+    const lenV  = parseFloat(f('acm-len').value);
+
+    function pf(id, def){ const v = parseFloat(f(id).value); return (isNaN(v)||v===0) ? def : v; }
+
+    const def = {
+      _key:         key,
+      label:        label.toUpperCase(),
+      desc:         f('acm-desc').value.trim() || 'Custom aircraft',
+      strengths:    f('acm-strengths').value.trim(),
+      m, S, Tmax, Vne,
+      rotationKts:  rotKts,
+      cruiseKts:    cruKts,
+      CL_a:         pf('acm-CL_a',   5.0),
+      CL_max:       pf('acm-CL_max', 1.5),
+      aStall:       pf('acm-aStall', 15),
+      Cd0:          pf('acm-Cd0',    0.025),
+      k:            pf('acm-k',      0.05),
+      incidence:    pf('acm-incidence', 1.5),
+      fuelMax:      pf('acm-fuelMax', Math.round(m * 0.2)),
+      fuelFlowMax:  pf('acm-ffMax',   Tmax * 0.000012),
+      fuelFlowIdle: pf('acm-ffIdle',  Tmax * 0.0000006),
+    };
+    if (modelUrl) {
+      def.playerModelUrl = modelUrl;
+      def.playerModelDims = { span: spanV || 30, len: lenV || 35 };
+    }
+
+    AIRCRAFT_DEFS[key] = def;
+    _saveCustomAircraft();
+    modal.style.display = 'none';
+    _acPreviewInitDone = false;
+    rebuildGrid();
+    // Auto-select the new aircraft
+    applyAircraftType(key);
+    gridEl.querySelectorAll('.acs-card').forEach(function(c){
+      c.classList.toggle('acs-sel', c.dataset.ac === key);
+    });
+  });
+
+  if (deleteBtn) deleteBtn.addEventListener('click', function() {
+    const key = editKeyIn.value;
+    if (!key || !AIRCRAFT_DEFS[key]) return;
+    if (!confirm('Delete "' + AIRCRAFT_DEFS[key].label + '"?')) return;
+    delete AIRCRAFT_DEFS[key];
+    _saveCustomAircraft();
+    if (selectedAircraftKey === key) applyAircraftType('classic');
+    modal.style.display = 'none';
+    _acPreviewInitDone = false;
+    rebuildGrid();
+  });
+
+  // Export
+  if (f('acm-export')) f('acm-export').addEventListener('click', function() {
+    const key = editKeyIn.value;
+    const def = key ? AIRCRAFT_DEFS[key] : null;
+    if (!def) {
+      // Export all custom aircraft
+      const all = Object.keys(AIRCRAFT_DEFS)
+        .filter(function(k){ return k.startsWith('custom_'); })
+        .map(function(k){ return AIRCRAFT_DEFS[k]; });
+      _downloadJson(all, 'custom_aircraft.json');
+    } else {
+      _downloadJson(def, (def.label || 'aircraft').replace(/\s+/g,'_').toLowerCase() + '.json');
+    }
+  });
+
+  // Import
+  const importFile = f('acm-import-file');
+  if (importFile) importFile.addEventListener('change', function() {
+    const file = importFile.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        let data = JSON.parse(e.target.result);
+        if (!Array.isArray(data)) data = [data];
+        let imported = 0;
+        data.forEach(function(entry) {
+          if (!entry || !entry.label || !entry.m || !entry.Tmax) return;
+          const k = entry._key && entry._key.startsWith('custom_') ? entry._key : _newCustomKey();
+          entry._key = k;
+          AIRCRAFT_DEFS[k] = entry;
+          imported++;
+        });
+        _saveCustomAircraft();
+        modal.style.display = 'none';
+        _acPreviewInitDone = false;
+        rebuildGrid();
+        errEl.textContent = imported + ' aircraft imported';
+      } catch(ex) { errEl.textContent = 'Invalid JSON file'; }
+    };
+    reader.readAsText(file);
+    importFile.value = '';
+  });
+
+  function _downloadJson(obj, filename) {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = filename; a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
+  }
 }
 
 function loop() {
