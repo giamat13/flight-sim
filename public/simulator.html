@@ -4017,6 +4017,26 @@ function navEngage(dest) {
     ap.nav.destGroundFt = ft;
     if (ap.nav.leg === 'dest') ap.nav.activeGroundFt = ft;
   });
+  // If the destination is an airport, fetch the runway aligned with our approach bearing
+  // and snap the active waypoint to the runway threshold for a proper lined-up approach.
+  if (dest.isAirport) {
+    const approachBrg = navBearingTo(dest.lat, dest.lon).brg;
+    const origLat = dest.lat, origLon = dest.lon;
+    findLandingRunway(dest.lat, dest.lon, approachBrg, function (rwy) {
+      if (!ap.nav || ap.nav.destLat !== origLat || ap.nav.destLon !== origLon) return;
+      if (!rwy) return;
+      ap.nav.runway = rwy;
+      ap.nav.destLat = rwy.lat; ap.nav.destLon = rwy.lon;
+      if (ap.nav.leg === 'dest') { ap.nav.activeLat = rwy.lat; ap.nav.activeLon = rwy.lon; }
+      sampleGroundFt(rwy.lat, rwy.lon, function (ft) {
+        if (!ap.nav) return;
+        ap.nav.destGroundFt = ft;
+        if (ap.nav.leg === 'dest') ap.nav.activeGroundFt = ft;
+      });
+      const rwyNum = String(Math.round(((rwy.hdg % 360) + 360) % 360 / 10) || 36).padStart(2, '0');
+      showToast('🛬 RUNWAY ' + rwyNum + ' — APPROACH LOCKED', 3500);
+    });
+  }
   // Make sure we actually have power to fly.
   if (!state.onGround && state.engineState === 'off' && state.fuel > 0) handleEngineKey();
   // If we're handed a fast aircraft with the gear hanging out, tuck it away now so
@@ -4222,6 +4242,8 @@ function apNavControl(dt) {
     if (activeAglFt < 900 || db.dist < 2500) {
       ap.nav.phase = 'land';
       ap.landPhase = 0; ap.landPhaseTimer = 0;
+      // Snap to runway heading for a precisely aligned final approach.
+      if (ap.nav.runway) ap.targetHdg = ap.nav.runway.hdg;
       if (!state.gearBroken && state.speed < NAV_GEAR_DOWN_KTS) state.gearDown = true;
       if (state.speed < NAV_FLAPS_KTS && state.flaps < 1) state.flaps = 1;
     }
@@ -6355,6 +6377,53 @@ function findNearestRunway(lat, lon, cb) {
     .catch(function () { clearTimeout(tid); cb(null); });
 }
 
+// Fetch runways near an airport and pick the threshold best aligned with the approach bearing.
+// approachBrg: bearing the aircraft is flying toward the airport (degrees 0-360).
+// Returns cb({lat,lon,hdg}) — the threshold coords and the runway heading to fly.
+function findLandingRunway(airportLat, airportLon, approachBrg, cb) {
+  const d = 0.27;
+  const dLon = d / Math.max(0.1, Math.cos(airportLat * Math.PI / 180));
+  const bbox = (airportLat - d) + ',' + (airportLon - dLon) + ',' + (airportLat + d) + ',' + (airportLon + dLon);
+  const query = '[out:json][timeout:18];way[aeroway=runway](' + bbox + ');out geom qt;';
+  const ctrl = new AbortController();
+  const tid = setTimeout(function () { ctrl.abort(); cb(null); }, 20000);
+  fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    body: 'data=' + encodeURIComponent(query),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    signal: ctrl.signal
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      clearTimeout(tid);
+      const ways = data.elements || [];
+      if (!ways.length) { cb(null); return; }
+      const cosLat = Math.cos(airportLat * Math.PI / 180);
+      const candidates = [];
+      for (let w = 0; w < ways.length; w++) {
+        const geo = ways[w].geometry;
+        if (!geo || geo.length < 2) continue;
+        const pA = geo[0], pB = geo[geo.length - 1];
+        const dN = (pB.lat - pA.lat) * M_PER_DEG_LAT;
+        const dE = (pB.lon - pA.lon) * (M_PER_DEG_LAT * cosLat);
+        const hdgAB = (Math.atan2(dE, dN) * 180 / Math.PI + 360) % 360;
+        const hdgBA = (hdgAB + 180) % 360;
+        candidates.push({ lat: pA.lat, lon: pA.lon, hdg: hdgAB });
+        candidates.push({ lat: pB.lat, lon: pB.lon, hdg: hdgBA });
+      }
+      // Pick the threshold whose landing heading best matches the approach bearing.
+      // A good match means |hdg - approachBrg| is small (same general direction).
+      let best = null, bestScore = Infinity;
+      for (let i = 0; i < candidates.length; i++) {
+        const c = candidates[i];
+        const diff = Math.abs(((c.hdg - approachBrg + 540) % 360) - 180);
+        if (diff < bestScore) { bestScore = diff; best = c; }
+      }
+      cb(best);
+    })
+    .catch(function () { clearTimeout(tid); cb(null); });
+}
+
 function beginFlight(loc) {
   START.lat = loc.lat;
   START.lon = loc.lon;
@@ -6721,6 +6790,7 @@ let nmAirports = [];
 let nmAirportFetchKey = '';
 let nmAirportFetching = false;
 let nmAirportRetryAt = 0;
+let nmLandingAirport = null; // set when user taps an airport marker, cleared on GO / cancel
 
 function nmGetViewBbox() {
   const z = nmView.zoom, cw = (nmCanvas && nmCanvas.width) || window.innerWidth, ch = (nmCanvas && nmCanvas.height) || window.innerHeight;
@@ -7003,7 +7073,7 @@ function openNavPicker() {
   ov.style.display = 'block';
   document.body.style.cursor = 'crosshair';
   nmView.lat = state.lat; nmView.lon = state.lon; nmView.zoom = state.onGround ? 11 : 9;
-  nmDestName = null; nmElevFt = null; nmElevKey = ''; nmAirportFetchKey = ''; nmAirports = []; nmAirportFetching = false;
+  nmDestName = null; nmElevFt = null; nmElevKey = ''; nmAirportFetchKey = ''; nmAirports = []; nmAirportFetching = false; nmLandingAirport = null;
   const rb = document.getElementById('nm-resume');
   if (rb) {
     if (navLastDest) { rb.style.display = 'block'; rb.textContent = '▶ RESUME: ' + (navLastDest.name || (navLastDest.lat.toFixed(2) + ',' + navLastDest.lon.toFixed(2))); }
@@ -7021,8 +7091,10 @@ function closeNavPicker() {
 function nmFly() {
   const lat = nmView.lat, lon = nmView.lon;
   const name = nmDestName || ('DEST ' + lat.toFixed(2) + ',' + lon.toFixed(2));
+  const isAirport = nmLandingAirport != null;
+  nmLandingAirport = null;
   closeNavPicker();
-  navEngage({ lat: lat, lon: lon, name: name });
+  navEngage({ lat: lat, lon: lon, name: name, isAirport: isAirport });
 }
 function nmResume() {
   if (!navLastDest) return;
@@ -7152,7 +7224,9 @@ function initNavPicker() {
             nmView.lat = nearest.lat; nmView.lon = nearest.lon;
             nmDestName = (nearest.icao || nearest.name || 'AIRPORT').toUpperCase();
             nmElevKey = '';
+            nmLandingAirport = nearest;
           } else {
+            nmLandingAirport = null;
             nmRecenterToScreen(e.offsetX, e.offsetY);
           }
         }
