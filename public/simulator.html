@@ -197,6 +197,22 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .ac-btn:hover{background:rgba(0,255,65,0.16);border-color:#00FF41;box-shadow:0 0 12px rgba(0,255,65,0.2)}
 .ac-btn.ac-active{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 14px rgba(0,255,65,0.35)}
 .ac-btn .ac-sub{display:block;font-size:8px;opacity:0.5;margin-top:4px;letter-spacing:1px}
+/* ===== Aircraft selection full-screen ===== */
+#aircraft-screen{position:fixed;inset:0;z-index:51;display:none;flex-direction:column;align-items:center;justify-content:center;gap:24px;background:radial-gradient(ellipse at 40% 55%,#051018 0%,#020407 100%);color:#00FF41;font-family:'JetBrains Mono',monospace;overflow:hidden;cursor:auto}
+.acs-title{font-size:20px;letter-spacing:8px;text-shadow:0 0 18px rgba(0,255,65,0.5)}
+.acs-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;width:94%;max-width:860px}
+.acs-card{cursor:pointer;background:rgba(0,255,65,0.03);border:1px solid rgba(0,255,65,0.18);border-radius:8px;overflow:hidden;transition:border-color .18s,box-shadow .18s,background .18s;pointer-events:auto;-webkit-user-select:none;user-select:none;display:flex;flex-direction:column}
+.acs-card:hover{border-color:rgba(0,255,65,0.5);background:rgba(0,255,65,0.06)}
+.acs-card.acs-sel{border-color:#00FF41;box-shadow:0 0 22px rgba(0,255,65,0.22);background:rgba(0,255,65,0.08)}
+.acs-card-canvas{display:block;width:100%;height:auto;background:transparent}
+.acs-card-info{padding:12px 16px 14px;border-top:1px solid rgba(0,255,65,0.10)}
+.acs-card-name{font-size:12px;letter-spacing:3px;font-weight:700;text-transform:uppercase;margin-bottom:4px}
+.acs-card-cat{font-size:8px;letter-spacing:2px;opacity:0.4;text-transform:uppercase;margin-bottom:7px}
+.acs-card-str{font-size:9px;letter-spacing:1px;color:rgba(0,255,65,0.65);line-height:1.6}
+.acs-card-str::before{content:'▶  ';opacity:0.4;font-size:7px}
+#acs-continue{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.10);border:1px solid rgba(0,255,65,0.5);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:3px;padding:13px 44px;border-radius:5px;transition:all .18s;text-transform:uppercase}
+#acs-continue:hover{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 22px rgba(0,255,65,0.28)}
+@media(max-width:600px){.acs-grid{grid-template-columns:1fr}}
 .env-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:460px;width:94%}
 .env-btn{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.25);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 11px;border-radius:5px;transition:all .15s}
 .env-btn:hover{background:rgba(0,255,65,0.14);border-color:#00FF41}
@@ -435,12 +451,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="vkb-hint">D-PAD MOVE · A TYPE · B CLOSE · GO ✈ LAUNCH</div>
 </div>
 
+<div id="aircraft-screen" style="display:none">
+  <div class="acs-title">SELECT YOUR AIRCRAFT</div>
+  <div class="acs-grid" id="acs-grid"></div>
+  <button id="acs-continue">CHOOSE DEPARTURE ›</button>
+</div>
+
 <div id="startmenu" style="display:none">
   <div class="sm-title">FLIGHT SIM</div>
-  <div class="sm-section">SELECT AIRCRAFT</div>
-  <div id="ac-selector">
-    <!-- Aircraft buttons are generated from AIRCRAFT_DEFS at runtime -->
-  </div>
+  <div id="ac-selector" style="display:none"><!-- aircraft selector kept for applyAircraftType compat --></div>
+  <button id="sm-aircraft-btn" style="cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.35);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:2px;padding:10px 28px;border-radius:5px;transition:all .15s;margin-bottom:2px">✈ SELECT AIRCRAFT</button>
+  <div id="sm-ac-current" style="font-size:9px;letter-spacing:2px;opacity:0.45;margin-top:-6px;margin-bottom:4px">CLASSIC JET</div>
   <div class="sm-sub" style="margin-top:4px">SELECT DEPARTURE POINT</div>
   <div id="sm-grid">
     <button class="sm-btn" data-name="GRAND CANYON, AZ" data-lat="36.1069" data-lon="-112.1129" data-alt="1500" data-hdg="90">Grand Canyon<span class="sm-sub2">USA</span></button>
@@ -1481,6 +1502,7 @@ const AIRCRAFT_DEFS = {
   classic: {
     label: 'CLASSIC JET',
     desc: 'Light business jet',
+    strengths: 'Nimble and forgiving — perfect for beginners, canyon runs and low-altitude scenic exploration',
     m: 5200,            // mass (kg)
     S: 30,              // wing area (m^2)
     CL_a: 5.2,          // lift-curve slope (per rad)
@@ -1500,6 +1522,7 @@ const AIRCRAFT_DEFS = {
   boeing737: {
     label: 'BOEING 737-800',
     desc: 'Narrow-body airliner',
+    strengths: 'Heavy and capable — best for long-range cruising and realistic airline-style approaches',
     m: 65000,           // kg — typical operating weight (OEW 41,145 / MTOW 70,535)
     S: 125.0,           // m² — reference wing area (boeing.com)
     CL_a: 4.8,          // per rad — swept 25-deg wing, AR=9.5
@@ -1532,6 +1555,7 @@ const AIRCRAFT_DEFS = {
   airbus320: {
     label: 'AIRBUS A320',
     desc: 'Narrow-body airliner',
+    strengths: 'Fly-by-wire precision — excellent stability and fuel efficiency in all weather conditions',
     m: 73500,           // kg — MTOW 73,500 (A320-200)
     S: 122.6,           // m² — reference wing area
     CL_a: 4.8,          // per rad — swept ~25-deg wing, similar to 737
@@ -1562,32 +1586,31 @@ const AIRCRAFT_DEFS = {
                 'GearNAftDoorL', 'GearNAftDoorR'],
   },
   fighter: {
-    label: 'FIGHTER JET',
-    desc: 'Aerobatic — tricks & flips',
-    m: 9500,            // kg — ~F-16 light combat weight (empty 8.5t / MTOW 19t)
-    S: 27.87,           // m² — F-16 reference wing area
-    CL_a: 3.6,          // per rad — low-aspect (AR≈3.2) thin wing
-    CL_max: 1.5,        // clean — relaxed-stability fighter
-    aStall: 22,         // deg — high AoA capability
+    label: 'F-16 FIGHTING FALCON',
+    desc: 'Air superiority fighter',
+    strengths: 'Blazing speed and razor agility — for pilots who demand total performance at the edge of the envelope',
+    m: 9500,            // kg — F-16C light combat weight (empty 8,570 kg + partial fuel/stores)
+    S: 27.87,           // m² — F-16 reference wing area (exact)
+    CL_a: 3.6,          // per rad — low-aspect (AR≈3.2) thin cropped-delta wing
+    CL_max: 1.5,        // clean configuration
+    aStall: 22,         // deg — high AoA capability (fly-by-wire relaxed stability)
     Cd0: 0.022,         // parasitic drag
     k: 0.11,            // induced drag: 1/(pi × 0.9 × 3.2) — low AR
-    incidence: 0.0,     // deg — symmetric, no built-in incidence
-    Tmax: 130000,       // N — F110 with afterburner (~T/W > 1 for vertical)
-    Vne: 330,           // m/s — ≈ 640 kt; fast but a sane game envelope (real Mach 2 is unplayable)
+    incidence: 0.0,     // deg — symmetric airfoil, no built-in incidence
+    Tmax: 130000,       // N — GE F110-GE-129 with afterburner (131,600 N rated)
+    Vne: 330,           // m/s — ≈ 640 kt; game envelope (real Mach 2+ is unplayable)
     fuelFlowIdle: 0.05, // kg/s
     fuelFlowMax: 2.0,   // kg/s — afterburner is thirsty
-    fuelMax: 3000,      // kg — internal fuel
-    rotationKts: 140,   // kt — takeoff rotation
-    cruiseKts: 480,     // autopilot target cruise speed (kt) — fast jet, but not its Mach-2 Vne
-    // Pilatus PC-21 — sleek single-seat military aerobatic trainer. Served from
-    // raw.githubusercontent (sends Access-Control-Allow-Origin: *) so it actually
-    // loads in the browser. The previous get3dmodels.com model lacked CORS headers,
-    // so on the live web build the load was blocked and the aircraft silently fell
-    // back to the generic procedural mesh — looking "classic" while flying like a jet.
-    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/pc21/glTF2/PC21.glb',
-    playerModelDims: { span: 9.1, len: 11.2 },  // metres — PC-21 wingspan / fuselage length
+    fuelMax: 3900,      // kg — F-16C internal fuel (real: 3,986 kg / 8,780 lb)
+    rotationKts: 140,   // kt — typical Vr for F-16C
+    cruiseKts: 480,     // autopilot target cruise speed (kt) — subsonic cruise
+    // F-16C Fighting Falcon GLB from cutechicken/3D-Airforce-Simulator on Hugging Face.
+    // Hugging Face CDN sends Access-Control-Allow-Origin: * so this loads correctly
+    // in the browser without CORS issues.
+    playerModelUrl: 'https://huggingface.co/spaces/cutechicken/3D-Airforce-Simulator/resolve/main/models/f-16.glb',
+    playerModelDims: { span: 9.45, len: 15.06 },  // metres — F-16C wingspan / fuselage length
     modelYOffset: 1.2,  // metres — lifts the centred GLB to rest on terrain
-    // Single-mesh model (one "airframe" node) — no separable flap/gear surfaces.
+    // Single-mesh model — no separable flap/gear surfaces.
   },
   // Add more aircraft here — they appear in the menu automatically.
 };
@@ -6716,6 +6739,20 @@ function parseAnyCoords(t) {
   applyAircraftType(selectedAircraftKey); // mark default selection
 })();
 
+// "SELECT AIRCRAFT" button in the start menu opens the full-screen aircraft picker
+(function() {
+  const btn = document.getElementById('sm-aircraft-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    const screen = document.getElementById('aircraft-screen');
+    if (!screen) return;
+    if (startMenu) startMenu.style.display = 'none';
+    screen.style.display = 'flex';
+    _acPreviewInitDone = false; // allow re-init each time it's opened
+    initAircraftScreen();
+  });
+})();
+
 if (startMenu) {
   startMenu.querySelectorAll('.sm-btn[data-lat]').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -7329,6 +7366,147 @@ function initNavPicker() {
   nmCanvas.addEventListener('pointerup', endPtr);
   nmCanvas.addEventListener('pointercancel', endPtr);
   nmCanvas.addEventListener('wheel', function (e) { e.preventDefault(); nmZoom(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+}
+
+// ===================== Aircraft selection screen =====================
+let _acPreviewInitDone = false;
+
+function initAircraftScreen() {
+  if (_acPreviewInitDone) return;
+  _acPreviewInitDone = true;
+
+  const screen = document.getElementById('aircraft-screen');
+  const gridEl = document.getElementById('acs-grid');
+  const continueBtn = document.getElementById('acs-continue');
+  if (!screen || !gridEl || !continueBtn) {
+    if (screen) screen.style.display = 'none';
+    if (startMenu) startMenu.style.display = 'flex';
+    return;
+  }
+
+  gridEl.innerHTML = '';
+
+  const previews = []; // { renderer, scene, camera, mesh, angle }
+  let acAnimRunning = true;
+  const CW = 320, CH = 200; // canvas internal resolution
+
+  Object.keys(AIRCRAFT_DEFS).forEach(function(acKey) {
+    const def = AIRCRAFT_DEFS[acKey];
+
+    // Card container
+    const card = document.createElement('div');
+    card.className = 'acs-card' + (acKey === selectedAircraftKey ? ' acs-sel' : '');
+    card.dataset.ac = acKey;
+
+    // Canvas for 3D model
+    const canvas = document.createElement('canvas');
+    canvas.className = 'acs-card-canvas';
+    canvas.width = CW;
+    canvas.height = CH;
+
+    // Info section
+    const info = document.createElement('div');
+    info.className = 'acs-card-info';
+    info.innerHTML =
+      '<div class="acs-card-name">' + def.label + '</div>' +
+      '<div class="acs-card-cat">' + def.desc + '</div>' +
+      '<div class="acs-card-str">' + (def.strengths || '') + '</div>';
+
+    card.appendChild(canvas);
+    card.appendChild(info);
+    gridEl.appendChild(card);
+
+    // Mini Three.js scene
+    const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(CW, CH);
+    renderer.setClearColor(0x000000, 0);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, CW / CH, 0.1, 2000);
+    camera.position.set(14, 6, 20);
+    camera.lookAt(0, 0, 0);
+
+    scene.add(new THREE.AmbientLight(0x003010, 2.0));
+    const kl = new THREE.DirectionalLight(0x80ffa0, 2.2); kl.position.set(8, 12, 10); scene.add(kl);
+    const rl = new THREE.DirectionalLight(0x004420, 0.8); rl.position.set(-10, 3, -8); scene.add(rl);
+    const fl = new THREE.DirectionalLight(0x002218, 0.5); fl.position.set(0, -5, 6); scene.add(fl);
+
+    // Procedural mesh (immediate, no network)
+    const raw = buildAirplaneMesh(0, false);
+    const geo = geomFromFaces(raw.verts, raw.faces);
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.45, metalness: 0.5,
+      side: THREE.DoubleSide,
+      emissive: new THREE.Color(0x003808), emissiveIntensity: 0.3
+    });
+    let mesh = new THREE.Mesh(geo, mat);
+    (function centerMesh(m) {
+      const b = new THREE.Box3().setFromObject(m);
+      m.scale.setScalar(14 / b.getSize(new THREE.Vector3()).length());
+      b.setFromObject(m);
+      m.position.sub(b.getCenter(new THREE.Vector3()));
+    })(mesh);
+    scene.add(mesh);
+
+    const preview = { renderer, scene, camera, mesh, angle: Math.PI / 5 };
+    previews.push(preview);
+
+    // Upgrade to real GLB when loaded
+    if (def.playerModelUrl && _gltfLoader) {
+      const dims = def.playerModelDims || { span: 30, len: 35 };
+      const rec = ensureTrafficModel(def.playerModelUrl, dims, def.modelAxes);
+      if (rec) {
+        let polls = 0;
+        (function poll() {
+          if (!acAnimRunning) return;
+          if (rec.status === 'ready' && rec.obj) {
+            scene.remove(preview.mesh);
+            const clone = rec.obj.clone(true);
+            (function centerMesh(m) {
+              const b = new THREE.Box3().setFromObject(m);
+              m.scale.setScalar(14 / b.getSize(new THREE.Vector3()).length());
+              b.setFromObject(m);
+              m.position.sub(b.getCenter(new THREE.Vector3()));
+            })(clone);
+            scene.add(clone);
+            preview.mesh = clone;
+          } else if (rec.status === 'loading' && ++polls < 60) {
+            setTimeout(poll, 500);
+          }
+        })();
+      }
+    }
+
+    // Select on click
+    card.addEventListener('click', function() {
+      gridEl.querySelectorAll('.acs-card').forEach(function(c) { c.classList.remove('acs-sel'); });
+      card.classList.add('acs-sel');
+      applyAircraftType(acKey);
+    });
+  });
+
+  // Single shared rAF loop renders all cards
+  function previewLoop() {
+    if (!acAnimRunning) return;
+    requestAnimationFrame(previewLoop);
+    previews.forEach(function(p) {
+      p.angle += 0.007;
+      if (p.mesh) p.mesh.rotation.y = p.angle;
+      p.renderer.render(p.scene, p.camera);
+    });
+  }
+  previewLoop();
+
+  // Continue → return to start menu
+  continueBtn.addEventListener('click', function() {
+    acAnimRunning = false;
+    previews.forEach(function(p) { p.renderer.dispose(); });
+    screen.style.display = 'none';
+    const cur = document.getElementById('sm-ac-current');
+    if (cur) cur.textContent = (AIRCRAFT_DEFS[selectedAircraftKey] || {}).label || '';
+    if (startMenu) startMenu.style.display = 'flex';
+  });
 }
 
 function loop() {
