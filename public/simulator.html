@@ -163,13 +163,37 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #startmenu .sm-hint{font-size:9px;opacity:0.4;letter-spacing:2px;margin-top:8px}
 #sm-settings-btn{cursor:pointer;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);color:rgba(0,255,65,0.5);font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
 #sm-settings-btn:hover{background:rgba(0,255,65,0.12);color:#00FF41;border-color:rgba(0,255,65,0.5)}
-#settings-panel{position:fixed;inset:0;z-index:52;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:rgba(8,10,14,0.92);backdrop-filter:blur(4px);color:#00FF41;font-family:'JetBrains Mono',monospace}
-.stp-section{display:flex;flex-direction:column;align-items:center;gap:10px}
+#settings-panel{position:fixed;inset:0;z-index:52;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:24px 16px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#00FF41;font-family:'JetBrains Mono',monospace;overflow-y:auto}
+#stp-tabs{display:flex;gap:0;border:1px solid rgba(0,255,65,0.3);border-radius:6px;overflow:hidden;margin-bottom:20px}
+.stp-tab{cursor:pointer;background:transparent;border:none;color:rgba(0,255,65,0.5);font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2px;padding:9px 22px;transition:all .15s;-webkit-user-select:none;user-select:none}
+.stp-tab:not(:last-child){border-right:1px solid rgba(0,255,65,0.3)}
+.stp-tab:hover{background:rgba(0,255,65,0.08);color:#00FF41}
+.stp-tab.stp-tab-active{background:rgba(0,255,65,0.16);color:#00FF41;box-shadow:inset 0 0 12px rgba(0,255,65,0.1)}
+.stp-page{display:none;flex-direction:column;align-items:center;gap:18px;width:100%;max-width:560px}
+.stp-page.stp-page-active{display:flex}
+.stp-section{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
 .stp-label{font-size:10px;letter-spacing:3px;opacity:0.6}
 .stp-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .stp-btn{cursor:pointer;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:inherit;font-size:11px;letter-spacing:1px;padding:10px 16px;border-radius:5px;transition:all .15s}
 .stp-btn:hover{background:rgba(0,255,65,0.16);border-color:#00FF41}
 .stp-btn.stp-active{background:rgba(0,255,65,0.22);border-color:#00FF41;box-shadow:0 0 12px rgba(0,255,65,0.3)}
+.stp-divider{width:100%;height:1px;background:linear-gradient(to right,transparent,rgba(0,255,65,0.2),transparent);margin:2px 0}
+/* Vid settings toggles */
+.stp-toggle-row{display:flex;align-items:center;justify-content:space-between;width:100%;padding:0 4px;gap:12px}
+.stp-toggle-label{font-size:11px;letter-spacing:1px;opacity:0.75}
+.stp-toggle{position:relative;width:42px;height:22px;flex-shrink:0}
+.stp-toggle input{opacity:0;width:0;height:0}
+.stp-toggle-track{position:absolute;inset:0;background:rgba(0,255,65,0.1);border:1px solid rgba(0,255,65,0.3);border-radius:11px;cursor:pointer;transition:all .2s}
+.stp-toggle input:checked+.stp-toggle-track{background:rgba(0,255,65,0.32);border-color:#00FF41;box-shadow:0 0 8px rgba(0,255,65,0.3)}
+.stp-toggle-track::after{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:rgba(0,255,65,0.5);border-radius:50%;transition:transform .2s}
+.stp-toggle input:checked+.stp-toggle-track::after{transform:translateX(20px);background:#00FF41}
+/* Volume sliders */
+.stp-vol-row{display:flex;align-items:center;gap:10px;width:100%;padding:0 4px}
+.stp-vol-name{font-size:10px;letter-spacing:1px;opacity:0.65;width:96px;text-align:right;flex-shrink:0}
+.stp-vol-slider{flex:1;-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;background:rgba(0,255,65,0.18);outline:none;cursor:pointer}
+.stp-vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#00FF41;cursor:pointer;box-shadow:0 0 6px rgba(0,255,65,0.5)}
+.stp-vol-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#00FF41;cursor:pointer;border:none;box-shadow:0 0 6px rgba(0,255,65,0.5)}
+.stp-vol-val{font-size:10px;width:32px;text-align:right;opacity:0.65}
 .stp-close{cursor:pointer;background:transparent;border:1px solid rgba(0,255,65,0.25);color:rgba(0,255,65,0.5);font-family:inherit;font-size:11px;letter-spacing:2px;padding:8px 20px;border-radius:5px;margin-top:10px;transition:all .15s}
 .stp-close:hover{background:rgba(0,255,65,0.1);color:#00FF41}
 /* In-flight buttons (pause / open in Google Maps) */
@@ -605,28 +629,97 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 </div>
 
 <div id="settings-panel" style="display:none">
-  <div class="sm-title" style="font-size:18px">⚙ SETTINGS</div>
-  <div class="stp-section">
-    <div class="stp-label">TIME OF DAY</div>
-    <div class="stp-row">
-      <button class="stp-btn" id="stp-auto">AUTO</button>
-      <button class="stp-btn" id="stp-day">☀ DAY</button>
-      <button class="stp-btn" id="stp-dawn">🌅 DAWN</button>
-      <button class="stp-btn" id="stp-dusk">🌇 DUSK</button>
-      <button class="stp-btn" id="stp-night">🌙 NIGHT</button>
+  <div class="sm-title" style="font-size:18px;margin-bottom:14px">⚙ SETTINGS</div>
+
+  <!-- Tab bar -->
+  <div id="stp-tabs">
+    <button class="stp-tab stp-tab-active" data-tab="world">🌍 WORLD</button>
+    <button class="stp-tab" data-tab="video">🖥 VIDEO</button>
+    <button class="stp-tab" data-tab="audio">🔊 AUDIO</button>
+  </div>
+
+  <!-- ===== WORLD TAB ===== -->
+  <div class="stp-page stp-page-active" id="stp-page-world">
+    <div class="stp-section">
+      <div class="stp-label">TIME OF DAY</div>
+      <div class="stp-row">
+        <button class="stp-btn" id="stp-auto">AUTO</button>
+        <button class="stp-btn" id="stp-day">☀ DAY</button>
+        <button class="stp-btn" id="stp-dawn">🌅 DAWN</button>
+        <button class="stp-btn" id="stp-dusk">🌇 DUSK</button>
+        <button class="stp-btn" id="stp-night">🌙 NIGHT</button>
+      </div>
+    </div>
+
+    <div class="stp-divider"></div>
+
+    <div class="stp-section">
+      <div class="stp-label">SEASON</div>
+      <div class="stp-row">
+        <button class="stp-btn" id="stp-season-auto">AUTO</button>
+        <button class="stp-btn" id="stp-season-spring">🌸 SPRING</button>
+        <button class="stp-btn" id="stp-season-summer">☀ SUMMER</button>
+        <button class="stp-btn" id="stp-season-autumn">🍂 AUTUMN</button>
+        <button class="stp-btn" id="stp-season-winter">❄ WINTER</button>
+      </div>
     </div>
   </div>
-  <div class="stp-section">
-    <div class="stp-label">SEASON</div>
-    <div class="stp-row">
-      <button class="stp-btn" id="stp-season-auto">AUTO</button>
-      <button class="stp-btn" id="stp-season-spring">🌸 SPRING</button>
-      <button class="stp-btn" id="stp-season-summer">☀ SUMMER</button>
-      <button class="stp-btn" id="stp-season-autumn">🍂 AUTUMN</button>
-      <button class="stp-btn" id="stp-season-winter">❄ WINTER</button>
+
+  <!-- ===== VIDEO TAB ===== -->
+  <div class="stp-page" id="stp-page-video">
+    <div class="stp-section">
+      <div class="stp-label">DISPLAY</div>
+      <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px">
+        <div class="stp-toggle-row">
+          <span class="stp-toggle-label">SCANLINES</span>
+          <label class="stp-toggle"><input type="checkbox" id="stp-scanlines" checked><span class="stp-toggle-track"></span></label>
+        </div>
+        <div class="stp-toggle-row">
+          <span class="stp-toggle-label">VIGNETTE</span>
+          <label class="stp-toggle"><input type="checkbox" id="stp-vignette" checked><span class="stp-toggle-track"></span></label>
+        </div>
+        <div class="stp-toggle-row">
+          <span class="stp-toggle-label">HUD VISIBLE</span>
+          <label class="stp-toggle"><input type="checkbox" id="stp-hud" checked><span class="stp-toggle-track"></span></label>
+        </div>
+        <div class="stp-toggle-row">
+          <span class="stp-toggle-label">MINIMAP</span>
+          <label class="stp-toggle"><input type="checkbox" id="stp-minimap" checked><span class="stp-toggle-track"></span></label>
+        </div>
+      </div>
     </div>
   </div>
-  <button id="stp-close" class="stp-close">✕ CLOSE</button>
+
+  <!-- ===== AUDIO TAB ===== -->
+  <div class="stp-page" id="stp-page-audio">
+    <div class="stp-section">
+      <div class="stp-label">VOLUME</div>
+      <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:8px">
+        <div class="stp-vol-row">
+          <span class="stp-vol-name">MASTER</span>
+          <input type="range" class="stp-vol-slider" id="vol-master" min="0" max="100" value="100">
+          <span class="stp-vol-val" id="vol-master-val">100</span>
+        </div>
+        <div class="stp-vol-row">
+          <span class="stp-vol-name">ENGINE</span>
+          <input type="range" class="stp-vol-slider" id="vol-engine" min="0" max="100" value="100">
+          <span class="stp-vol-val" id="vol-engine-val">100</span>
+        </div>
+        <div class="stp-vol-row">
+          <span class="stp-vol-name">WIND / AIR</span>
+          <input type="range" class="stp-vol-slider" id="vol-wind" min="0" max="100" value="100">
+          <span class="stp-vol-val" id="vol-wind-val">100</span>
+        </div>
+        <div class="stp-vol-row">
+          <span class="stp-vol-name">ALARMS</span>
+          <input type="range" class="stp-vol-slider" id="vol-alarms" min="0" max="100" value="100">
+          <span class="stp-vol-val" id="vol-alarms-val">100</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button id="stp-close" class="stp-close" style="margin-top:16px">✕ CLOSE</button>
 </div>
 
 <div id="pausemenu">
@@ -634,6 +727,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div id="pause-grid">
     <button class="sm-btn" id="pm-resume">▶ Resume</button>
     <button class="sm-btn" id="pm-restart">↻ Restart Flight</button>
+    <button class="sm-btn" id="pm-settings">⚙ Settings</button>
     <button class="sm-btn" id="pm-maps">🗺 Open in Google Maps</button>
     <button class="sm-btn" id="pm-menu">⌂ Return to Main Menu</button>
   </div>
@@ -795,7 +889,7 @@ const audio = {
   windHiss: null, windHissGain: null,
   stallOsc: null, stallGain: null,
   fireOsc: null, fireGain: null,
-  master: null
+  master: null, masterGain: null
 };
 
 function ensureAudio() {
@@ -811,7 +905,10 @@ function ensureAudio() {
     audio.master.ratio.value = 4;
     audio.master.attack.value = 0.003;
     audio.master.release.value = 0.22;
-    audio.master.connect(audioCtx.destination);
+    audio.masterGain = audioCtx.createGain();
+    audio.masterGain.gain.value = 1;
+    audio.master.connect(audio.masterGain);
+    audio.masterGain.connect(audioCtx.destination);
 
     // Turbine whine: two detuned saws + a triangle harmonic for brightness,
     // shaped by a bandpass filter that sweeps a bit with RPM.
@@ -896,9 +993,11 @@ function ensureAudio() {
 function updateAudio(rpm, speed) {
   if (!audioCtx || !audio.eng) return;
   const t = audioCtx.currentTime;
+  const vEng   = (window._volEng   !== undefined ? window._volEng   : 1);
+  const vWind  = (window._volWind  !== undefined ? window._volWind  : 1);
 
   // Turbine whine: volume and pitch track RPM
-  const vol = rpm > 5 ? Math.min(0.3, rpm / 100 * 0.3) : 0;
+  const vol = rpm > 5 ? Math.min(0.3, rpm / 100 * 0.3) * vEng : 0;
   audio.engGain.gain.setTargetAtTime(vol, t, 0.1);
   const freq = 60 + rpm * 3.2;
   audio.eng.o1.frequency.setTargetAtTime(freq, t, 0.3);
@@ -908,7 +1007,7 @@ function updateAudio(rpm, speed) {
 
   // Turbine air hiss: tracks RPM
   if (audio.engAirGain) {
-    const airVol = rpm > 5 ? Math.min(0.10, rpm / 100 * 0.10) : 0;
+    const airVol = rpm > 5 ? Math.min(0.10, rpm / 100 * 0.10) * vEng : 0;
     audio.engAirGain.gain.setTargetAtTime(airVol, t, 0.15);
     if (audio.engAirFilter) audio.engAirFilter.frequency.setTargetAtTime(1000 + rpm * 16, t, 0.2);
   }
@@ -917,10 +1016,10 @@ function updateAudio(rpm, speed) {
   const altM = state.altitude * FT_TO_M;
   const densityFactor = Math.exp(-Math.max(0, altM) / 9200);
   const rumble = Math.max(0, (speed - 40) / 320) * 0.16 * densityFactor;
-  audio.rumbleGain.gain.setTargetAtTime(Math.min(0.16, rumble), t, 0.25);
+  audio.rumbleGain.gain.setTargetAtTime(Math.min(0.16, rumble) * vWind, t, 0.25);
   if (audio.windHissGain) {
     const hiss = Math.max(0, (speed - 150) / 450) * 0.11 * densityFactor;
-    audio.windHissGain.gain.setTargetAtTime(Math.min(0.11, hiss), t, 0.3);
+    audio.windHissGain.gain.setTargetAtTime(Math.min(0.11, hiss) * vWind, t, 0.3);
   }
 }
 
@@ -1042,6 +1141,7 @@ function updateMechSounds(dt) {
   _prevTerrainHit = state.terrainHit;
 
   const t = audioCtx.currentTime;
+  const vAlarms = (window._volAlarms !== undefined ? window._volAlarms : 1);
 
   // Stall warning horn: pulsing beep while stalled and airborne
   if (state.stall && !state.onGround && !state.terrainHit) {
@@ -1049,7 +1149,7 @@ function updateMechSounds(dt) {
     if (stallBeepTimer <= 0) {
       stallBeepOn = !stallBeepOn;
       stallBeepTimer = stallBeepOn ? 0.13 : 0.11;
-      if (audio.stallGain) audio.stallGain.gain.setTargetAtTime(stallBeepOn ? 0.20 : 0, t, 0.015);
+      if (audio.stallGain) audio.stallGain.gain.setTargetAtTime(stallBeepOn ? 0.20 * vAlarms : 0, t, 0.015);
     }
   } else if (stallBeepOn) {
     stallBeepOn = false; stallBeepTimer = 0;
@@ -1058,7 +1158,7 @@ function updateMechSounds(dt) {
 
   // Engine fire alarm: warbling tone while the engine is ablaze
   if (state.engineState === 'fire') {
-    if (!fireAlarmOn) { fireAlarmOn = true; if (audio.fireGain) audio.fireGain.gain.setTargetAtTime(0.18, t, 0.05); }
+    if (!fireAlarmOn) { fireAlarmOn = true; if (audio.fireGain) audio.fireGain.gain.setTargetAtTime(0.18 * vAlarms, t, 0.05); }
   } else if (fireAlarmOn) {
     fireAlarmOn = false;
     if (audio.fireGain) audio.fireGain.gain.setTargetAtTime(0, t, 0.1);
@@ -7623,12 +7723,57 @@ function beginFlight(loc) {
 }
 
 // ===================== Settings panel =====================
+// Volume multipliers — independent per channel (0..1)
+const volSettings = { master: 1, engine: 1, wind: 1, alarms: 1 };
+
+function applyVolSettings() {
+  if (!audioCtx) return;
+  if (audio.masterGain) audio.masterGain.gain.value = volSettings.master;
+  window._volEng    = volSettings.engine;
+  window._volWind   = volSettings.wind;
+  window._volAlarms = volSettings.alarms;
+}
+
+// Patch updateMechSounds to respect alarm volume
+(function patchAlarms() {
+  window._volAlarms = 1;
+  window._volEng    = 1;
+  window._volWind   = 1;
+})();
+
 (function () {
   const settingsPanel = document.getElementById('settings-panel');
   const settingsBtn   = document.getElementById('sm-settings-btn');
   const closeBtn      = document.getElementById('stp-close');
-  if (!settingsPanel || !settingsBtn) return;
+  if (!settingsPanel) return;
 
+  // Track who opened settings so close goes back to the right place
+  let _openedFromPause = false;
+
+  function openSettings(fromPause) {
+    _openedFromPause = !!fromPause;
+    updateStpButtons();
+    syncToggleStates();
+    syncVolSliders();
+    if (!fromPause && startMenu) startMenu.style.display = 'none';
+    if (fromPause && pauseMenu)  pauseMenu.style.display  = 'none';
+    settingsPanel.style.display = 'flex';
+  }
+
+  // ── TAB SWITCHING ────────────────────────────────────────────────────────────
+  const tabs  = settingsPanel.querySelectorAll('.stp-tab');
+  const pages = settingsPanel.querySelectorAll('.stp-page');
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      tabs.forEach(function (t) { t.classList.remove('stp-tab-active'); });
+      pages.forEach(function (p) { p.classList.remove('stp-page-active'); });
+      tab.classList.add('stp-tab-active');
+      const page = settingsPanel.querySelector('#stp-page-' + tab.dataset.tab);
+      if (page) page.classList.add('stp-page-active');
+    });
+  });
+
+  // ── WORLD TAB — TIME & SEASON ─────────────────────────────────────────────
   function updateStpButtons() {
     const ids = { auto: !env.timeOverride, day: env.timeOverride && env.time === 'day',
                   dawn: env.timeOverride && env.time === 'dawn',
@@ -7647,7 +7792,6 @@ function beginFlight(loc) {
 
   function setSeason(s) {
     env.season = s;
-    // Re-tint all currently loaded tiles.
     if (THREEJS && THREEJS.groundTiles) {
       for (const key in THREEJS.groundTiles) {
         const m = THREEJS.groundTiles[key];
@@ -7667,24 +7811,90 @@ function beginFlight(loc) {
     updateStpButtons();
   }
 
-  settingsBtn.addEventListener('click', function () {
-    updateStpButtons();
-    if (startMenu) startMenu.style.display = 'none';
-    settingsPanel.style.display = 'flex';
-  });
+  // Wire time buttons
+  settingsBtn && settingsBtn.addEventListener('click', function () { openSettings(false); });
   if (closeBtn) closeBtn.addEventListener('click', function () {
     settingsPanel.style.display = 'none';
-    if (startMenu && !chosen) startMenu.style.display = 'flex';
+    if (_openedFromPause) { if (pauseMenu) pauseMenu.style.display = 'flex'; }
+    else { if (startMenu && !chosen) startMenu.style.display = 'flex'; }
   });
+
   document.getElementById('stp-auto')  && document.getElementById('stp-auto').addEventListener('click',  function () { setTimeOverride(null); });
   document.getElementById('stp-day')   && document.getElementById('stp-day').addEventListener('click',   function () { setTimeOverride('day'); });
   document.getElementById('stp-dawn')  && document.getElementById('stp-dawn').addEventListener('click',  function () { setTimeOverride('dawn'); });
   document.getElementById('stp-dusk')  && document.getElementById('stp-dusk').addEventListener('click',  function () { setTimeOverride('dusk'); });
   document.getElementById('stp-night') && document.getElementById('stp-night').addEventListener('click', function () { setTimeOverride('night'); });
+
   ['auto','spring','summer','autumn','winter'].forEach(function (s) {
     const el = document.getElementById('stp-season-' + s);
     if (el) el.addEventListener('click', function () { setSeason(s); });
   });
+
+  // ── SIMULATION TAB — VIDEO TOGGLES ────────────────────────────────────────
+  function syncToggleStates() {
+    const scanlines = document.getElementById('scanlines');
+    const vignette  = document.getElementById('vignette');
+    const hudEl     = document.getElementById('hud');
+    const mmEl      = document.getElementById('minimap');
+    const scCb = document.getElementById('stp-scanlines');
+    const vigCb = document.getElementById('stp-vignette');
+    const hudCb = document.getElementById('stp-hud');
+    const mmCb  = document.getElementById('stp-minimap');
+    if (scCb && scanlines) scCb.checked = scanlines.style.display !== 'none' && scanlines.style.opacity !== '0';
+    if (vigCb && vignette) vigCb.checked = vignette.style.display !== 'none' && vignette.style.opacity !== '0';
+    if (hudCb && hudEl)    hudCb.checked = hudEl.style.display !== 'none';
+    if (mmCb  && mmEl)     mmCb.checked  = mmEl.style.display  !== 'none';
+  }
+
+  function wireToggle(cbId, onToggle) {
+    const cb = document.getElementById(cbId);
+    if (cb) cb.addEventListener('change', function () { onToggle(cb.checked); });
+  }
+
+  wireToggle('stp-scanlines', function (on) {
+    const el = document.getElementById('scanlines');
+    if (el) el.style.opacity = on ? '1' : '0';
+  });
+  wireToggle('stp-vignette', function (on) {
+    const el = document.getElementById('vignette');
+    if (el) el.style.opacity = on ? '1' : '0';
+  });
+  wireToggle('stp-hud', function (on) {
+    const el = document.getElementById('hud');
+    if (el) el.style.display = on ? 'flex' : 'none';
+  });
+  wireToggle('stp-minimap', function (on) {
+    const el = document.getElementById('minimap');
+    if (el) el.style.display = on ? '' : 'none';
+  });
+
+  // ── SIMULATION TAB — VOLUME SLIDERS ───────────────────────────────────────
+  function syncVolSliders() {
+    ['master','engine','wind','alarms'].forEach(function (ch) {
+      const slider = document.getElementById('vol-' + ch);
+      const valEl  = document.getElementById('vol-' + ch + '-val');
+      const v = Math.round((volSettings[ch] || 1) * 100);
+      if (slider) slider.value = v;
+      if (valEl)  valEl.textContent = v;
+    });
+  }
+
+  function wireVolSlider(ch) {
+    const slider = document.getElementById('vol-' + ch);
+    const valEl  = document.getElementById('vol-' + ch + '-val');
+    if (!slider) return;
+    slider.addEventListener('input', function () {
+      const v = parseInt(slider.value, 10);
+      if (valEl) valEl.textContent = v;
+      volSettings[ch] = v / 100;
+      applyVolSettings();
+    });
+  }
+
+  ['master','engine','wind','alarms'].forEach(wireVolSlider);
+
+  // Expose openSettings so pause menu can call it
+  window._openSettings = openSettings;
 })();
 
 // ---- Coordinate parser — shared by start menu and nav-map picker ----
@@ -7872,9 +8082,10 @@ function returnToMenu() {
 }
 
 if (pauseMenu) {
-  const r  = document.getElementById('pm-resume');  if (r)  r.addEventListener('click', function () { setPaused(false); });
-  const rs = document.getElementById('pm-restart'); if (rs) rs.addEventListener('click', function () { setPaused(false); resetState(); });
-  const mp = document.getElementById('pm-maps');    if (mp) mp.addEventListener('click', openGoogleMaps);
+  const r  = document.getElementById('pm-resume');   if (r)  r.addEventListener('click', function () { setPaused(false); });
+  const rs = document.getElementById('pm-restart');  if (rs) rs.addEventListener('click', function () { setPaused(false); resetState(); });
+  const ps = document.getElementById('pm-settings'); if (ps) ps.addEventListener('click', function () { if (window._openSettings) window._openSettings(true); });
+  const mp = document.getElementById('pm-maps');     if (mp) mp.addEventListener('click', openGoogleMaps);
   const mn = document.getElementById('pm-menu');     if (mn) mn.addEventListener('click', returnToMenu);
 }
 {
