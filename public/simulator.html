@@ -427,7 +427,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 </div>
 <div id="loc-label">GRAND CANYON, AZ</div>
 <div id="controls-hint">
-  E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · R RESET<br>F3+A RELOAD RENDER<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>
+  E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>C CAMERA · R RESET<br>F3+A RELOAD RENDER<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>
 </div>
 <div id="traffic-info" style="position:fixed;bottom:76px;right:100px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.5);font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;text-align:right;display:none;line-height:1.6"></div>
 
@@ -601,7 +601,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div id="sm-status"></div>
   <div id="wx-status" style="font-size:9px;letter-spacing:2px;color:rgba(0,255,65,0.45);min-height:14px;text-align:center"></div>
   <button id="sm-settings-btn">⚙ SETTINGS</button>
-  <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; B airbrake &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
+  <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
 </div>
 
 <div id="settings-panel" style="display:none">
@@ -1436,9 +1436,9 @@ let gpConnected = false;
 
 // Two versions of the on-screen control hint — keyboard vs. gamepad.
 const HINT_KEYBOARD =
-  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>B AIRBRAKE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="color:#ffe066">A·A NAV-TO-POINT</span><br><span style="color:rgba(127,208,255,0.6)">[/] HDG · ;/\' ALT · ,/. SPD</span><br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
+  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="color:#ffe066">A·A NAV-TO-POINT</span><br><span style="color:rgba(127,208,255,0.6)">[/] HDG · ;/\' ALT · ,/. SPD</span><br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
 const HINT_GAMEPAD =
-  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br><span style="color:#ffe066">RB·RB NAV-TO-POINT</span><br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>A AIRBRAKE · Y CAMERA · ☰ PAUSE<br><span style="color:rgba(127,208,255,0.6)">AP: D-PAD HDG/ALT · R3+D-PAD SPD</span>';
+  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br><span style="color:#ffe066">RB·RB NAV-TO-POINT</span><br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>Y CAMERA · ☰ PAUSE<br><span style="color:rgba(127,208,255,0.6)">AP: D-PAD HDG/ALT · R3+D-PAD SPD</span>';
 
 function updateControlsHint() {
   const el = document.getElementById('controls-hint');
@@ -1489,7 +1489,6 @@ function readGamepad() {
     pitch:     dz(ax[3]),                // right stick back/down = nose up
     roll:      dz(ax[2]),                // right stick right = bank right
     thr:       val(7) - val(6),          // RT throttle up, LT throttle down
-    airbrake:  pressed(0),               // A (cross)
     reset:     resetEdge,
     lookYaw:   dz(ax[0]),                // left stick left/right = look left/right
     lookPitch: dz(ax[1])                 // left stick up/down = look up/down
@@ -4147,7 +4146,7 @@ function navEvasiveOverride(out, avoid, aglFtArg) {
   if (aglFt < 450 && dir < 0) dir = 1;                  // too low to dive safely -> climb
   out.pitchCmd = Math.max(-0.95, Math.min(0.95, dir * 0.9));
   out.rollCmd  = Math.max(-0.95, Math.min(0.95, (avoid.override.turn * 35 - state.bank) * 0.06));
-  out.brakeCmd = false;                                  // don't fight the escape with airbrake
+  out.brakeCmd = false;
   return out;
 }
 
@@ -4212,10 +4211,10 @@ const NAV_CLEAR_FT  = 1700;    // vertical clearance held above terrain en route
 const NAV_GLIDE_DEG = 3.0;     // descent/approach glide angle
 const NAV_RESERVE   = 0.10;    // fuel fraction we aim to still have on arrival
 // The gear tears off above 250 kt (GEAR_SAFE_KTS in update). We keep a big margin:
-// only deploy below 200, airbrake hard if it's out above 210, and force it back up
+// only deploy below 200 kts, force it back up if speed exceeds 210 kts
 // before 235 — so the speed never gets within ~15 kt of the failure threshold.
 const NAV_GEAR_DOWN_KTS  = 200;   // deploy the gear only below this
-const NAV_GEAR_BRAKE_KTS = 210;   // gear out and faster than this -> airbrake to bleed speed
+const NAV_GEAR_BRAKE_KTS = 210;   // gear out and faster than this -> retract gear to reduce drag
 const NAV_GEAR_PANIC_KTS = 235;   // gear out and faster than this -> retract to protect it
 const NAV_FLAPS_KTS      = 200;
 let navLastDest = null;        // {lat,lon,name} of the last route, for RESUME
@@ -4329,7 +4328,7 @@ function planNavRoute(distM, altFt) {
 
 function clampNavSpd(v) { return Math.max(stallSpeedKts() + 15, Math.min(VNE_KTS - 20, v)); }
 
-// Belt-and-braces gear safety on any leg where the wheels are out: airbrake to
+// Belt-and-braces gear safety on any leg where the wheels are out: use
 // hold the speed well clear of the limit, and as a last resort retract the gear
 // before it can fail. Called in addition to the hard guard at the top of the
 // controller, and applied to whatever control object the inner loop returned.
@@ -4635,7 +4634,7 @@ function apNavControl(dt) {
     }
     navUpdateHud();
     const out = apCruiseControl(dt);
-    if (out && state.speed > ap.targetSpd + 40) out.brakeCmd = true; // airbrake to bleed speed on the way down
+    if (out && state.speed > ap.targetSpd + 40) out.brakeCmd = true; // use gear braking to slow down during descent
     navSpeedTradeAltitude(out, activeAglFt, ap.targetSpd);           // glide down to hold speed if slow
     return navProtectGear(out, activeAglFt);                          // keep the gear clear of its limit
   }
@@ -4847,7 +4846,7 @@ function update(dt) {
   tickRealWeather(dt);
   checkTerrainBeep(dt);
 
-  // ---- Pilot inputs (elevator / aileron / throttle / airbrake) ----
+  // ---- Pilot inputs (elevator / aileron / throttle) ----
   // Control authority scales with airspeed (sluggish when slow, like a real wing).
   const V0 = Math.max(state.speed * KTS_TO_MPS, 1);
   const authority = Math.min(1, V0 / 90);            // ~full above ~175 kt
@@ -4986,7 +4985,6 @@ function update(dt) {
   if (aoaNow > aMaxUp) state.pitch = normDeg(state.pitch - (aoaNow - aMaxUp) * Math.min(1, dt * 3));
   else if (aoaNow < -aMaxDown) state.pitch = normDeg(state.pitch - (aoaNow + aMaxDown) * Math.min(1, dt * 3));
 
-  const airbrake = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake) || apBrakeCmd);
 
   // Roll stability: wings self-level only GENTLY with no aileron input, so it
   // stays easy to establish and hold a turn.
@@ -5110,7 +5108,7 @@ function update(dt) {
     CL = sgn * clMax * Math.max(0.1, 1 - over / 10);
   }
 
-  const Cd = AC.Cd0 + AC.k * CL * CL + (airbrake ? 0.08 : 0) + flapCD + gearCD;
+  const Cd = AC.Cd0 + AC.k * CL * CL + flapCD + gearCD;
   const L = q * S * CL;
   const D = q * S * Cd;
   const W = m * g;
@@ -5163,7 +5161,7 @@ function update(dt) {
     gamma = 0;
 
     // Rolling friction (brakes give ~12× more deceleration)
-    const braking = !!(keys['KeyB'] || keys['Space'] || (gp && gp.airbrake) || apBrakeCmd);
+    const braking = !!(keys['Space'] || apBrakeCmd);
     const frictionDecel = braking ? 5.5 : 0.45;   // m/s²
     V = Math.max(0, V - frictionDecel * dt);
 
