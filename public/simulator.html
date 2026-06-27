@@ -4419,7 +4419,10 @@ function apTakeoffControl(dt) {
   // Phase 2: rotate
   if (ap.toPhase === 2) {
     thrCmd = 1;
-    pitchCmd = 0.8; // pull up firmly
+    // Ease the nose toward a ~12° rotation attitude rather than yanking it up at
+    // a fixed brisk rate. A fixed rate (tuned for the light CLASSIC jet) over-
+    // rotates heavy/slow types past the stall before they ever leave the ground.
+    pitchCmd = Math.max(-0.2, Math.min(0.6, (12 - state.pitch) * 0.12));
     if (!state.onGround && agl > 50) { ap.toPhase = 3; }
     return { pitchCmd, rollCmd: 0, thrCmd };
   }
@@ -5378,6 +5381,22 @@ function update(dt) {
       thrIn   = apOut.thrCmd;
       apBrakeCmd = !!apOut.brakeCmd;   // AP-commanded wheel braking (auto rollout)
       apFlying = true;
+      // ---- Universal AP stall protection ----
+      // The AP's pitch gains (rotation, climb rates) were tuned for the nimble
+      // CLASSIC jet. On heavier/slower types the same nose-up commands drag the
+      // wing past the stall, so the plane mushes into the ground right after the
+      // AP is engaged. Fade out — and finally reverse — any AP nose-up command as
+      // airspeed approaches the active type's OWN stall speed, so it protects
+      // every aircraft without per-type tuning.
+      if (!state.onGround && pitchIn > 0) {
+        const margin = state.speed / Math.max(stallSpeedKts(), 1); // 1.0 = at stall
+        if (margin < 1.15) {
+          // 1.05–1.15 Vs: scale nose-up down to zero.
+          pitchIn *= Math.max(0, Math.min(1, (margin - 1.05) / 0.10));
+          // Below 1.05 Vs: actively lower the nose to recover airspeed.
+          if (margin < 1.05) pitchIn = -0.4 * Math.min(1, (1.05 - margin) / 0.05);
+        }
+      }
     }
   }
 
