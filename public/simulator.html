@@ -783,56 +783,145 @@ function resetState() {
   const lp = document.getElementById('landing-panel'); if (lp) lp.style.display = 'none';
   const rw = document.getElementById('rotate-warn');   if (rw) rw.style.display = 'none';
   if (typeof initTraffic === 'function') initTraffic();
+  resetMechSoundTrackers();
 }
 
-// ===================== Web Audio — engine sounds (no external files) =====================
+// ===================== Web Audio — engine & environment sounds (no external files) =====================
 let audioCtx = null;
-const audio = { eng: null, engGain: null, rumble: null, rumbleGain: null };
+const audio = {
+  eng: null, engGain: null, engToneFilter: null,
+  engAirGain: null, engAirFilter: null,
+  rumble: null, rumbleGain: null,
+  windHiss: null, windHissGain: null,
+  stallOsc: null, stallGain: null,
+  fireOsc: null, fireGain: null,
+  master: null
+};
 
 function ensureAudio() {
   if (audioCtx) return;
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // Turbine whine: two detuned oscillators for that jet engine character
+
+    // Master bus: a gentle compressor keeps the engine, wind, alarms and
+    // one-shot effects from clipping when several of them overlap.
+    audio.master = audioCtx.createDynamicsCompressor();
+    audio.master.threshold.value = -16;
+    audio.master.knee.value = 18;
+    audio.master.ratio.value = 4;
+    audio.master.attack.value = 0.003;
+    audio.master.release.value = 0.22;
+    audio.master.connect(audioCtx.destination);
+
+    // Turbine whine: two detuned saws + a triangle harmonic for brightness,
+    // shaped by a bandpass filter that sweeps a bit with RPM.
     const o1 = audioCtx.createOscillator();
     const o2 = audioCtx.createOscillator();
-    o1.type = 'sawtooth'; o2.type = 'sawtooth';
-    o1.frequency.value = 80; o2.frequency.value = 83;
-    audio.engGain = audioCtx.createGain();
-    audio.engGain.gain.value = 0;
+    const o3 = audioCtx.createOscillator();
+    o1.type = 'sawtooth'; o2.type = 'sawtooth'; o3.type = 'triangle';
+    o1.frequency.value = 80; o2.frequency.value = 83; o3.frequency.value = 160;
+    const o3Gain = audioCtx.createGain();
+    o3Gain.gain.value = 0.3; // harmonic sits under the core tone
     const dist = audioCtx.createWaveShaper();
     const curve = new Float32Array(256);
     for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = x * 0.7; }
     dist.curve = curve;
+    const engFilter = audioCtx.createBiquadFilter();
+    engFilter.type = 'bandpass'; engFilter.frequency.value = 400; engFilter.Q.value = 0.7;
     o1.connect(dist); o2.connect(dist);
-    dist.connect(audio.engGain); audio.engGain.connect(audioCtx.destination);
-    o1.start(); o2.start();
-    audio.eng = { o1, o2 };
+    o3.connect(o3Gain); o3Gain.connect(dist);
+    dist.connect(engFilter);
+    audio.engGain = audioCtx.createGain();
+    audio.engGain.gain.value = 0;
+    engFilter.connect(audio.engGain); audio.engGain.connect(audio.master);
+    o1.start(); o2.start(); o3.start();
+    audio.eng = { o1, o2, o3 };
+    audio.engToneFilter = engFilter;
 
-    // Airframe rumble (low-frequency noise at high speed)
+    // Turbine air hiss: filtered noise that grows with RPM (rushing intake/exhaust air)
+    const airBuf = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+    const ad = airBuf.getChannelData(0);
+    for (let i = 0; i < ad.length; i++) ad[i] = Math.random() * 2 - 1;
+    const airSrc = audioCtx.createBufferSource(); airSrc.buffer = airBuf; airSrc.loop = true;
+    const airFilter = audioCtx.createBiquadFilter();
+    airFilter.type = 'bandpass'; airFilter.frequency.value = 1200; airFilter.Q.value = 0.8;
+    audio.engAirGain = audioCtx.createGain(); audio.engAirGain.gain.value = 0;
+    airSrc.connect(airFilter); airFilter.connect(audio.engAirGain); audio.engAirGain.connect(audio.master);
+    airSrc.start();
+    audio.engAirFilter = airFilter;
+
+    // Airframe rumble: low-frequency noise that grows with airspeed
     const buf = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
     const d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     const src = audioCtx.createBufferSource(); src.buffer = buf; src.loop = true;
-    const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 60;
+    const rumbleFilter = audioCtx.createBiquadFilter();
+    rumbleFilter.type = 'lowpass'; rumbleFilter.frequency.value = 60;
     audio.rumbleGain = audioCtx.createGain(); audio.rumbleGain.gain.value = 0;
-    src.connect(lp); lp.connect(audio.rumbleGain); audio.rumbleGain.connect(audioCtx.destination);
+    src.connect(rumbleFilter); rumbleFilter.connect(audio.rumbleGain); audio.rumbleGain.connect(audio.master);
     src.start(); audio.rumble = src;
+
+    // Wind / slipstream hiss: higher-frequency noise that grows with airspeed
+    const windBuf = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+    const wd = windBuf.getChannelData(0);
+    for (let i = 0; i < wd.length; i++) wd[i] = Math.random() * 2 - 1;
+    const windSrc = audioCtx.createBufferSource(); windSrc.buffer = windBuf; windSrc.loop = true;
+    const windFilter = audioCtx.createBiquadFilter();
+    windFilter.type = 'highpass'; windFilter.frequency.value = 1800;
+    audio.windHissGain = audioCtx.createGain(); audio.windHissGain.gain.value = 0;
+    windSrc.connect(windFilter); windFilter.connect(audio.windHissGain); audio.windHissGain.connect(audio.master);
+    windSrc.start(); audio.windHiss = windSrc;
+
+    // Stall warning horn: square-wave buzzer, gated on/off in updateMechSounds()
+    const stallOsc = audioCtx.createOscillator();
+    stallOsc.type = 'square'; stallOsc.frequency.value = 320;
+    audio.stallGain = audioCtx.createGain(); audio.stallGain.gain.value = 0;
+    stallOsc.connect(audio.stallGain); audio.stallGain.connect(audio.master);
+    stallOsc.start(); audio.stallOsc = stallOsc;
+
+    // Engine fire alarm: warbling two-tone siren (frequency LFO modulates the tone)
+    const fireOsc = audioCtx.createOscillator();
+    fireOsc.type = 'square'; fireOsc.frequency.value = 680;
+    const fireLfo = audioCtx.createOscillator();
+    fireLfo.type = 'square'; fireLfo.frequency.value = 2.2; // warble rate
+    const fireLfoGain = audioCtx.createGain();
+    fireLfoGain.gain.value = 130; // swings the tone between ~550Hz and ~810Hz
+    fireLfo.connect(fireLfoGain); fireLfoGain.connect(fireOsc.frequency);
+    audio.fireGain = audioCtx.createGain(); audio.fireGain.gain.value = 0;
+    fireOsc.connect(audio.fireGain); audio.fireGain.connect(audio.master);
+    fireOsc.start(); fireLfo.start(); audio.fireOsc = fireOsc;
   } catch(e) { console.warn('Audio init failed', e); }
 }
 
 function updateAudio(rpm, speed) {
   if (!audioCtx || !audio.eng) return;
   const t = audioCtx.currentTime;
+
+  // Turbine whine: volume and pitch track RPM
   const vol = rpm > 5 ? Math.min(0.3, rpm / 100 * 0.3) : 0;
   audio.engGain.gain.setTargetAtTime(vol, t, 0.1);
-  // Pitch of turbine whine tracks RPM
   const freq = 60 + rpm * 3.2;
   audio.eng.o1.frequency.setTargetAtTime(freq, t, 0.3);
   audio.eng.o2.frequency.setTargetAtTime(freq * 1.04, t, 0.3);
-  // Airframe rumble grows with speed
-  const rumble = Math.max(0, (speed - 200) / 600 * 0.12);
-  audio.rumbleGain.gain.setTargetAtTime(rumble, t, 0.2);
+  audio.eng.o3.frequency.setTargetAtTime(freq * 2.0, t, 0.3);
+  if (audio.engToneFilter) audio.engToneFilter.frequency.setTargetAtTime(350 + rpm * 16, t, 0.25);
+
+  // Turbine air hiss: tracks RPM
+  if (audio.engAirGain) {
+    const airVol = rpm > 5 ? Math.min(0.10, rpm / 100 * 0.10) : 0;
+    audio.engAirGain.gain.setTargetAtTime(airVol, t, 0.15);
+    if (audio.engAirFilter) audio.engAirFilter.frequency.setTargetAtTime(1000 + rpm * 16, t, 0.2);
+  }
+
+  // Airframe rumble + wind hiss: track airspeed, fade out in the thin air up high
+  const altM = state.altitude * FT_TO_M;
+  const densityFactor = Math.exp(-Math.max(0, altM) / 9200);
+  const rumble = Math.max(0, (speed - 40) / 320) * 0.16 * densityFactor;
+  audio.rumbleGain.gain.setTargetAtTime(Math.min(0.16, rumble), t, 0.25);
+  if (audio.windHissGain) {
+    const hiss = Math.max(0, (speed - 150) / 450) * 0.11 * densityFactor;
+    audio.windHissGain.gain.setTargetAtTime(Math.min(0.11, hiss), t, 0.3);
+  }
 }
 
 function playStartupSound() {
@@ -844,8 +933,136 @@ function playStartupSound() {
   audio.eng.o1.frequency.linearRampToValueAtTime(80, t + 6);
   audio.eng.o2.frequency.setValueAtTime(41, t);
   audio.eng.o2.frequency.linearRampToValueAtTime(83, t + 6);
+  audio.eng.o3.frequency.setValueAtTime(80, t);
+  audio.eng.o3.frequency.linearRampToValueAtTime(160, t + 6);
   audio.engGain.gain.setValueAtTime(0.05, t);
   audio.engGain.gain.linearRampToValueAtTime(0.15, t + 6);
+}
+
+// ---- Generic one-shot synthesis helpers (used by gear/flaps/touchdown/crash sounds) ----
+function playNoiseBurst(opts) {
+  if (!audioCtx) return;
+  opts = opts || {};
+  const attack = opts.attack || 0.01;
+  const decay = opts.decay || 0.3;
+  const len = attack + decay;
+  const t = audioCtx.currentTime + (opts.startOffset || 0);
+  const buf = audioCtx.createBuffer(1, Math.ceil(audioCtx.sampleRate * len), audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const filt = audioCtx.createBiquadFilter();
+  filt.type = opts.type || 'lowpass';
+  filt.frequency.value = opts.freq || 400;
+  if (opts.q) filt.Q.value = opts.q;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(opts.gain || 0.3, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  src.connect(filt); filt.connect(g); g.connect(audio.master || audioCtx.destination);
+  src.start(t);
+  src.stop(t + len + 0.05);
+}
+
+function playTone(freq, duration, gain, type, startOffset) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime + (startOffset || 0);
+  const osc = audioCtx.createOscillator();
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(freq, t);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+  osc.connect(g); g.connect(audio.master || audioCtx.destination);
+  osc.start(t);
+  osc.stop(t + duration + 0.02);
+}
+
+// ---- One-shot mechanical / impact effects ----
+function playGearSound(down) {
+  ensureAudio(); if (!audioCtx) return;
+  // Hydraulic motor whirring as the gear travels...
+  playNoiseBurst({ type: 'bandpass', freq: 350, q: 0.8, attack: 0.08, decay: 0.85, gain: 0.20 });
+  // ...then a mechanical thunk as it locks into place
+  playTone(down ? 90 : 110, 0.18, 0.28, 'triangle', 0.82);
+  playNoiseBurst({ type: 'lowpass', freq: 200, q: 0.5, attack: 0.005, decay: 0.12, gain: 0.22, startOffset: 0.82 });
+}
+
+function playFlapsSound() {
+  ensureAudio(); if (!audioCtx) return;
+  // Short actuator motor whirr
+  playNoiseBurst({ type: 'bandpass', freq: 700, q: 1.0, attack: 0.05, decay: 0.4, gain: 0.14 });
+}
+
+function playTouchdownSound() {
+  ensureAudio(); if (!audioCtx) return;
+  // Tire chirp + thump
+  playNoiseBurst({ type: 'highpass', freq: 1500, q: 1.2, attack: 0.005, decay: 0.3, gain: 0.26 });
+  playTone(70, 0.25, 0.32, 'sine');
+  playNoiseBurst({ type: 'lowpass', freq: 150, q: 0.6, attack: 0.005, decay: 0.22, gain: 0.28 });
+}
+
+function playCrashSound() {
+  ensureAudio(); if (!audioCtx) return;
+  // Sharp impact crack
+  playNoiseBurst({ type: 'highpass', freq: 800, q: 0.8, attack: 0.002, decay: 0.22, gain: 0.5 });
+  // Deep boom with a long rumbling tail
+  playNoiseBurst({ type: 'lowpass', freq: 120, q: 0.5, attack: 0.01, decay: 1.6, gain: 0.5 });
+  playTone(45, 1.1, 0.35, 'sawtooth');
+}
+
+// ---- Stall horn + fire alarm + gear/flaps/touchdown/crash event detection ----
+// Polled once per physics tick from the main loop (see the updateMechSounds(dt) call site).
+let _prevGearDown = null, _prevFlaps = null, _prevOnGround = null, _prevTerrainHit = null;
+let stallBeepTimer = 0, stallBeepOn = false;
+let fireAlarmOn = false;
+
+function resetMechSoundTrackers() {
+  _prevGearDown   = state.gearDown;
+  _prevFlaps      = state.flaps;
+  _prevOnGround   = state.onGround;
+  _prevTerrainHit = state.terrainHit;
+  stallBeepTimer = 0; stallBeepOn = false;
+  fireAlarmOn = false;
+  if (audio.stallGain) audio.stallGain.gain.value = 0;
+  if (audio.fireGain)  audio.fireGain.gain.value = 0;
+}
+
+function updateMechSounds(dt) {
+  if (!audioCtx) return; // audio unlocks on first user interaction — nothing to drive yet
+  if (_prevGearDown === null) { resetMechSoundTrackers(); return; } // establish baseline, no sound on the first tick
+
+  if (state.gearDown !== _prevGearDown) { playGearSound(state.gearDown); _prevGearDown = state.gearDown; }
+  if (state.flaps !== _prevFlaps) { playFlapsSound(); _prevFlaps = state.flaps; }
+
+  if (state.onGround && !_prevOnGround && !state.terrainHit) playTouchdownSound();
+  _prevOnGround = state.onGround;
+
+  if (state.terrainHit && !_prevTerrainHit) playCrashSound();
+  _prevTerrainHit = state.terrainHit;
+
+  const t = audioCtx.currentTime;
+
+  // Stall warning horn: pulsing beep while stalled and airborne
+  if (state.stall && !state.onGround && !state.terrainHit) {
+    stallBeepTimer -= dt;
+    if (stallBeepTimer <= 0) {
+      stallBeepOn = !stallBeepOn;
+      stallBeepTimer = stallBeepOn ? 0.13 : 0.11;
+      if (audio.stallGain) audio.stallGain.gain.setTargetAtTime(stallBeepOn ? 0.20 : 0, t, 0.015);
+    }
+  } else if (stallBeepOn) {
+    stallBeepOn = false; stallBeepTimer = 0;
+    if (audio.stallGain) audio.stallGain.gain.setTargetAtTime(0, t, 0.05);
+  }
+
+  // Engine fire alarm: warbling tone while the engine is ablaze
+  if (state.engineState === 'fire') {
+    if (!fireAlarmOn) { fireAlarmOn = true; if (audio.fireGain) audio.fireGain.gain.setTargetAtTime(0.18, t, 0.05); }
+  } else if (fireAlarmOn) {
+    fireAlarmOn = false;
+    if (audio.fireGain) audio.fireGain.gain.setTargetAtTime(0, t, 0.1);
+  }
 }
 
 // ===================== Keys =====================
@@ -5020,6 +5237,7 @@ function update(dt) {
     state.engineTimer = 0;
   }
   updateAudio(state.rpm, state.speed);
+  updateMechSounds(dt);
 
   // ---- Landing gear structural stress ----
   // Flying fast with the gear hanging down piles huge aerodynamic load onto
