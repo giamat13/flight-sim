@@ -1,30 +1,36 @@
 # Flight Simulator
 
-A web-based flight simulator built with React and Vite. Experience realistic flight physics with an authentic cockpit heads-up display (HUD) and comprehensive flight instruments.
+A web-based 3D flight simulator built with vanilla JavaScript and Three.js. Experience realistic flight physics, autopilot modes, and an immersive green-monochromatic cockpit HUD—all in a single self-contained HTML file.
 
 ## Features
 
-- **3D Flight Physics** - Realistic aircraft dynamics including pitch, roll, altitude, and airspeed
-- **Authentic HUD** - Green monochrome cockpit display with flight data
+- **Realistic Flight Physics** — Forces-based simulation including gravity, thrust, drag, and lift; realistic attitude kinematics
+- **3D Terrain Rendering** — Real-world Esri imagery, AWS elevation data, and OpenStreetMap buildings streamed on-demand
+- **Autopilot System** — Altitude hold, heading hold, and nav-to-point modes with automatic landing
+- **Authentic Cockpit HUD** — Green monochrome display with flight instruments, warnings, and system indicators
 - **Flight Instruments**:
-  - Artificial Horizon Indicator (AHI)
-  - Compass
-  - Altitude, Speed, Heading, Vertical Speed, and Throttle indicators
-- **Warning Systems** - Stall warnings and terrain proximity alerts
-- **Smooth Controls** - Keyboard controls for intuitive flight operation
-- **Visual Effects** - Scanlines and vignette for authentic CRT monitor aesthetic
+  - Artificial Horizon Indicator (AHI) with pitch and bank
+  - Digital compass with heading display
+  - Altitude, airspeed, vertical speed, throttle indicators
+  - Angle of attack (AOA) and G-force displays
+- **Warning Systems** — Stall, overspeed, terrain proximity, fuel, and structural damage alerts
+- **Multiple Control Schemes** — Keyboard, gamepad, and touch (tilt-to-steer for mobile)
+- **Visual Effects** — Scanlines and vignette for authentic CRT monitor aesthetic
+- **Airport Selection** — Start from any airport worldwide via ICAO code or geolocation
+- **Traffic Models** — Visualize other aircraft in your airspace
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 16+ and npm
+- Modern browser with WebGL support (Chrome, Firefox, Safari, Edge)
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/giamat13/flight-sim.git
 cd flight-sim
 
 # Install dependencies
@@ -38,161 +44,236 @@ npm install
 npm run dev
 ```
 
-The app will be available at `http://localhost:5173/flight-sim/`
+The simulator will automatically open at `http://localhost:5173/flight-sim/`. The page reloads on any file changes.
 
-### Build
+### Build for Production
 
 ```bash
 # Build for production
 npm run build
 
-# Preview the production build
+# Preview the production build locally
 npm run preview
 ```
 
 ## Usage
 
-### Controls
+### Keyboard Controls
 
 | Key | Action |
 |-----|--------|
-| ↑↓ | Pitch (nose up/down) |
-| ←→ | Bank (roll left/right) |
-| W/S | Throttle (increase/decrease) |
-| C | Switch camera view |
-| R | Reset flight |
+| **Space** | Toggle autopilot (single-press); open map picker (double-press) |
+| **↑/↓** | Pitch (nose up/down) |
+| **←→** | Bank (roll left/right) |
+| **W/S** | Increase/decrease throttle |
+| **E** | Start/stop engine |
+| **F** | Toggle flaps |
+| **G** | Toggle landing gear |
+| **B** | Deploy airbrake |
+| **C** | Switch camera view (chase / cockpit) |
+| **R** | Reset flight |
+| **P** | Pause/resume simulation |
+| **[/]** | Adjust autopilot heading |
+| **;/'** | Adjust autopilot altitude |
+| **,/.** | Adjust autopilot speed |
+| **A** | Autopilot off |
+
+### Gamepad Controls (if available)
+
+- **D-Pad Up/Down** — Adjust autopilot altitude
+- **D-Pad Left/Right** — Adjust autopilot heading
+- **Buttons** — Menu, autopilot toggle, camera, systems
+
+### Mobile/Touch Controls
+
+- **Tilt Device** — Control pitch and bank (if tilt mode enabled)
+- **On-Screen Buttons** — Engine, flaps, gear, camera, autopilot, systems
 
 ### Flight Instruments
 
-- **ALT** - Altitude in feet
-- **SPD** - Airspeed in knots
-- **HDG** - Heading (0-360°)
-- **V/S** - Vertical speed (rate of climb/descent)
-- **THR** - Throttle percentage
+- **ALT** — Altitude above ground in feet
+- **SPD** — True airspeed in knots
+- **HDG** — Heading (0–360°)
+- **V/S** — Vertical speed in feet per minute (rate of climb/descent)
+- **THR** — Throttle percentage (0–100)
+- **AOA** — Angle of attack in degrees
+- **G** — G-force (load factor)
+
+### Starting a Flight
+
+1. Open the simulator in your browser
+2. Select a departure airport by ICAO code (e.g., KJFK, EGLL, RJTT) or use your current location via geolocation
+3. Adjust initial heading, altitude, and speed if desired
+4. Click "START" to begin
+
+### Flying the Aircraft
+
+**Basic Takeoff:**
+1. Press **E** to start the engine (engine spools up over ~10 seconds)
+2. Increase throttle with **W** until airspeed reaches ~50 knots
+3. Pull back on pitch (↑) to rotate; aircraft lifts off at ~65 knots
+4. Maintain pitch to climb at a reasonable rate
+
+**Cruise:**
+- Use autopilot for hands-off flight: press **Space** to toggle, then adjust heading/altitude/speed with keyboard or AP panel
+- Or hand-fly: maintain pitch for desired climb/descent, adjust throttle for speed
+
+**Landing:**
+- Descend to pattern altitude (~1,500 feet AGL) near the airport
+- Reduce speed gradually; deploy flaps (**F**) at lower speeds
+- Align with runway and touchdown gently; gear should be down
+- Upon landing, you'll receive feedback via the landing panel
+
+### Autopilot Features
+
+- **Altitude Hold** — Maintains selected altitude; climb/descend by adjusting setpoint with **;** and **'** keys
+- **Heading Hold** — Maintains selected heading; turn by adjusting with **[** and **]** keys
+- **Speed Hold** — Maintains selected airspeed; adjust with **,** and **.** keys
+- **Nav-to-Point** — Double-press **Space** to open the interactive map picker:
+  - Drag to pan, scroll to zoom
+  - Search by ICAO code (e.g., "KJFK") or coordinates (e.g., "40.7128, -74.0060")
+  - Click "GO" to navigate to the waypoint; autopilot will fly direct and initiate landing
+
+### Airport/Location Selection
+
+At startup, enter an ICAO code (e.g., **KJFK** for JFK, **EGLL** for Heathrow) or click "USE MY LOCATION" to start from your current position. You can also search by coordinates.
 
 ## Project Structure
 
 ```
 flight-sim/
-├── src/
-│   ├── pages/
-│   │   └── FlightSimulator.jsx       # Main simulator component
-│   ├── components/
-│   │   ├── ui/                        # Radix UI component library
-│   │   └── ScrollToTop.jsx
-│   ├── lib/
-│   │   ├── query-client.js            # React Query configuration
-│   │   └── utils.js
-│   ├── hooks/
-│   │   └── use-mobile.jsx
-│   ├── App.jsx                        # Main app router
-│   ├── main.jsx                       # Entry point
-│   └── index.css                      # Global styles
-├── vite.config.js                     # Vite configuration
-├── tailwind.config.js                 # Tailwind CSS configuration
-├── eslint.config.js                   # ESLint rules
-├── jsconfig.json                      # JavaScript/JSX configuration
-└── package.json                       # Dependencies and scripts
+├── public/
+│   └── simulator.html      # The entire flight simulator application (~5700 lines)
+├── index.html              # Analytics wrapper (iframes simulator.html)
+├── vite.config.js          # Vite build configuration
+├── package.json            # Dependencies and npm scripts
+├── CLAUDE.md               # Developer documentation for Claude Code
+└── README.md               # This file
 ```
 
-## Technology Stack
+## Architecture
 
-- **React 18** - UI framework
-- **Vite** - Next generation build tool
-- **Tailwind CSS** - Utility-first CSS framework
-- **Radix UI** - Accessible component library
-- **React Router** - Client-side routing
-- **React Query** - Data fetching library
-- **Framer Motion** - Animation library
-- **Three.js** - 3D graphics library
+**Flight Simulator** is a single self-contained HTML file with:
 
-## Scripts
+- **Inline CSS** — All styling for HUD, menus, warnings, and visual effects
+- **HTML Structure** — Canvas elements for 3D rendering and 2D overlays
+- **ES Module** — All JavaScript logic in a single async IIFE:
+  - Three.js scene with terrain streaming
+  - Physics simulation (forces, kinematics, autopilot)
+  - 2D canvas HUD rendering
+  - UI menus and input handling
+  - Collision detection and warning systems
 
-```bash
-npm run dev         # Start development server
-npm run build       # Build for production
-npm run preview     # Preview production build
-npm run lint        # Run ESLint
-npm run lint:fix    # Fix linting issues automatically
-npm run typecheck   # Check for TypeScript errors
-```
+The app loads:
+- **Esri World Imagery** for terrain textures
+- **AWS Terrain Tiles** for elevation data
+- **OpenStreetMap/Overpass** for buildings and roads
 
-## Linting & Quality
+All APIs are keyless and publicly accessible; no authentication required.
 
-- **ESLint** - Enforces React best practices and clean code
-- **TypeScript Check** - Validates JavaScript code with TypeScript
-- **Unused Imports** - Automatically removes unused imports
+For detailed developer documentation, see [CLAUDE.md](./CLAUDE.md).
 
-Run linting before committing:
+## Performance
 
-```bash
-npm run lint:fix
-npm run typecheck
-```
+- **Target Frame Rate** — 60 FPS on desktop, 30 FPS on mobile
+- **App Size** — ~150 KB gzipped (single HTML file + CDN dependencies)
+- **Terrain LOD** — Tiles load/unload based on camera distance
+- **Physics Timestep** — ~16ms per frame at 60 FPS
+
+## Browser Support
+
+Works on all modern browsers supporting:
+- HTML5 Canvas & WebGL
+- ES6+ JavaScript
+- CSS Grid & Flexbox
+
+**Recommended**: Chrome 90+, Firefox 88+, Safari 15+, Edge 90+
 
 ## Deployment
 
-The application is deployed to GitHub Pages at `/flight-sim/` path.
+The application is deployed to GitHub Pages:
 
 ```bash
 # Build for production
 npm run build
 
-# Push to main branch to trigger GitHub Pages deployment
+# Commit and push to main branch
+git add dist/
+git commit -m "Build for production"
 git push origin main
 ```
 
-## Browser Support
+The app will be live at: `https://giamat13.github.io/flight-sim/`
 
-Works on all modern browsers supporting:
-- HTML5 Canvas
-- ES6+ JavaScript
-- CSS Grid & Flexbox
+## API Usage
+
+All external data sources are keyless and subject to usage limits:
+
+- **Esri Tiles** — May be rate-limited at very high request rates
+- **AWS Terrain Tiles** — Free tier with reasonable limits
+- **Overpass API** — Community-run; be mindful of query complexity
+
+If you experience missing terrain or buildings, check browser console for API errors or rate-limit warnings.
+
+## Known Limitations
+
+- Single-player only (no multiplayer or server-side persistence)
+- Limited aircraft model (realistic dynamics, but no aerodynamic tables)
+- Simplified weather system (no wind or turbulence beyond basic variations)
+- Mobile performance may be reduced on lower-end devices
+- Terrain detail limited to available tile resolution
 
 ## Contributing
 
-1. Create a feature branch
-2. Make your changes
-3. Run `npm run lint:fix` and `npm run typecheck`
-4. Commit with clear messages
-5. Push and create a pull request
+1. Read [CLAUDE.md](./CLAUDE.md) for development guidance
+2. Create a feature branch from `main`
+3. Make your changes to `public/simulator.html`
+4. Test thoroughly in the browser (`npm run dev`)
+5. Commit with a clear message describing the change
+6. Push and create a pull request
 
 ## License
 
 MIT
 
-## Troubleshooting
+## Support & Troubleshooting
 
-### Dev server not starting
+### Dev Server Not Starting
 ```bash
-# Clear node_modules and reinstall
+# Clear dependencies and reinstall
 rm -rf node_modules package-lock.json
 npm install
 npm run dev
 ```
 
-### Port already in use
+### Port 5173 Already in Use
 Vite will automatically use the next available port. Check the terminal output for the actual URL.
 
-### Build fails
-```bash
-# Clear Vite cache
-rm -rf dist .vite
-npm run build
-```
+### Terrain Not Loading
+- Check browser console (F12 → Console) for network errors
+- Verify internet connection is working
+- Esri/AWS APIs may be temporarily rate-limited; wait a moment and refresh
+- Check if you're behind a proxy that blocks these APIs
 
-## Keyboard Shortcuts
+### Gamepad Not Detected
+- Ensure browser has focus
+- Try plugging in the gamepad after the page loads
+- Some gamepads require a driver update
 
-- **↑/↓** - Control pitch
-- **←/→** - Control bank/roll
-- **W/S** - Adjust throttle
-- **C** - Toggle camera/view
-- **R** - Reset to initial state
+### Choppy Performance
+- Check if other tabs are consuming resources
+- Reduce browser zoom if at >100%
+- Try a different browser
+- Check GPU usage in DevTools Performance tab
 
-## Performance
+## Credits
 
-The simulator runs at 60 FPS with optimized canvas rendering and efficient physics calculations.
+- **Three.js** — 3D graphics library
+- **Esri** — Base imagery tiles
+- **AWS** — Elevation data
+- **OpenStreetMap & Overpass** — Building and road data
+- Inspired by desktop flight simulators and web-based aviation tools
 
 ---
 
-For more information on development practices, see [CLAUDE.md](./CLAUDE.md).
+For more information, see [CLAUDE.md](./CLAUDE.md) or visit the [GitHub repository](https://github.com/giamat13/flight-sim).
