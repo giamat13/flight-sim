@@ -6050,6 +6050,52 @@ function markReady() {
   lastTime = performance.now(); // avoid a dt spike after the wait
 }
 
+// Fetch runways in a ~15 km bbox around (lat,lon) and call cb({lat,lon,hdg}) for
+// the nearest runway threshold, or cb(null) if none found within 10 km.
+// Fetch runways within ~30 km and return the nearest threshold to (lat,lon).
+function findNearestRunway(lat, lon, cb) {
+  const d = 0.27; // ~30 km lat margin
+  const dLon = d / Math.max(0.1, Math.cos(lat * Math.PI / 180));
+  const bbox = (lat - d) + ',' + (lon - dLon) + ',' + (lat + d) + ',' + (lon + dLon);
+  const query = '[out:json][timeout:18];way[aeroway=runway](' + bbox + ');out geom qt;';
+  const ctrl = new AbortController();
+  const tid = setTimeout(function () { ctrl.abort(); cb(null); }, 20000);
+  fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    body: 'data=' + encodeURIComponent(query),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    signal: ctrl.signal
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      clearTimeout(tid);
+      const ways = data.elements || [];
+      if (!ways.length) { cb(null); return; }
+      const cosLat = Math.cos(lat * Math.PI / 180);
+      function distTo(p) {
+        const dn = (p.lat - lat) * M_PER_DEG_LAT;
+        const de = (p.lon - lon) * (M_PER_DEG_LAT * cosLat);
+        return Math.sqrt(dn * dn + de * de);
+      }
+      let best = null, bestDist = Infinity;
+      for (let w = 0; w < ways.length; w++) {
+        const geo = ways[w].geometry;
+        if (!geo || geo.length < 2) continue;
+        const pA = geo[0], pB = geo[geo.length - 1];
+        const dN = (pB.lat - pA.lat) * M_PER_DEG_LAT;
+        const dE = (pB.lon - pA.lon) * (M_PER_DEG_LAT * cosLat);
+        const hdgAB = (Math.atan2(dE, dN) * 180 / Math.PI + 360) % 360;
+        const hdgBA = (hdgAB + 180) % 360;
+        const dA = distTo(pA), dB = distTo(pB);
+        // Pick the nearer threshold (no hard distance cap — bbox already limits range)
+        if (dA <= dB && dA < bestDist) { best = { lat: pA.lat, lon: pA.lon, hdg: hdgAB }; bestDist = dA; }
+        if (dB < dA  && dB < bestDist) { best = { lat: pB.lat, lon: pB.lon, hdg: hdgBA }; bestDist = dB; }
+      }
+      cb(best);
+    })
+    .catch(function () { clearTimeout(tid); cb(null); });
+}
+
 function beginFlight(loc) {
   START.lat = loc.lat;
   START.lon = loc.lon;
@@ -6088,14 +6134,28 @@ function beginFlight(loc) {
   }
   // Find an open/flat clearing first (never spawn stuck inside a built-up block),
   // anchor the local ENU world there, then resolve the ground elevation.
-  if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = 'FINDING A CLEAR RUNWAY…'; }
-  findClearSpawn(loc.lat, loc.lon, function (spLat, spLon) {
-    START.lat = spLat; START.lon = spLon;
-    state.lat = spLat; state.lon = spLon;
-    setGeoOrigin(spLat, spLon);
-    resetWorld();
-    if (THREEJS) THREEJS._menuPreview = false;
-    sampleGroundFt(spLat, spLon, function (ft) { spawnAt(ft * FT_TO_M); });
+  if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = 'FINDING NEAREST RUNWAY…'; }
+  findNearestRunway(loc.lat, loc.lon, function (rwy) {
+    if (rwy) {
+      // Snap to runway threshold and align with runway heading
+      START.lat = rwy.lat; START.lon = rwy.lon; START.hdg = rwy.hdg;
+      state.lat = rwy.lat; state.lon = rwy.lon; state.heading = rwy.hdg;
+      setGeoOrigin(rwy.lat, rwy.lon);
+      resetWorld();
+      if (THREEJS) THREEJS._menuPreview = false;
+      sampleGroundFt(rwy.lat, rwy.lon, function (ft) { spawnAt(ft * FT_TO_M); });
+    } else {
+      // No runway nearby — fall back to open-ground search
+      if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = 'FINDING A CLEAR AREA…'; }
+      findClearSpawn(loc.lat, loc.lon, function (spLat, spLon) {
+        START.lat = spLat; START.lon = spLon;
+        state.lat = spLat; state.lon = spLon;
+        setGeoOrigin(spLat, spLon);
+        resetWorld();
+        if (THREEJS) THREEJS._menuPreview = false;
+        sampleGroundFt(spLat, spLon, function (ft) { spawnAt(ft * FT_TO_M); });
+      });
+    }
   });
 
   // Start with engine off — player must press E to start
