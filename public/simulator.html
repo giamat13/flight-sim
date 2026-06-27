@@ -6077,7 +6077,8 @@ function findNearestRunway(lat, lon, cb) {
         const de = (p.lon - lon) * (M_PER_DEG_LAT * cosLat);
         return Math.sqrt(dn * dn + de * de);
       }
-      let best = null, bestDist = Infinity;
+      // Build candidate thresholds sorted by distance
+      const candidates = [];
       for (let w = 0; w < ways.length; w++) {
         const geo = ways[w].geometry;
         if (!geo || geo.length < 2) continue;
@@ -6086,11 +6087,39 @@ function findNearestRunway(lat, lon, cb) {
         const dE = (pB.lon - pA.lon) * (M_PER_DEG_LAT * cosLat);
         const hdgAB = (Math.atan2(dE, dN) * 180 / Math.PI + 360) % 360;
         const hdgBA = (hdgAB + 180) % 360;
-        const dA = distTo(pA), dB = distTo(pB);
-        // Pick the nearer threshold (no hard distance cap — bbox already limits range)
-        if (dA <= dB && dA < bestDist) { best = { lat: pA.lat, lon: pA.lon, hdg: hdgAB }; bestDist = dA; }
-        if (dB < dA  && dB < bestDist) { best = { lat: pB.lat, lon: pB.lon, hdg: hdgBA }; bestDist = dB; }
+        candidates.push({ lat: pA.lat, lon: pA.lon, hdg: hdgAB, dist: distTo(pA) });
+        candidates.push({ lat: pB.lat, lon: pB.lon, hdg: hdgBA, dist: distTo(pB) });
       }
+      candidates.sort(function (a, b) { return a.dist - b.dist; });
+
+      // Check each candidate: skip if a real aircraft is on final approach to that runway.
+      // "On final" = descending, low (<3000 ft AGL), within 15 km, aligned within 25° of
+      // the reciprocal runway heading (i.e. heading toward the threshold).
+      function runwayBlocked(rwy) {
+        for (let i = 0; i < traffic.length; i++) {
+          const t = traffic[i];
+          if (t.altitude > 3000) continue;           // too high to matter
+          if (t.phase !== 'descend' && t.phase !== 'ground') continue;
+          // Distance from aircraft to threshold
+          const tdN = (t.lat - rwy.lat) * M_PER_DEG_LAT;
+          const tdE = (t.lon - rwy.lon) * (M_PER_DEG_LAT * cosLat);
+          const tdist = Math.sqrt(tdN * tdN + tdE * tdE);
+          if (tdist > 15000) continue;               // too far
+          // Is the aircraft heading roughly toward the threshold?
+          // Landing heading ≈ reciprocal of rwy.hdg (runway faces away from landing dir)
+          const landingHdg = (rwy.hdg + 180) % 360;
+          const angleDiff = Math.abs(((t.heading - landingHdg + 540) % 360) - 180);
+          if (angleDiff < 35) return true;           // aligned — runway is active
+        }
+        return false;
+      }
+
+      let best = null;
+      for (let c = 0; c < candidates.length; c++) {
+        if (!runwayBlocked(candidates[c])) { best = candidates[c]; break; }
+      }
+      // If every runway is blocked, fall back to the closest one anyway
+      if (!best && candidates.length) best = candidates[0];
       cb(best);
     })
     .catch(function () { clearTimeout(tid); cb(null); });
