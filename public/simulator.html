@@ -481,6 +481,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <div class="l-boot-line" style="animation-delay:0.2s">AVIONICS &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ONLINE</div>
     <div class="l-boot-line" style="animation-delay:0.6s">NAV SYSTEMS &nbsp;&nbsp;&nbsp; READY</div>
     <div class="l-boot-line" style="animation-delay:1.0s">3D RENDERER &nbsp;&nbsp;&nbsp; INIT</div>
+    <div class="l-boot-line" style="animation-delay:1.4s">FLIGHT SYSTEMS &nbsp; ARMED</div>
+    <div class="l-boot-line" style="animation-delay:1.8s">WARNING SYSTEMS &nbsp; ACTIVE</div>
     <div class="l-boot-line" style="animation-delay:1.4s">TERRAIN DATA &nbsp;&nbsp; LOADING</div>
   </div>
 </div>
@@ -580,7 +582,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="sm-title">FLIGHT SIM</div>
   <div id="ac-selector" style="display:none"><!-- aircraft selector kept for applyAircraftType compat --></div>
   <button id="sm-aircraft-btn" style="cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.35);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:2px;padding:10px 28px;border-radius:5px;transition:all .15s;margin-bottom:2px">✈ SELECT AIRCRAFT</button>
-  <div id="sm-ac-current" style="font-size:9px;letter-spacing:2px;opacity:0.45;margin-top:-6px;margin-bottom:4px">CESSNA 172 SKYHAWK</div>
+  <div id="sm-ac-current" style="font-size:9px;letter-spacing:2px;opacity:0.45;margin-top:-6px;margin-bottom:4px">CLASSIC JET</div>
   <div class="sm-sub" style="margin-top:4px">SELECT DEPARTURE POINT</div>
   <div id="sm-grid">
     <button class="sm-btn" data-name="GRAND CANYON, AZ" data-lat="36.1069" data-lon="-112.1129" data-alt="1500" data-hdg="90">Grand Canyon<span class="sm-sub2">USA</span></button>
@@ -1888,8 +1890,8 @@ function _acSortScore(key, sortType) {
 // Physics constants shared by all aircraft (not user-configurable per type):
 const AC_PHYS = { g: 9.81, rho0: 1.225, scaleH: 9200 };
 
-let selectedAircraftKey = 'cessna172';
-let AC = Object.assign({}, AC_PHYS, AIRCRAFT_DEFS.cessna172);
+let selectedAircraftKey = 'fighter';
+let AC = Object.assign({}, AC_PHYS, AIRCRAFT_DEFS.classic);
 
 let VNE_KTS = AC.Vne / 0.514444;
 let ROTATION_KTS = AC.rotationKts;   // ground-roll takeoff rotation speed (knots)
