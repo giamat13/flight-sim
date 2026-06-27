@@ -940,6 +940,10 @@ let realWeatherActive = false;
 let realWeatherLat = null, realWeatherLon = null;
 let realWeatherTimer = 0;
 
+// Wind aloft layers: each entry = { altFt, speedKts, fromDeg }
+// Pressure levels: 925hPa≈2500ft, 850hPa≈5000ft, 700hPa≈10000ft, 500hPa≈18000ft, 300hPa≈30000ft
+let windAloftLayers = [];
+
 // Map WMO weather codes to simulator weather types
 function wmoToWeather(code) {
   code = code || 0;
@@ -971,6 +975,9 @@ function fetchRealWeather(lat, lon, isFirst) {
   const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat.toFixed(4) +
     '&longitude=' + lon.toFixed(4) +
     '&current=weathercode,windspeed_10m,winddirection_10m,is_day' +
+    '&hourly=windspeed_925hPa,winddirection_925hPa,windspeed_850hPa,winddirection_850hPa' +
+    ',windspeed_700hPa,winddirection_700hPa,windspeed_500hPa,winddirection_500hPa' +
+    ',windspeed_300hPa,winddirection_300hPa' +
     '&daily=sunrise,sunset&timezone=auto&forecast_days=1';
 
   const wxStatus = document.getElementById('wx-status');
@@ -994,6 +1001,19 @@ function fetchRealWeather(lat, lon, isFirst) {
       const wxChanged   = env.weather !== wxKind;
       if (!env.timeOverride) env.time = timeOfDay;
       env.weather = wxKind;
+
+      // Parse wind aloft layers from hourly data (use index 0 = current hour)
+      if (d.hourly) {
+        const h = d.hourly;
+        const i = 0; // current hour index
+        windAloftLayers = [
+          { altFt:  2500, speedKts: (h.windspeed_925hPa  && h.windspeed_925hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_925hPa  && h.winddirection_925hPa[i]  || 0 },
+          { altFt:  5000, speedKts: (h.windspeed_850hPa  && h.windspeed_850hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_850hPa  && h.winddirection_850hPa[i]  || 0 },
+          { altFt: 10000, speedKts: (h.windspeed_700hPa  && h.windspeed_700hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_700hPa  && h.winddirection_700hPa[i]  || 0 },
+          { altFt: 18000, speedKts: (h.windspeed_500hPa  && h.windspeed_500hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_500hPa  && h.winddirection_500hPa[i]  || 0 },
+          { altFt: 30000, speedKts: (h.windspeed_300hPa  && h.windspeed_300hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_300hPa  && h.winddirection_300hPa[i]  || 0 },
+        ];
+      }
 
       // Update base wind for the stochastic model
       env.windState.baseSpeedKts = windKts;
@@ -1064,7 +1084,56 @@ function setWeatherWind(kind) {
   updateWindVector();
 }
 
+function getWindAloftAtAlt(altFt) {
+  // Interpolate between wind aloft layers based on altitude
+  if (!windAloftLayers || windAloftLayers.length === 0) return null;
+  // Surface wind is handled by env.windState; layers start at 2500ft
+  if (altFt <= windAloftLayers[0].altFt) return null; // below first layer, use surface
+  const top = windAloftLayers[windAloftLayers.length - 1];
+  if (altFt >= top.altFt) {
+    return { speedKts: top.speedKts, fromDeg: top.fromDeg };
+  }
+  for (let i = 0; i < windAloftLayers.length - 1; i++) {
+    const lo = windAloftLayers[i], hi = windAloftLayers[i + 1];
+    if (altFt >= lo.altFt && altFt <= hi.altFt) {
+      const t = (altFt - lo.altFt) / (hi.altFt - lo.altFt);
+      // Interpolate speed linearly
+      const speedKts = lo.speedKts + t * (hi.speedKts - lo.speedKts);
+      // Interpolate direction through shortest arc
+      let dDir = normDeg(hi.fromDeg - lo.fromDeg);
+      const fromDeg = wrap360(lo.fromDeg + dDir * t);
+      return { speedKts, fromDeg };
+    }
+  }
+  return null;
+}
+
 function getWindVector() {
+  const altFt = (state && state.altitude) || 0;
+  const aloft = getWindAloftAtAlt(altFt);
+  if (aloft && windAloftLayers.length > 0) {
+    // Blend surface wind into aloft wind near the surface (500–2500ft transition)
+    const surfTop = windAloftLayers[0].altFt; // 2500ft
+    const surfBot = 500;
+    if (altFt >= surfTop) {
+      // Fully aloft wind
+      const toDeg = wrap360(aloft.fromDeg + 180);
+      const speedMps = aloft.speedKts * KTS_TO_MPS;
+      const rad = toDeg * DEG;
+      return { speedKts: aloft.speedKts, fromDeg: aloft.fromDeg, toDeg, n: Math.cos(rad) * speedMps, e: Math.sin(rad) * speedMps };
+    } else if (altFt > surfBot) {
+      // Blend surface → first aloft layer
+      const t = (altFt - surfBot) / (surfTop - surfBot);
+      const surf = env.wind || { speedKts: 0, fromDeg: 0 };
+      const speedKts = surf.speedKts + t * (windAloftLayers[0].speedKts - surf.speedKts);
+      let dDir = normDeg(windAloftLayers[0].fromDeg - surf.fromDeg);
+      const fromDeg = wrap360(surf.fromDeg + dDir * t);
+      const toDeg = wrap360(fromDeg + 180);
+      const speedMps = speedKts * KTS_TO_MPS;
+      const rad = toDeg * DEG;
+      return { speedKts, fromDeg, toDeg, n: Math.cos(rad) * speedMps, e: Math.sin(rad) * speedMps };
+    }
+  }
   return env.wind || { speedKts: 0, fromDeg: 0, toDeg: 0, n: 0, e: 0 };
 }
 
@@ -5737,7 +5806,16 @@ function render() {
     if (hudWind) {
       hudWind.textContent = windText;
       hudWind.style.color = windSpeed <= 0 ? '#00FF41' : '#7fd0ff';
-      hudWind.title = 'FROM ' + String(windFrom).padStart(3, '0') + '°';
+      // Build wind aloft tooltip
+      let aloftTip = 'FROM ' + String(windFrom).padStart(3, '0') + '°';
+      if (windAloftLayers && windAloftLayers.length > 0) {
+        const layerNames = ['2500', '5000', '10K', '18K', '30K'];
+        aloftTip += '\nWIND ALOFT:';
+        windAloftLayers.forEach(function(l, idx) {
+          aloftTip += '\n' + layerNames[idx] + 'ft  ' + Math.round(l.speedKts) + 'KT  FROM ' + String(Math.round(l.fromDeg)).padStart(3,'0') + '°';
+        });
+      }
+      hudWind.title = aloftTip;
     }
     if (hudWindRel) {
       hudWindRel.textContent = relText;
