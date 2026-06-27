@@ -307,6 +307,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #landing-panel .lp-err{color:#ff4040}
 #landing-panel .lp-hint{font-size:9px;opacity:0.55;letter-spacing:2px;margin-top:5px;text-align:center;width:100%}
 #rotate-warn{position:fixed;top:32%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:44px;font-weight:700;color:#00FF41;text-shadow:0 0 30px rgba(0,255,65,0.7);font-family:'JetBrains Mono',monospace;letter-spacing:6px;pointer-events:none;display:none}
+#fps-counter{position:fixed;top:16px;right:88px;z-index:20;pointer-events:none;color:rgba(0,255,65,0.75);font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:4px 10px;display:block}
+/* Virtual joystick */
+#vjoy-wrap{position:fixed;left:24px;bottom:24px;z-index:26;pointer-events:none;display:none}
+#vjoy-base{width:140px;height:140px;border-radius:50%;background:rgba(0,255,65,0.06);border:1.5px solid rgba(0,255,65,0.35);box-shadow:0 0 18px rgba(0,255,65,0.08);display:flex;align-items:center;justify-content:center;touch-action:none;pointer-events:auto;position:relative}
+#vjoy-knob{width:52px;height:52px;border-radius:50%;background:rgba(0,255,65,0.22);border:1.5px solid rgba(0,255,65,0.7);box-shadow:0 0 12px rgba(0,255,65,0.25);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;transition:box-shadow 0.1s}
+#vjoy-knob.active{background:rgba(0,255,65,0.38);box-shadow:0 0 20px rgba(0,255,65,0.5)}
+#vjoy-label{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:8px;letter-spacing:2px;color:rgba(0,255,65,0.4);font-family:'JetBrains Mono',monospace}
 </style>
 </head>
 <body>
@@ -336,6 +343,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <div class="hud-item"><span class="hud-label">THR</span><span class="hud-value" id="hud-thr">50%</span></div>
     <div class="hud-item"><span class="hud-label">WIND</span><span class="hud-value hud-value-sm" id="hud-wind">CALM</span></div>
     <div class="hud-item"><span class="hud-label">REL</span><span class="hud-value hud-value-sm" id="hud-wind-rel">HW 0 / X 0</span></div>
+    <div class="hud-item"><span class="hud-label">FPS</span><span class="hud-value hud-value-sm" id="hud-fps">—</span></div>
   </div>
 </div>
 
@@ -364,6 +372,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="lp-hint" id="lp-hint">E=ENGINE &nbsp;·&nbsp; W=THR UP &nbsp;·&nbsp; B=BRAKE &nbsp;·&nbsp; ←→=STEER</div>
 </div>
 <div id="rotate-warn" class="flashing">ROTATE ↑</div>
+<div id="fps-counter">FPS —</div>
+<div id="vjoy-wrap">
+  <div id="vjoy-base">
+    <div id="vjoy-knob"></div>
+  </div>
+  <div id="vjoy-label">PITCH · ROLL</div>
+</div>
 <div id="hud-toast"></div>
 
 <div id="sys-panel">
@@ -685,6 +700,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
         <div class="stp-toggle-row">
           <span class="stp-toggle-label">MINIMAP</span>
           <label class="stp-toggle"><input type="checkbox" id="stp-minimap" checked><span class="stp-toggle-track"></span></label>
+        </div>
+        <div class="stp-toggle-row">
+          <span class="stp-toggle-label">FPS COUNTER</span>
+          <label class="stp-toggle"><input type="checkbox" id="stp-fps-counter" checked><span class="stp-toggle-track"></span></label>
         </div>
       </div>
     </div>
@@ -1392,7 +1411,10 @@ function disableTilt() {
   window.removeEventListener('deviceorientation', onDeviceOrientation, true);
   setTiltButton();
 }
-function toggleTilt() { if (tiltEnabled) disableTilt(); else enableTilt(); }
+function toggleTilt() {
+  if (tiltEnabled) disableTilt(); else enableTilt();
+  if (typeof _updateVjoyVisibility === 'function') _updateVjoyVisibility();
+}
 
 // ===================== Touch controls (mobile) =====================
 function wireHold(btn, code) {
@@ -1409,6 +1431,77 @@ function wireHold(btn, code) {
 function wireTap(btn, fn) {
   if (!btn) return;
   btn.addEventListener('click', function (e) { e.preventDefault(); ensureAudio(); fn(); });
+}
+
+// ===================== Virtual Joystick =====================
+const _vjoy = { pitch: 0, roll: 0, active: false };
+
+function initVirtualJoystick() {
+  const base  = document.getElementById('vjoy-base');
+  const knob  = document.getElementById('vjoy-knob');
+  const wrap  = document.getElementById('vjoy-wrap');
+  if (!base || !knob || !wrap) return;
+
+  const RADIUS = 44; // max knob travel in px (base is 140px wide)
+
+  function onStart(cx, cy) {
+    _vjoy.active = true;
+    knob.classList.add('active');
+    onMove(cx, cy);
+  }
+  function onMove(cx, cy) {
+    const rect = base.getBoundingClientRect();
+    const ox = cx - (rect.left + rect.width  / 2);
+    const oy = cy - (rect.top  + rect.height / 2);
+    const dist = Math.sqrt(ox * ox + oy * oy);
+    const clamped = Math.min(dist, RADIUS);
+    const angle = Math.atan2(oy, ox);
+    const kx = Math.cos(angle) * clamped;
+    const ky = Math.sin(angle) * clamped;
+    knob.style.left = (50 + (kx / base.offsetWidth)  * 100) + '%';
+    knob.style.top  = (50 + (ky / base.offsetHeight) * 100) + '%';
+    // oy up = pitch up (nose up), ox right = roll right
+    _vjoy.pitch = -ky / RADIUS;  // invert Y: up on screen = nose up
+    _vjoy.roll  =  kx / RADIUS;
+  }
+  function onEnd() {
+    _vjoy.active = false;
+    _vjoy.pitch = 0;
+    _vjoy.roll  = 0;
+    knob.classList.remove('active');
+    knob.style.left = '50%';
+    knob.style.top  = '50%';
+  }
+
+  base.addEventListener('touchstart', function (e) {
+    e.preventDefault();
+    const t = e.targetTouches[0];
+    base._vjoyId = t.identifier;
+    onStart(t.clientX, t.clientY);
+  }, { passive: false });
+  base.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+    for (let i = 0; i < e.targetTouches.length; i++) {
+      if (e.targetTouches[i].identifier === base._vjoyId) {
+        onMove(e.targetTouches[i].clientX, e.targetTouches[i].clientY);
+        break;
+      }
+    }
+  }, { passive: false });
+  base.addEventListener('touchend',    function (e) { e.preventDefault(); onEnd(); }, { passive: false });
+  base.addEventListener('touchcancel', function (e) { e.preventDefault(); onEnd(); }, { passive: false });
+
+  // Also support mouse (for desktop testing)
+  base.addEventListener('mousedown', function (e) { onStart(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', function (e) { if (_vjoy.active) onMove(e.clientX, e.clientY); });
+  window.addEventListener('mouseup',   function ()  { if (_vjoy.active) onEnd(); });
+}
+
+function _updateVjoyVisibility() {
+  const wrap = document.getElementById('vjoy-wrap');
+  if (!wrap) return;
+  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  wrap.style.display = (isTouch && !tiltEnabled) ? 'block' : 'none';
 }
 
 function initTouchControls() {
@@ -1428,6 +1521,8 @@ function initTouchControls() {
   wireTap(document.getElementById('tc-gear'), toggleGear);
   wireTap(document.getElementById('tc-cam'), function () { cameraMode = (cameraMode + 1) % 2; });
   wireTap(document.getElementById('tc-ap'), onApButtonPress);
+  initVirtualJoystick();
+  _updateVjoyVisibility();
 }
 // Re-calibrate tilt neutral if the device rotates
 window.addEventListener('orientationchange', function () { if (tiltEnabled) setTimeout(calibrateTilt, 400); });
@@ -3463,7 +3558,6 @@ const TRAIL_MAX_POINTS    = 50;           // history points kept per flight
 
 // Direct, keyless, no-proxy mirrors — all ADSBExchange-v2-compatible.
 const TRAFFIC_SOURCES = [
-  { name: 'adsb.lol',       url: (lat, lon, nm) => `https://api.adsb.lol/v2/point/${lat}/${lon}/${nm}` },
   { name: 'airplanes.live', url: (lat, lon, nm) => `https://api.airplanes.live/v2/point/${lat}/${lon}/${nm}` },
   { name: 'adsb.one',       url: (lat, lon, nm) => `https://api.adsb.one/v2/point/${lat}/${lon}/${nm}` },
   { name: 'adsb.fi',        url: (lat, lon, nm) => `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${nm}` },
@@ -5257,6 +5351,7 @@ function update(dt) {
   if (gp) { pitchIn += gp.pitch; rollIn += gp.roll; thrIn += gp.thr; }
   const tilt = getTiltControl();           // phone tilt (if enabled)
   if (tilt) { pitchIn += tilt.pitch; rollIn += tilt.roll; }
+  if (!tilt && _vjoy.active) { pitchIn += _vjoy.pitch; rollIn += _vjoy.roll; } // virtual joystick
   pitchIn = Math.max(-1, Math.min(1, pitchIn));
   rollIn = Math.max(-1, Math.min(1, rollIn));
   thrIn = Math.max(-1, Math.min(1, thrIn));
@@ -7996,6 +8091,140 @@ function applyVolSettings() {
 
   ['master','engine','wind','alarms'].forEach(wireVolSlider);
 
+  // ── FPS counter toggle ──────────────────────────────────────────────────────
+  wireToggle('stp-fps-counter', function (on) {
+    const el = document.getElementById('fps-counter');
+    if (el) el.style.display = on ? 'block' : 'none';
+    _saveSettings();
+  });
+
+  // ── localStorage persistence ────────────────────────────────────────────────
+  const SETTINGS_KEY = 'flightsim_settings_v1';
+
+  function _collectSettings() {
+    const get = function (id) { const el = document.getElementById(id); return el ? el.checked : undefined; };
+    const getActive = function (sel) {
+      const el = settingsPanel.querySelector(sel + '.stp-active');
+      return el ? (el.dataset.fps || el.dataset.ratio || el.id) : null;
+    };
+    const rdSlider = document.getElementById('stp-rd-slider');
+    return {
+      scanlines:   get('stp-scanlines'),
+      vignette:    get('stp-vignette'),
+      hud:         get('stp-hud'),
+      minimap:     get('stp-minimap'),
+      fpsCounter:  get('stp-fps-counter'),
+      fpsCap:      getActive('[id^="stp-fps-"]'),
+      resCap:      getActive('[id^="stp-res-"]'),
+      rdRing:      rdSlider ? rdSlider.value : '8',
+      volMaster:   volSettings.master,
+      volEngine:   volSettings.engine,
+      volWind:     volSettings.wind,
+      volAlarms:   volSettings.alarms,
+      timeOverride: env.timeOverride ? env.time : null,
+      season:      env.season
+    };
+  }
+
+  function _saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(_collectSettings())); } catch(e){}
+  }
+
+  function _loadSettings() {
+    let s;
+    try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); } catch(e){ s = null; }
+    if (!s) return;
+
+    // Toggles
+    const applyToggle = function(cbId, val, onFn) {
+      const cb = document.getElementById(cbId);
+      if (cb && val !== undefined) { cb.checked = val; onFn(val); }
+    };
+    applyToggle('stp-scanlines', s.scanlines, function(on){ const el = document.getElementById('scanlines'); if(el) el.style.opacity = on ? '1':'0'; });
+    applyToggle('stp-vignette',  s.vignette,  function(on){ const el = document.getElementById('vignette');  if(el) el.style.opacity = on ? '1':'0'; });
+    applyToggle('stp-hud',       s.hud,       function(on){ const el = document.getElementById('hud');       if(el) el.style.display  = on ? 'flex':'none'; });
+    applyToggle('stp-minimap',   s.minimap,   function(on){ const el = document.getElementById('minimap');   if(el) el.style.display  = on ? '':'none'; });
+    applyToggle('stp-fps-counter', s.fpsCounter, function(on){ const el = document.getElementById('fps-counter'); if(el) el.style.display = on ? 'block':'none'; });
+
+    // FPS cap
+    if (s.fpsCap) {
+      const fpsMap = { '30': 'stp-fps-30', '60': 'stp-fps-60', '120': 'stp-fps-120', '0': 'stp-fps-unlim' };
+      const btnId = Object.keys(fpsMap).reduce(function(found, k){ return s.fpsCap === k ? fpsMap[k] : (s.fpsCap === fpsMap[k] ? fpsMap[k] : found); }, s.fpsCap);
+      const btn = document.getElementById(btnId);
+      if (btn) {
+        settingsPanel.querySelectorAll('[id^="stp-fps-"]').forEach(function(b){ b.classList.remove('stp-active'); });
+        btn.classList.add('stp-active');
+        const fps = parseInt(btn.dataset.fps, 10);
+        window._fpsInterval = fps > 0 ? 1000 / fps : 0;
+      }
+    }
+
+    // Resolution scale
+    if (s.resCap) {
+      const btn = document.getElementById(s.resCap);
+      if (btn) {
+        settingsPanel.querySelectorAll('[id^="stp-res-"]').forEach(function(b){ b.classList.remove('stp-active'); });
+        btn.classList.add('stp-active');
+        const ratio = parseFloat(btn.dataset.ratio);
+        if (ratio && window._applyPixelRatio) {
+          const actual = s.resCap === 'stp-res-native' ? (window.devicePixelRatio||1) : Math.min(ratio, window.devicePixelRatio||1);
+          window._applyPixelRatio(actual);
+        }
+      }
+    }
+
+    // Render distance
+    if (s.rdRing !== undefined) {
+      const slider = document.getElementById('stp-rd-slider');
+      if (slider) {
+        slider.value = s.rdRing;
+        slider.dispatchEvent(new Event('input'));
+      }
+    }
+
+    // Volume
+    if (s.volMaster !== undefined) volSettings.master = s.volMaster;
+    if (s.volEngine !== undefined) volSettings.engine = s.volEngine;
+    if (s.volWind   !== undefined) volSettings.wind   = s.volWind;
+    if (s.volAlarms !== undefined) volSettings.alarms = s.volAlarms;
+    applyVolSettings();
+    syncVolSliders();
+
+    // Time / season
+    if (s.timeOverride) { env.timeOverride = true; env.time = s.timeOverride; applyEnvironment(false); }
+    if (s.season) { env.season = s.season; }
+  }
+
+  // Auto-save whenever any setting changes (piggyback existing events)
+  function _patchSaveOnChange() {
+    // Patch vol sliders
+    ['master','engine','wind','alarms'].forEach(function(ch){
+      const slider = document.getElementById('vol-' + ch);
+      if (slider) slider.addEventListener('input', _saveSettings);
+    });
+    // Patch time/season buttons
+    ['stp-auto','stp-day','stp-dawn','stp-dusk','stp-night',
+     'stp-season-auto','stp-season-spring','stp-season-summer','stp-season-autumn','stp-season-winter'
+    ].forEach(function(id){
+      const el = document.getElementById(id); if (el) el.addEventListener('click', _saveSettings);
+    });
+    // Patch FPS / res buttons
+    settingsPanel.querySelectorAll('[id^="stp-fps-"],[id^="stp-res-"]').forEach(function(btn){
+      btn.addEventListener('click', _saveSettings);
+    });
+    // Patch render distance slider
+    const rdSlider = document.getElementById('stp-rd-slider');
+    if (rdSlider) rdSlider.addEventListener('input', _saveSettings);
+    // Patch toggles
+    ['stp-scanlines','stp-vignette','stp-hud','stp-minimap','stp-fps-counter'].forEach(function(id){
+      const cb = document.getElementById(id); if (cb) cb.addEventListener('change', _saveSettings);
+    });
+  }
+
+  // Load on startup, patch after DOM is ready
+  _loadSettings();
+  _patchSaveOnChange();
+
   // Expose openSettings so pause menu can call it
   window._openSettings = openSettings;
 })();
@@ -9046,6 +9275,22 @@ function initAircraftScreen() {
   }
 }
 
+// FPS counter state
+let _fpsSamples = [], _fpsLast = 0, _fpsDisplay = 0;
+function _updateFps(now) {
+  _fpsSamples.push(now);
+  const cutoff = now - 1000;
+  while (_fpsSamples.length && _fpsSamples[0] < cutoff) _fpsSamples.shift();
+  _fpsDisplay = _fpsSamples.length;
+  if (now - _fpsLast > 250) {
+    _fpsLast = now;
+    const hudFps = document.getElementById('hud-fps');
+    if (hudFps) hudFps.textContent = _fpsDisplay;
+    const el = document.getElementById('fps-counter');
+    if (el && el.style.display !== 'none') el.textContent = _fpsDisplay + ' FPS';
+  }
+}
+
 function loop() {
   const now = performance.now();
 
@@ -9054,6 +9299,7 @@ function loop() {
   if (_fpsMin > 0 && (now - lastTime) < _fpsMin - 0.5) {
     requestAnimationFrame(loop); return;
   }
+  _updateFps(now);
 
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
