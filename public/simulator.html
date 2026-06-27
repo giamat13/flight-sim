@@ -3812,7 +3812,7 @@ function navEngage(dest) {
     leg: 'dest',
     phase: state.onGround ? 'takeoff' : 'cruise',
     smoothAlt: Math.max(state.altitude, 1000),
-    plan: null, planTimer: 0, refuelNeeded: false, doneTimer: 0
+    plan: null, planTimer: 0, refuelNeeded: false, doneTimer: 0, refuelWaitT: 0
   };
   ap.nav.activeGroundFt = ap.nav.destGroundFt;
   navLastDest = { lat: dest.lat, lon: dest.lon, name: dest.name || '' };
@@ -3865,22 +3865,45 @@ function navGroundArrive() {
   else { navArrive(); }
 }
 
-// Out of range: pick a dry spot ahead, descend and land there to refuel.
+// Out of range: prefer a known airport within glide range, otherwise pick a dry spot.
 function startDivert() {
   const brg = navBearingTo(ap.nav.destLat, ap.nav.destLon).brg;
   const hereGroundFt = terrainHeightAtM(state.lat, state.lon) / FT_TO_M;
   const altDropFt = Math.max(800, state.altitude - hereGroundFt);
   const baseM = Math.max(7000, altDropFt * FT_TO_M / Math.tan(NAV_GLIDE_DEG * DEG) + 3500);
+
+  // Try a known airport within reachable range (up to 1.2× glide distance, toward destination).
   let best = null;
-  for (let ring = 0; ring < 6 && !best; ring++) {
-    const d = baseM * (1 - ring * 0.12);
-    const offs = [0, 12, -12, 25, -25];
-    for (let k = 0; k < offs.length; k++) {
-      const b = (brg + offs[k]) * DEG;
-      const lat = state.lat + (Math.cos(b) * d) / M_PER_DEG_LAT;
-      const lon = state.lon + (Math.sin(b) * d) / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
-      const h = terrainHeightAtM(lat, lon);
-      if (h > 1) { best = { lat: lat, lon: lon, ft: h / FT_TO_M }; break; } // dry land
+  if (mmAirports.length) {
+    let bestScore = Infinity;
+    for (let i = 0; i < mmAirports.length; i++) {
+      const ap2 = mmAirports[i];
+      const distM = distFromPlayerM(ap2.lat, ap2.lon);
+      if (distM > baseM * 1.2) continue; // out of glide range
+      // Prefer airports that are close AND roughly ahead (toward destination).
+      const bearingToAp = navBearingTo(ap2.lat, ap2.lon).brg;
+      const angDiff = Math.abs(((bearingToAp - brg + 540) % 360) - 180);
+      const score = distM * (1 + angDiff / 90);
+      if (score < bestScore) {
+        const h = terrainHeightAtM(ap2.lat, ap2.lon);
+        bestScore = score;
+        best = { lat: ap2.lat, lon: ap2.lon, ft: Math.max(0, h / FT_TO_M) };
+      }
+    }
+  }
+
+  // Fall back to nearest flat ground if no airport found.
+  if (!best) {
+    for (let ring = 0; ring < 6 && !best; ring++) {
+      const d = baseM * (1 - ring * 0.12);
+      const offs = [0, 12, -12, 25, -25];
+      for (let k = 0; k < offs.length; k++) {
+        const b = (brg + offs[k]) * DEG;
+        const lat = state.lat + (Math.cos(b) * d) / M_PER_DEG_LAT;
+        const lon = state.lon + (Math.sin(b) * d) / (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+        const h = terrainHeightAtM(lat, lon);
+        if (h > 1) { best = { lat: lat, lon: lon, ft: h / FT_TO_M }; break; }
+      }
     }
   }
   if (!best) {
@@ -4034,11 +4057,16 @@ function apNavControl(dt) {
     return navProtectGear(o, activeAglFt);
   }
 
-  // ---- Refuel stop: sit on the ground until the tank is full, then continue ----
+  // ---- Refuel stop: sit on the ground at an airport until tank is full, then continue ----
   if (ap.nav.phase === 'refuel') {
     navUpdateHud();
-    if (!state.onGround) { ap.nav.phase = 'cruise'; return apCruiseControl(dt); }
-    if (state.fuel >= 0.92 * state.fuelMax) {
+    if (!state.onGround) { ap.nav.phase = 'cruise'; ap.nav.refuelWaitT = 0; return apCruiseControl(dt); }
+    if (!ap.nav.refuelWaitT) ap.nav.refuelWaitT = 0;
+    ap.nav.refuelWaitT += dt;
+    const atAirport = mmAirports.some(function(a){ return distFromPlayerM(a.lat, a.lon) < 2000; });
+    // Continue once fuelled (at airport), or after 120 s timeout if no airport nearby.
+    if (state.fuel >= 0.92 * state.fuelMax || (!atAirport && ap.nav.refuelWaitT > 120)) {
+      ap.nav.refuelWaitT = 0;
       ap.nav.leg = 'dest';
       ap.nav.activeLat = ap.nav.destLat; ap.nav.activeLon = ap.nav.destLon;
       ap.nav.activeGroundFt = ap.nav.destGroundFt;
@@ -4402,15 +4430,21 @@ function update(dt) {
   }
 
   // ---- Ground refueling ----
-  // Sit on the ground for 5 seconds and the tank starts filling; by 30 seconds
-  // total on the ground it's topped all the way up.
+  // Sit on the ground at an airport for 5 seconds and the tank starts filling;
+  // by 30 seconds total it's topped all the way up.
   const REFUEL_START_S = 5;   // seconds on the ground before refueling kicks in
   const REFUEL_FULL_S  = 30;  // seconds on the ground for a full tank
+  const REFUEL_AIRPORT_M = 2000; // metres from airport centre to count as "at airport"
   if (state.onGround) {
-    state.groundTimer += dt;
-    if (state.groundTimer >= REFUEL_START_S && state.fuel < state.fuelMax) {
-      const refuelRate = state.fuelMax / (REFUEL_FULL_S - REFUEL_START_S); // kg/sec
-      state.fuel = Math.min(state.fuelMax, state.fuel + refuelRate * dt);
+    const nearAirport = mmAirports.some(function(ap){ return distFromPlayerM(ap.lat, ap.lon) < REFUEL_AIRPORT_M; });
+    if (nearAirport) {
+      state.groundTimer += dt;
+      if (state.groundTimer >= REFUEL_START_S && state.fuel < state.fuelMax) {
+        const refuelRate = state.fuelMax / (REFUEL_FULL_S - REFUEL_START_S); // kg/sec
+        state.fuel = Math.min(state.fuelMax, state.fuel + refuelRate * dt);
+      }
+    } else {
+      state.groundTimer = 0;
     }
   } else {
     state.groundTimer = 0;
@@ -5281,32 +5315,80 @@ function drawSpdTape() {
 // either cockpit or chase mode.
 const TRAFFIC_MODEL_M_PER_UNIT = 40;
 
+// ---- Airport boundary lines (Three.js scene objects) ----
+// LineLoop objects are created once per airport polygon and updated
+// when the airport enters/exits range. They sit ~3 m above terrain.
+const airportBoundaryLines = {}; // icao+latlon key -> THREE.LineLoop
+
+function updateAirportBoundaries() {
+  if (!THREEJS) return;
+  const MAX_DIST_M = 80000; // show boundary up to 80 km
+  const active = {};
+
+  for (let i = 0; i < mmAirports.length; i++) {
+    const ap = mmAirports[i];
+    if (!ap.poly || ap.poly.length < 3) continue;
+    const distM = distFromPlayerM(ap.lat, ap.lon);
+    if (distM > MAX_DIST_M) continue;
+
+    const key = (ap.icao || '') + '|' + ap.lat.toFixed(4) + ',' + ap.lon.toFixed(4);
+    active[key] = true;
+
+    if (!airportBoundaryLines[key]) {
+      // Build geometry from polygon points, sampled at terrain height + 3 m
+      const positions = [];
+      for (let p = 0; p < ap.poly.length; p++) {
+        const pt = ap.poly[p];
+        const altM = Math.max(0, terrainHeightAtM(pt.lat, pt.lon)) + 3;
+        const v = enuVec(pt.lat, pt.lon, altM);
+        positions.push(v.x, v.y, v.z);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const mat = new THREE.LineBasicMaterial({ color: 0x00ff41, transparent: true, opacity: 0.75, depthTest: true });
+      const line = new THREE.LineLoop(geo, mat);
+      THREEJS.scene.add(line);
+      airportBoundaryLines[key] = line;
+    }
+
+    // Fade based on distance
+    const alpha = Math.max(0.3, Math.min(0.85, 1 - distM / MAX_DIST_M * 0.7));
+    airportBoundaryLines[key].material.opacity = alpha;
+    airportBoundaryLines[key].visible = true;
+  }
+
+  // Hide lines for airports no longer in range
+  for (const key in airportBoundaryLines) {
+    if (!active[key]) airportBoundaryLines[key].visible = false;
+  }
+}
+
 function drawAirports3D() {
   if (!THREEJS || !mmAirports.length) return;
-  const MAX_DIST_M = 120000; // show up to 120 km
+  const MAX_DIST_M = 120000;
+
   for (let i = 0; i < mmAirports.length; i++) {
     const ap = mmAirports[i];
     const distM = distCamToGeo(ap.lat, ap.lon, 0);
     if (distM > MAX_DIST_M) continue;
+
+    const km = distM / 1000;
+    const alpha = Math.max(0.25, Math.min(0.9, 1 - km / 120 * 0.7));
+
+    // ---- Centre icon ----
     const screen = projectGeoToScreen(ap.lat, ap.lon, 0);
     if (screen.behind) continue;
     const cx = screen.x, cy = screen.y;
     if (cx < -60 || cx > W + 60 || cy < -30 || cy > H + 30) continue;
 
-    const km = distM / 1000;
-    const alpha = Math.max(0.25, Math.min(0.9, 1 - km / 120 * 0.7));
     const sz = Math.max(4, Math.min(14, 600 / km));
-
-    // Outer circle
     ctx.strokeStyle = `rgba(0,255,65,${alpha})`;
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(cx, cy, sz, 0, Math.PI * 2); ctx.stroke();
-
-    // Runway cross
     ctx.beginPath(); ctx.moveTo(cx - sz * 0.8, cy); ctx.lineTo(cx + sz * 0.8, cy); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx, cy - sz * 0.8); ctx.lineTo(cx, cy + sz * 0.8); ctx.stroke();
 
-    // Label (ICAO or name)
+    // Label
     const label = ap.icao || (ap.name && ap.name.slice(0, 6).toUpperCase()) || '';
     if (label && sz >= 5) {
       ctx.font = '9px JetBrains Mono, monospace';
@@ -5577,6 +5659,7 @@ function render() {
 
   drawWeather(); // rain/snow particles behind the HUD
 
+  updateAirportBoundaries();
   drawTraffic();
   drawAirports3D();
 
@@ -6300,9 +6383,10 @@ function nmGetViewBbox() {
 
 function fetchAirportsForBbox(minLat, minLon, maxLat, maxLon, callback) {
   const bbox = minLat + ',' + minLon + ',' + maxLat + ',' + maxLon;
-  const query = '[out:json][timeout:20];(node[aeroway=aerodrome](' + bbox + ');way[aeroway=aerodrome](' + bbox + ');relation[aeroway=aerodrome](' + bbox + '););out center tags;';
+  // out geom gives polygon coords for ways; out center gives centroid fallback for relations
+  const query = '[out:json][timeout:25];(node[aeroway=aerodrome](' + bbox + ');way[aeroway=aerodrome](' + bbox + ');relation[aeroway=aerodrome](' + bbox + '););out geom tags qt;';
   const ctrl = new AbortController();
-  const tid = setTimeout(function(){ ctrl.abort(); callback(null); }, 22000);
+  const tid = setTimeout(function(){ ctrl.abort(); callback(null); }, 27000);
   fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
     body: 'data=' + encodeURIComponent(query),
@@ -6313,12 +6397,44 @@ function fetchAirportsForBbox(minLat, minLon, maxLat, maxLon, callback) {
     .then(function(d){
       clearTimeout(tid);
       const airports = (d.elements || []).map(function(el){
-        const lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat);
-        const lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
+        // Centre point
+        let lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat);
+        let lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
+        // For ways: geometry[] gives the ring; compute centroid from it if no explicit centre
+        let poly = null;
+        if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
+          poly = el.geometry; // [{lat,lon},…] closed ring
+          if (!lat) {
+            let sLat = 0, sLon = 0;
+            for (let g = 0; g < poly.length; g++) { sLat += poly[g].lat; sLon += poly[g].lon; }
+            lat = sLat / poly.length; lon = sLon / poly.length;
+          }
+        }
+        // For relations: grab the outer member way geometry
+        if (el.type === 'relation' && el.members) {
+          for (let m = 0; m < el.members.length; m++) {
+            const mem = el.members[m];
+            if (mem.role === 'outer' && mem.geometry && mem.geometry.length >= 3) {
+              poly = mem.geometry; break;
+            }
+          }
+          if (!poly && el.members.length) {
+            for (let m = 0; m < el.members.length; m++) {
+              if (el.members[m].geometry && el.members[m].geometry.length >= 3) {
+                poly = el.members[m].geometry; break;
+              }
+            }
+          }
+        }
         if (!lat || !lon) return null;
-        return { lat: lat, lon: lon, icao: ((el.tags && (el.tags.icao || el.tags.ref)) || '').toUpperCase(), name: (el.tags && (el.tags.name || el.tags['name:en'] || '')) || '' };
+        return {
+          lat: lat, lon: lon,
+          icao: ((el.tags && (el.tags.icao || el.tags.ref)) || '').toUpperCase(),
+          name: (el.tags && (el.tags.name || el.tags['name:en'] || '')) || '',
+          poly: poly || null
+        };
       }).filter(Boolean);
-      callback(airports.length ? airports : null); // null = keep old data on empty result
+      callback(airports.length ? airports : null);
     })
     .catch(function(){ clearTimeout(tid); callback(null); });
 }
