@@ -1263,7 +1263,7 @@ window.addEventListener('keydown', e => {
   keys[code] = true;
   if (!wasDown) {
     // edge-triggered actions
-    if (code === 'KeyC') cameraMode = (cameraMode + 1) % 2;
+    if (code === 'KeyC' && TUT.allows('camera')) cameraMode = (cameraMode + 1) % 2;
     // F3+A (Minecraft-style) reloads the render of loaded tiles without re-downloading;
     // A alone toggles the autopilot.
     if (code === 'KeyA') { if (keys['F3']) reloadRender(); else onApButtonPress(); }
@@ -1291,6 +1291,8 @@ window.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('pointerdown', function(){ ensureAudio(); try { window.focus(); } catch (e) {} });
 
 function handleEngineKey() {
+  // During the tutorial the engine stays running (no engine-start lesson).
+  if (TUT.isActive()) return;
   ensureAudio();
   if (state.engineState === 'off') {
     if (state.fuel <= 0) return; // no fuel, won't start
@@ -1313,10 +1315,12 @@ const FLAP_CL    = [0, 0.28, 0.55, 0.90];  // extra CL per flap notch
 const FLAP_CD    = [0, 0.012, 0.030, 0.080]; // extra CD per flap notch
 
 function cycleFlaps() {
+  if (!TUT.allows('flaps')) return; // locked until the tutorial's flaps lesson
   state.flaps = (state.flaps + 1) % 4;
 }
 
 function toggleGear() {
+  if (!TUT.allows('gear')) return;  // locked until the tutorial's gear lesson
   if (state.gearBroken) return;     // wheels are gone — nothing left to toggle
   if (state.onGround) return;       // can't raise gear while rolling on the ground
   if (state.altitude < 100) return; // can't retract below 100 ft
@@ -1918,7 +1922,7 @@ function readGamepad() {
 
   // Edge-triggered button actions (full parity with keyboard)
   const camNow = pressed(3);                       // Y -> camera
-  if (camNow && !gpPrev.cam) cameraMode = (cameraMode + 1) % 2;
+  if (camNow && !gpPrev.cam && TUT.allows('camera')) cameraMode = (cameraMode + 1) % 2;
   gpPrev.cam = camNow;
   const engNow = pressed(1);                       // B -> engine
   if (engNow && !gpPrev.eng) handleEngineKey();
@@ -1945,6 +1949,222 @@ function readGamepad() {
     lookPitch: dz(ax[1])                 // left stick up/down = look up/down
   };
 }
+
+// ===================== First-flight Tutorial =====================
+// A guided, step-by-step lesson shown ONLY the very first time a player flies.
+// The plane spawns already airborne (taking off is hard for a first-timer) and
+// the tutorial teaches one control at a time. Some features stay "training-wheels"
+// disabled until their lesson is reached: fuel is infinite until the FUEL lesson,
+// and RPM is pinned at 100% until the POWER/RPM lesson. Hints adapt to gamepad.
+const TUT = (function () {
+  const KEY = 'fs_tutorial_done_v1';
+  let active = false;
+  let stepIdx = 0;
+  let holdT = 0;               // generic "hold the input briefly" timer
+  let contPrev = false;        // continue-button edge tracker
+  let contEdge = false;
+  let lastHtml = '';
+  let lastGp = null;
+  let enterFlaps = 0, enterGear = true, enterCam = 0, enterAlt = 0;
+  // Every gated feature starts locked; each unlocks the moment its lesson begins,
+  // so the player can use it to complete that very lesson.
+  const unlocked = { throttle: false, fuel: false, flaps: false, gear: false, ap: false, camera: false };
+  let boxEl = null, msgEl = null;
+
+  function gpOn() { return typeof gpConnected !== 'undefined' && gpConnected; }
+
+  function continueDown() {
+    if (typeof keys !== 'undefined' && keys['Enter']) return true;
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (let i = 0; i < pads.length; i++) {
+      const p = pads[i];
+      if (p && p.buttons && p.buttons[0] && p.buttons[0].pressed) return true; // A / cross
+    }
+    return false;
+  }
+
+  function holdDone(cond, dt, need) {
+    if (cond) holdT += dt; else holdT = Math.max(0, holdT - dt * 2);
+    return holdT >= need;
+  }
+
+  const steps = [
+    { id: 'welcome',
+      kb: "Welcome to flight school! ✈️<br>You're flying straight &amp; level in the air.<br><b>Press ENTER</b> to begin.",
+      gp: "Welcome to flight school! ✈️<br>You're flying straight &amp; level in the air.<br><b>Press Ⓐ (A)</b> to begin.",
+      done: function () { return contEdge; } },
+    { id: 'pitch',
+      kb: "PITCH — point the nose.<br><b>↓</b> nose up · <b>↑</b> nose down<br>Try moving it now.",
+      gp: "PITCH — point the nose.<br><b>Right stick ↑/↓</b><br>Try moving it now.",
+      done: function (inp, dt) { return holdDone(Math.abs(inp.pitchIn) > 0.4, dt, 0.5); } },
+    { id: 'bank',
+      kb: "BANK — turn left or right.<br><b>←</b> / <b>→</b> to roll the wings<br>Give it a try.",
+      gp: "BANK — turn left or right.<br><b>Right stick ←/→</b><br>Give it a try.",
+      done: function (inp, dt) { return holdDone(Math.abs(inp.rollIn) > 0.4, dt, 0.5); } },
+    { id: 'throttle', feature: 'throttle',
+      kb: "POWER &amp; RPM — the engine.<br><b>W</b> more · <b>S</b> less throttle.<br>Move it and watch the RPM gauge respond.",
+      gp: "POWER &amp; RPM — the engine.<br><b>RT</b> more · <b>LT</b> less throttle.<br>Watch the RPM gauge respond.",
+      done: function (inp, dt) { return holdDone(Math.abs(inp.thrIn) > 0.3, dt, 0.6); } },
+    { id: 'fuel', feature: 'fuel',
+      kb: "FUEL — keep an eye on it!<br>From now on the tank actually drains.<br><b>Press ENTER</b> to continue.",
+      gp: "FUEL — keep an eye on it!<br>From now on the tank actually drains.<br><b>Press Ⓐ (A)</b> to continue.",
+      done: function () { return contEdge; } },
+    { id: 'flaps', feature: 'flaps',
+      kb: "FLAPS — more lift for slow flight.<br><b>Press F</b> to extend a notch.",
+      gp: "FLAPS — more lift for slow flight.<br><b>Press X</b> to extend a notch.",
+      done: function () { return state.flaps !== enterFlaps; } },
+    { id: 'gear', feature: 'gear',
+      kb: "LANDING GEAR — the wheels.<br><b>Press G</b> to raise or lower them.",
+      gp: "LANDING GEAR — the wheels.<br><b>Press LB</b> to raise or lower them.",
+      done: function () { return state.gearDown !== enterGear; } },
+    { id: 'ap', feature: 'ap',
+      kb: "AUTOPILOT — it flies for you.<br><b>Press A</b> to engage it.",
+      gp: "AUTOPILOT — it flies for you.<br><b>Press RB</b> to engage it.",
+      done: function () { return typeof ap !== 'undefined' && ap.on === true; } },
+    { id: 'camera', feature: 'camera',
+      kb: "CAMERA — change your view.<br><b>Press C</b> to switch cameras.",
+      gp: "CAMERA — change your view.<br><b>Press Y</b> to switch cameras.",
+      done: function () { return cameraMode !== enterCam; } },
+    { id: 'trim',
+      kb: "TRIM &amp; LEVEL FLIGHT.<br>Let go of pitch and the nose holds its<br>flight path on its own — hands-off level.<br><b>Press ENTER</b> to continue.",
+      gp: "TRIM &amp; LEVEL FLIGHT.<br>Release the stick and the nose holds its<br>flight path on its own — hands-off level.<br><b>Press Ⓐ (A)</b> to continue.",
+      done: function () { return contEdge; } },
+    { id: 'apknobs',
+      kb: "AP SETPOINTS — with autopilot on:<br><b>[ ]</b> heading · <b>; '</b> altitude · <b>, .</b> speed.<br>It flies to those targets.<br><b>Press ENTER</b> to continue.",
+      gp: "AP SETPOINTS — with autopilot on:<br><b>D-PAD</b> heading/altitude · <b>R3+D-PAD</b> speed.<br>It flies to those targets.<br><b>Press Ⓐ (A)</b> to continue.",
+      done: function () { return contEdge; } },
+    { id: 'nav',
+      kb: "NAV-TO-POINT — fly anywhere.<br><b>Double-tap A</b> opens a map; pick a spot<br>and the autopilot flies &amp; lands there.<br><b>Press ENTER</b> to continue.",
+      gp: "NAV-TO-POINT — fly anywhere.<br><b>Double-tap RB</b> opens a map; pick a spot<br>and the autopilot flies &amp; lands there.<br><b>Press Ⓐ (A)</b> to continue.",
+      done: function () { return contEdge; } },
+    { id: 'warnings',
+      kb: "WARNINGS — listen &amp; watch.<br>STALL = too slow (lower nose / add power).<br>OVERSPEED = too fast. TERRAIN = pull up!<br><b>Press ENTER</b> to continue.",
+      gp: "WARNINGS — listen &amp; watch.<br>STALL = too slow (lower nose / add power).<br>OVERSPEED = too fast. TERRAIN = pull up!<br><b>Press Ⓐ (A)</b> to continue.",
+      done: function () { return contEdge; } },
+    { id: 'pause',
+      kb: "PAUSE &amp; RESTART.<br><b>P</b> pauses the sim · <b>R</b> restarts the flight.<br><b>Press ENTER</b> to continue.",
+      gp: "PAUSE &amp; RESTART.<br><b>☰ (Start)</b> pauses · <b>Back</b> restarts the flight.<br><b>Press Ⓐ (A)</b> to continue.",
+      done: function () { return contEdge; } },
+    { id: 'landintro',
+      kb: "LANDING TIME. 🛬<br>Easiest way: keep AUTOPILOT on and<br>lower the GEAR (G) — it auto-lands for you.<br>Or fly down manually. <b>Press ENTER</b>, then land.",
+      gp: "LANDING TIME. 🛬<br>Easiest way: keep AUTOPILOT on and<br>lower the GEAR (LB) — it auto-lands for you.<br>Or fly down manually. <b>Press Ⓐ</b>, then land.",
+      done: function () { return contEdge; } },
+    { id: 'landing',
+      kb: "Bring her down onto the ground.<br>Gear DOWN, ease the descent, flare gently.<br>Waiting for touchdown…",
+      gp: "Bring her down onto the ground.<br>Gear DOWN, ease the descent, flare gently.<br>Waiting for touchdown…",
+      done: function () { return state.onGround === true && !state.terrainHit; } },
+    { id: 'takeintro',
+      kb: "Nice landing! 🛬 Now let's TAKE OFF.<br>Full throttle (W), build speed, then at<br>~110 kt pull the nose up (↓) to rotate.<br><b>Press ENTER</b> when ready.",
+      gp: "Nice landing! 🛬 Now let's TAKE OFF.<br>Full throttle (RT), build speed, then at<br>~110 kt pull the nose up to rotate.<br><b>Press Ⓐ</b> when ready.",
+      done: function () { return contEdge; } },
+    { id: 'takeoff',
+      kb: "Throttle up and rotate — get airborne!",
+      gp: "Throttle up and rotate — get airborne!",
+      done: function () { return state.onGround === false && state.altitude > enterAlt + 60; } },
+    { id: 'finish',
+      kb: "🎓 Training complete! You flew, landed and<br>took off. Everything is unlocked now.<br>Blue skies, pilot. <b>Press ENTER</b> to close.",
+      gp: "🎓 Training complete! You flew, landed and<br>took off. Everything is unlocked now.<br>Blue skies, pilot. <b>Press Ⓐ (A)</b> to close.",
+      done: function () { return contEdge; } }
+  ];
+
+  function ensureBox() {
+    if (boxEl) return;
+    if (!document.getElementById('tut-style')) {
+      const st = document.createElement('style');
+      st.id = 'tut-style';
+      st.textContent =
+        '#tut-box{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:60;' +
+        'min-width:300px;max-width:440px;padding:14px 20px;background:rgba(0,18,4,0.85);' +
+        'border:1px solid rgba(0,255,65,0.6);border-radius:8px;color:#00FF41;' +
+        "font-family:'Courier New',monospace;text-align:center;line-height:1.5;" +
+        'box-shadow:0 0 18px rgba(0,255,65,0.25);text-shadow:0 0 6px rgba(0,255,65,0.5);}' +
+        '#tut-box .tut-title{font-size:11px;letter-spacing:3px;opacity:0.7;margin-bottom:6px;}' +
+        '#tut-msg{font-size:15px;}#tut-msg b{color:#aaffcc;}' +
+        '#tut-box .tut-prog{font-size:10px;letter-spacing:2px;opacity:0.55;margin-top:8px;}';
+      document.head.appendChild(st);
+    }
+    boxEl = document.createElement('div');
+    boxEl.id = 'tut-box';
+    boxEl.innerHTML = '<div class="tut-title">FLIGHT SCHOOL</div><div id="tut-msg"></div><div class="tut-prog" id="tut-prog"></div>';
+    document.body.appendChild(boxEl);
+    msgEl = document.getElementById('tut-msg');
+  }
+
+  function toast(t) { if (typeof showToast === 'function') { try { showToast(t); } catch (e) {} } }
+
+  function updateMsg(force) {
+    if (!msgEl) return;
+    const s = steps[stepIdx];
+    const on = gpOn();
+    const html = on ? s.gp : s.kb;
+    if (force || html !== lastHtml || on !== lastGp) {
+      msgEl.innerHTML = html;
+      lastHtml = html; lastGp = on;
+    }
+    const pe = document.getElementById('tut-prog');
+    if (pe) pe.textContent = 'STEP ' + stepIdx + ' / ' + (steps.length - 1);
+  }
+
+  function enter(idx) {
+    stepIdx = idx;
+    holdT = 0;
+    enterFlaps = state.flaps;
+    enterGear = state.gearDown;
+    enterCam = cameraMode;
+    enterAlt = state.altitude;
+    // Unlock this lesson's feature so the player can actually use it to pass.
+    const f = steps[idx].feature;
+    if (f) unlocked[f] = true;
+    updateMsg(true);
+  }
+
+  function isFirstTime() {
+    try { return !localStorage.getItem(KEY); } catch (e) { return true; }
+  }
+
+  function begin() {
+    if (active) return;
+    active = true;
+    for (const k in unlocked) unlocked[k] = false;
+    contPrev = false; contEdge = false; lastHtml = ''; lastGp = null;
+    ensureBox();
+    boxEl.style.display = 'block';
+    enter(0);
+  }
+
+  function finish() {
+    active = false;
+    for (const k in unlocked) unlocked[k] = true;
+    if (boxEl) boxEl.style.display = 'none';
+    try { localStorage.setItem(KEY, '1'); } catch (e) {}
+  }
+
+  function tick(dt, inp) {
+    if (!active) return;
+    const cp = continueDown();
+    contEdge = cp && !contPrev;
+    contPrev = cp;
+    const step = steps[stepIdx];
+    if (step.done(inp, dt)) {
+      if (step.onComplete) step.onComplete();
+      if (stepIdx >= steps.length - 1) finish();
+      else enter(stepIdx + 1);
+    }
+    updateMsg(false);
+  }
+
+  return {
+    begin: begin,
+    finish: finish,
+    tick: tick,
+    isFirstTime: isFirstTime,
+    isActive: function () { return active; },
+    // Returns true if a feature is usable (either tutorial is over, or its lesson was reached).
+    allows: function (name) { return !active || unlocked[name]; },
+    rpmUnlocked: function () { return unlocked.throttle; },
+    fuelInfinite: function () { return active && !unlocked.fuel; }
+  };
+})();
 
 // ----- Gamepad navigation of the start menu -----
 let menuItems = [];
@@ -4695,6 +4915,7 @@ let navLastDest = null;        // {lat,lon,name} of the last route, for RESUME
 let apPressLast = 0, apPressTimer = null;
 function onApButtonPress() {
   if (!chosen || !simReady) return;
+  if (!TUT.allows('ap')) return;        // locked until the tutorial's autopilot lesson
   const now = performance.now();
   if (now - apPressLast < 350) {        // second press within the window -> double
     apPressLast = 0;
@@ -5359,6 +5580,9 @@ function update(dt) {
   rollIn = Math.max(-1, Math.min(1, rollIn));
   thrIn = Math.max(-1, Math.min(1, thrIn));
 
+  // First-flight tutorial watches the raw pilot inputs to advance its lessons.
+  TUT.tick(dt, { pitchIn: pitchIn, rollIn: rollIn, thrIn: thrIn });
+
   // ---- Autopilot ----
   const apOut = apControl(dt);
   let apFlying = false;
@@ -5425,7 +5649,8 @@ function update(dt) {
   if (state.wingBroken && !state.onGround) {
     state.bank = normDeg(state.bank + state.wingBreakSide * 160 * dt);
   }
-  state.throttle = Math.max(0, Math.min(100, state.throttle + thrIn * throttleRate * dt));
+  // Throttle is frozen until its tutorial lesson (RPM/power stays fixed).
+  if (TUT.allows('throttle')) state.throttle = Math.max(0, Math.min(100, state.throttle + thrIn * throttleRate * dt));
 
   // ---- Longitudinal handling ----
   // Hands-off, the nose gently settles to the flight path at the angle of attack
@@ -5508,6 +5733,8 @@ function update(dt) {
     state.rpm = Math.max(0, state.rpm - dt * 15);
     state.engineTimer = 0;
   }
+  // Tutorial training-wheels: RPM is pinned at 100% until the POWER/RPM lesson.
+  if (!TUT.allows('throttle') && state.engineState === 'running') state.rpm = 100;
   updateAudio(state.rpm, state.speed);
   updateMechSounds(dt);
 
@@ -5535,7 +5762,8 @@ function update(dt) {
   // Burns only while the engine is actually running, scaled by the real spooled
   // thrust (not the raw throttle command) so spool-up/down lag is reflected too:
   // idle/weak power sips fuel, full power gulps it.
-  if (engRunning && state.fuel > 0) {
+  // Tutorial training-wheels: fuel is infinite until the FUEL lesson is reached.
+  if (engRunning && state.fuel > 0 && !TUT.fuelInfinite()) {
     const thrFrac = Math.max(0, Math.min(1, state.thrustPct / 100));
     const flow = AC.fuelFlowIdle + (AC.fuelFlowMax - AC.fuelFlowIdle) * thrFrac;
     state.fuel = Math.max(0, state.fuel - flow * dt);
@@ -7837,19 +8065,38 @@ function beginFlight(loc) {
     if (sub) { sub.style.color = '#00FF41'; sub.classList.add('pulsing'); sub.textContent = 'FINDING RUNWAY...'; }
   }
 
-  // Spawn the aircraft ON the ground at the chosen point.
+  // First-ever flight: take off for the player (it's hard) and run the tutorial.
+  const tutorialFlight = TUT.isFirstTime();
+
+  // Spawn the aircraft ON the ground at the chosen point (or airborne for the tutorial).
   spawnResolved = false;
   function spawnAt(groundM) {
     const groundFt = groundM / FT_TO_M;
     START.alt = groundFt;
-    state.altitude = groundFt + 10; // 10 ft above ground so terrain check lands cleanly
-    state.speed = 0;
-    state.throttle = 0;
-    state.thrustPct = 0;
-    state.gamma = 0;
-    state.vs = 0;
-    state.onGround = true;
-    state.pitch = 2.5;
+    if (tutorialFlight) {
+      // Spawn already cruising, straight & level, engine running.
+      state.altitude = groundFt + 4000;
+      state.speed = 180;
+      state.throttle = 62;
+      state.thrustPct = 62;
+      state.gamma = 0;
+      state.vs = 0;
+      state.onGround = false;
+      state.gearDown = false;
+      state.engineState = 'running';
+      state.rpm = 100;
+      state.pitch = 2.5;
+      TUT.begin();
+    } else {
+      state.altitude = groundFt + 10; // 10 ft above ground so terrain check lands cleanly
+      state.speed = 0;
+      state.throttle = 0;
+      state.thrustPct = 0;
+      state.gamma = 0;
+      state.vs = 0;
+      state.onGround = true;
+      state.pitch = 2.5;
+    }
     spawnResolved = true;
   }
   // Find an open/flat clearing first (never spawn stuck inside a built-up block),
@@ -7878,11 +8125,14 @@ function beginFlight(loc) {
     }
   });
 
-  // Start with engine off — player must press E to start
-  state.engineState = 'off';
-  state.rpm = 0;
-  state.thrustPct = 0;
-  state.throttle = 0;
+  // Start with engine off — player must press E to start.
+  // (The tutorial spawns airborne with the engine already running; spawnAt sets that.)
+  if (!tutorialFlight) {
+    state.engineState = 'off';
+    state.rpm = 0;
+    state.thrustPct = 0;
+    state.throttle = 0;
+  }
   initTraffic();
   chosen = true;
   simReady = false;
