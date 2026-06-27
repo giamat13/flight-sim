@@ -688,6 +688,45 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
         </div>
       </div>
     </div>
+
+    <div class="stp-divider"></div>
+
+    <div class="stp-section">
+      <div class="stp-label">RENDER DISTANCE</div>
+      <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:8px">
+        <div class="stp-vol-row">
+          <span class="stp-vol-name">RING SIZE</span>
+          <input type="range" class="stp-vol-slider" id="stp-rd-slider" min="2" max="16" value="8" step="1">
+          <span class="stp-vol-val" id="stp-rd-val" style="width:52px">289</span>
+        </div>
+        <div style="font-size:9px;letter-spacing:1px;opacity:0.4;text-align:center">ring=<span id="stp-rd-ring">8</span> &nbsp;·&nbsp; (2×ring+1)² = <span id="stp-rd-tiles">289</span> tiles loaded &nbsp;·&nbsp; default 289</div>
+      </div>
+    </div>
+
+    <div class="stp-divider"></div>
+
+    <div class="stp-section">
+      <div class="stp-label">RESOLUTION SCALE</div>
+      <div class="stp-row">
+        <button class="stp-btn" id="stp-res-low"  data-ratio="0.5">0.5×</button>
+        <button class="stp-btn" id="stp-res-med"  data-ratio="0.75">0.75×</button>
+        <button class="stp-btn stp-active" id="stp-res-high" data-ratio="1.5">1×</button>
+        <button class="stp-btn" id="stp-res-native" data-ratio="2.0">NATIVE</button>
+      </div>
+      <div style="font-size:9px;letter-spacing:1px;opacity:0.4;margin-top:-4px">NATIVE renders at full device pixel ratio</div>
+    </div>
+
+    <div class="stp-divider"></div>
+
+    <div class="stp-section">
+      <div class="stp-label">FPS CAP</div>
+      <div class="stp-row">
+        <button class="stp-btn" id="stp-fps-30"  data-fps="30">30</button>
+        <button class="stp-btn" id="stp-fps-60"  data-fps="60">60</button>
+        <button class="stp-btn" id="stp-fps-120" data-fps="120">120</button>
+        <button class="stp-btn stp-active" id="stp-fps-unlim" data-fps="0">UNLIM</button>
+      </div>
+    </div>
   </div>
 
   <!-- ===== AUDIO TAB ===== -->
@@ -2439,6 +2478,25 @@ async function initThree() {
   // eiffelTower is null until the model is downloaded on-demand in updateLandmarks().
   THREEJS.eiffelTower = null;
 
+  // ── Render settings (set by the VIDEO settings panel) ───────────────────
+  // These can be called at any time after THREEJS is initialised.
+  window._applyRenderDist = function (ring) {
+    GROUND_RING = ring;
+    // Rebuild offset table so the new ring size takes effect immediately.
+    GROUND_OFFSETS.length = 0;
+    for (let dx = -ring; dx <= ring; dx++) {
+      for (let dy = -ring; dy <= ring; dy++) {
+        const r2 = Math.max(Math.abs(dx), Math.abs(dy));
+        const seg = r2 <= 1 ? 16 : (r2 === 2 ? 10 : (r2 <= 3 ? 6 : 4));
+        GROUND_OFFSETS.push({ dx: dx, dy: dy, seg: seg, d: dx * dx + dy * dy });
+      }
+    }
+    GROUND_OFFSETS.sort(function (p, q) { return p.d - q.d; });
+  };
+  window._applyPixelRatio = function (ratio) {
+    THREEJS.renderer.setPixelRatio(ratio);
+  };
+
   window.addEventListener('resize', function () {
     if (!THREEJS) return;
     THREEJS.camera.aspect = window.innerWidth / window.innerHeight;
@@ -2498,7 +2556,7 @@ function eiffelCollision() {
 }
 
 // ===================== Ground tiles (imagery draped over elevation) =====================
-const GROUND_RING = 8;          // (2R+1)^2 tiles loaded around the aircraft (bigger = see farther)
+let GROUND_RING = 8;            // (2R+1)^2 tiles loaded around the aircraft (bigger = see farther)
 const GROUND_ADDS_PER_FRAME = 20; // how many fresh tiles we may build per frame (fills the view fast without stalling)
 const STALE_TILE_MS = 6000;     // how long a previous-zoom tile is kept on screen before being force-pruned
 let _imgLoader = null; // set after THREE dynamic import
@@ -2506,7 +2564,7 @@ let _imgLoader = null; // set after THREE dynamic import
 // Tile offsets (dx,dy) around the aircraft, precomputed once and sorted nearest-first
 // so every load/repair pass fills the ground *under* the aircraft before the edges —
 // the area you actually look at can never be the last thing to appear.
-const GROUND_OFFSETS = (function () {
+let GROUND_OFFSETS = (function () {
   const a = [];
   for (let dx = -GROUND_RING; dx <= GROUND_RING; dx++) {
     for (let dy = -GROUND_RING; dy <= GROUND_RING; dy++) {
@@ -7868,6 +7926,51 @@ function applyVolSettings() {
     if (el) el.style.display = on ? '' : 'none';
   });
 
+  // ── Render distance slider ─────────────────────────────────────────────────
+  (function () {
+    const slider  = document.getElementById('stp-rd-slider');
+    const valEl   = document.getElementById('stp-rd-val');
+    const ringEl  = document.getElementById('stp-rd-ring');
+    const tilesEl = document.getElementById('stp-rd-tiles');
+    if (!slider) return;
+    function updateRd() {
+      const ring  = parseInt(slider.value, 10);
+      const tiles = Math.pow(2 * ring + 1, 2);
+      if (valEl)   valEl.textContent   = tiles + ' tiles';
+      if (ringEl)  ringEl.textContent  = ring;
+      if (tilesEl) tilesEl.textContent = tiles;
+      if (window._applyRenderDist) window._applyRenderDist(ring);
+    }
+    slider.addEventListener('input', updateRd);
+  })();
+
+  // ── Resolution scale ───────────────────────────────────────────────────────
+  function setActiveGroup(groupSel, activeBtn) {
+    settingsPanel.querySelectorAll(groupSel).forEach(function (b) { b.classList.remove('stp-active'); });
+    activeBtn.classList.add('stp-active');
+  }
+  ['stp-res-low','stp-res-med','stp-res-high','stp-res-native'].forEach(function (id) {
+    const btn = document.getElementById(id); if (!btn) return;
+    btn.addEventListener('click', function () {
+      setActiveGroup('[id^="stp-res-"]', btn);
+      const ratio = parseFloat(btn.dataset.ratio);
+      const actual = id === 'stp-res-native'
+        ? (window.devicePixelRatio || 1)
+        : Math.min(ratio, window.devicePixelRatio || 1);
+      if (window._applyPixelRatio) window._applyPixelRatio(actual);
+    });
+  });
+
+  // ── FPS cap ────────────────────────────────────────────────────────────────
+  ['stp-fps-30','stp-fps-60','stp-fps-120','stp-fps-unlim'].forEach(function (id) {
+    const btn = document.getElementById(id); if (!btn) return;
+    btn.addEventListener('click', function () {
+      setActiveGroup('[id^="stp-fps-"]', btn);
+      const fps = parseInt(btn.dataset.fps, 10);
+      window._fpsInterval = fps > 0 ? 1000 / fps : 0;
+    });
+  });
+
   // ── SIMULATION TAB — VOLUME SLIDERS ───────────────────────────────────────
   function syncVolSliders() {
     ['master','engine','wind','alarms'].forEach(function (ch) {
@@ -8945,6 +9048,13 @@ function initAircraftScreen() {
 
 function loop() {
   const now = performance.now();
+
+  // FPS cap: skip this frame if we're ahead of the target interval
+  const _fpsMin = window._fpsInterval || 0; // ms per frame; 0 = uncapped
+  if (_fpsMin > 0 && (now - lastTime) < _fpsMin - 0.5) {
+    requestAnimationFrame(loop); return;
+  }
+
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
   frameDt = dt;
