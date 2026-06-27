@@ -5281,6 +5281,43 @@ function drawSpdTape() {
 // either cockpit or chase mode.
 const TRAFFIC_MODEL_M_PER_UNIT = 40;
 
+function drawAirports3D() {
+  if (!THREEJS || !mmAirports.length) return;
+  const MAX_DIST_M = 120000; // show up to 120 km
+  for (let i = 0; i < mmAirports.length; i++) {
+    const ap = mmAirports[i];
+    const distM = distCamToGeo(ap.lat, ap.lon, 0);
+    if (distM > MAX_DIST_M) continue;
+    const screen = projectGeoToScreen(ap.lat, ap.lon, 0);
+    if (screen.behind) continue;
+    const cx = screen.x, cy = screen.y;
+    if (cx < -60 || cx > W + 60 || cy < -30 || cy > H + 30) continue;
+
+    const km = distM / 1000;
+    const alpha = Math.max(0.25, Math.min(0.9, 1 - km / 120 * 0.7));
+    const sz = Math.max(4, Math.min(14, 600 / km));
+
+    // Outer circle
+    ctx.strokeStyle = `rgba(0,255,65,${alpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, sz, 0, Math.PI * 2); ctx.stroke();
+
+    // Runway cross
+    ctx.beginPath(); ctx.moveTo(cx - sz * 0.8, cy); ctx.lineTo(cx + sz * 0.8, cy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy - sz * 0.8); ctx.lineTo(cx, cy + sz * 0.8); ctx.stroke();
+
+    // Label (ICAO or name)
+    const label = ap.icao || (ap.name && ap.name.slice(0, 6).toUpperCase()) || '';
+    if (label && sz >= 5) {
+      ctx.font = '9px JetBrains Mono, monospace';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillText(label, cx + sz + 4 + 1, cy + 1);
+      ctx.fillStyle = `rgba(0,255,65,${alpha * 0.9})`;
+      ctx.fillText(label, cx + sz + 4, cy);
+    }
+  }
+}
+
 function drawTraffic() {
   if (!THREEJS || !traffic.length) return;
   const camHeadingDeg = cameraHeadingDeg();
@@ -5541,6 +5578,7 @@ function render() {
   drawWeather(); // rain/snow particles behind the HUD
 
   drawTraffic();
+  drawAirports3D();
 
   const bankRad = state.bank * Math.PI / 180;
 
@@ -5778,6 +5816,7 @@ const mmCtx = mmCv ? mmCv.getContext('2d') : null;
 const minimapEl = document.getElementById('minimap');
 let mmLast = 0;
 function updateMinimap() {
+  mmFetchAirports(); // always fetch, even if minimap is hidden (needed for 3D overlay)
   if (!mmCtx || !minimapEl || minimapEl.style.display === 'none') return;
   const s = mmCv.width;
   mmCtx.clearRect(0, 0, s, s);
@@ -5806,7 +5845,6 @@ function updateMinimap() {
   }
 
   // Airport markers — shown on minimap, clamped to edge when outside range
-  mmFetchAirports();
   if (mmAirports.length) {
     const d = 0.035; // minimap visible range in degrees
     const R = s / 2 - 8; // clamp radius (pixels)
@@ -6244,9 +6282,10 @@ let nmDestName = null;
 let nmElevFt = null, nmElevWater = false, nmElevKey = '', nmElevTimer = null;
 
 // Airport markers fetched from Overpass API
-let nmAirports = [];          // [{icao, name, lat, lon}]
-let nmAirportFetchKey = '';   // bbox string of last fetch
+let nmAirports = [];
+let nmAirportFetchKey = '';
 let nmAirportFetching = false;
+let nmAirportRetryAt = 0;
 
 function nmGetViewBbox() {
   const z = nmView.zoom, cw = (nmCanvas && nmCanvas.width) || window.innerWidth, ch = (nmCanvas && nmCanvas.height) || window.innerHeight;
@@ -6263,7 +6302,7 @@ function fetchAirportsForBbox(minLat, minLon, maxLat, maxLon, callback) {
   const bbox = minLat + ',' + minLon + ',' + maxLat + ',' + maxLon;
   const query = '[out:json][timeout:20];(node[aeroway=aerodrome](' + bbox + ');way[aeroway=aerodrome](' + bbox + ');relation[aeroway=aerodrome](' + bbox + '););out center tags;';
   const ctrl = new AbortController();
-  const tid = setTimeout(function(){ ctrl.abort(); callback([]); }, 22000);
+  const tid = setTimeout(function(){ ctrl.abort(); callback(null); }, 22000);
   fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
     body: 'data=' + encodeURIComponent(query),
@@ -6279,36 +6318,77 @@ function fetchAirportsForBbox(minLat, minLon, maxLat, maxLon, callback) {
         if (!lat || !lon) return null;
         return { lat: lat, lon: lon, icao: ((el.tags && (el.tags.icao || el.tags.ref)) || '').toUpperCase(), name: (el.tags && (el.tags.name || el.tags['name:en'] || '')) || '' };
       }).filter(Boolean);
-      callback(airports);
+      callback(airports.length ? airports : null); // null = keep old data on empty result
     })
-    .catch(function(){ clearTimeout(tid); callback([]); });
+    .catch(function(){ clearTimeout(tid); callback(null); });
 }
 
 function nmFetchAirports() {
   if (nmView.zoom < 6) { nmAirports = []; return; }
+  if (nmAirportFetching) return;
+  const now = Date.now();
   const bb = nmGetViewBbox();
   const key = [bb.minLat, bb.minLon, bb.maxLat, bb.maxLon].map(function(v){ return v.toFixed(3); }).join(',');
-  if (key === nmAirportFetchKey || nmAirportFetching) return;
-  nmAirportFetchKey = key;
+  if (key === nmAirportFetchKey) {
+    if (nmAirports.length) return;
+    if (now < nmAirportRetryAt) return;
+  } else {
+    const cached = airportCacheLoad(key);
+    if (cached && cached.length) { nmAirports = cached; nmAirportFetchKey = key; return; }
+    nmAirportFetchKey = key;
+  }
   nmAirportFetching = true;
   fetchAirportsForBbox(bb.minLat, bb.minLon, bb.maxLat, bb.maxLon, function(airports){
-    nmAirports = airports;
+    if (airports && airports.length) {
+      nmAirports = airports;
+      airportCacheSave(key, airports);
+    } else {
+      nmAirportRetryAt = Date.now() + 30000;
+    }
     nmAirportFetching = false;
   });
 }
 
-// Minimap airport markers — fetch radius ~55km, keyed per ~11km grid
-let mmAirports = [], mmAirportKey = '', mmAirportFetching = false;
+// Airport cache in localStorage — survives refresh, avoids hammering Overpass
+function airportCacheSave(key, airports) {
+  try { localStorage.setItem('ap_cache_' + key, JSON.stringify({ t: Date.now(), data: airports })); } catch(e){}
+}
+function airportCacheLoad(key) {
+  try {
+    const raw = localStorage.getItem('ap_cache_' + key);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (Date.now() - obj.t > 7 * 24 * 3600 * 1000) return null; // 7-day TTL
+    return obj.data;
+  } catch(e){ return null; }
+}
+
+// Minimap airport markers — fetch radius ~55km, keyed per ~55km grid
+let mmAirports = [], mmAirportKey = '', mmAirportFetching = false, mmAirportRetryAt = 0;
 function mmFetchAirports() {
-  const d = 0.5; // ~55 km radius
-  const key = state.lat.toFixed(1) + ',' + state.lon.toFixed(1);
-  if (key === mmAirportKey) return;
+  if (!state.lat) return;
   if (mmAirportFetching) return;
-  mmAirportKey = key;
+  const now = Date.now();
+  const d = 0.5;
+  const key = (Math.round(state.lat / 0.5) * 0.5).toFixed(1) + ',' + (Math.round(state.lon / 0.5) * 0.5).toFixed(1);
+  if (key === mmAirportKey) {
+    if (mmAirports.length) return;          // have data
+    if (now < mmAirportRetryAt) return;     // in cooldown
+  } else {
+    // New grid cell — check localStorage first
+    const cached = airportCacheLoad(key);
+    if (cached && cached.length) { mmAirports = cached; mmAirportKey = key; return; }
+    mmAirportKey = key;
+  }
   mmAirportFetching = true;
   const dLon = d / Math.max(0.2, Math.cos(state.lat * Math.PI / 180));
   fetchAirportsForBbox(state.lat - d, state.lon - dLon, state.lat + d, state.lon + dLon, function(airports){
-    mmAirports = airports;
+    if (airports && airports.length) {
+      mmAirports = airports;
+      airportCacheSave(key, airports);
+    } else {
+      mmAirportRetryAt = Date.now() + 30000; // cooldown 30s, keep existing data, keep key
+    }
     mmAirportFetching = false;
   });
 }
