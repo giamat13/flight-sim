@@ -5316,9 +5316,12 @@ function drawSpdTape() {
 const TRAFFIC_MODEL_M_PER_UNIT = 40;
 
 // ---- Airport boundary lines (Three.js scene objects) ----
-// LineLoop objects are created once per airport polygon and updated
-// when the airport enters/exits range. They sit ~3 m above terrain.
-const airportBoundaryLines = {}; // icao+latlon key -> THREE.LineLoop
+// A LineLoop is created per airport polygon. Its vertices are re-grounded to the
+// terrain each frame while in range — important because elevation tiles for a
+// distant airport may not be loaded when the line is first built (they'd pin the
+// line to sea level, underground). depthTest is OFF so the line is never buried
+// by terrain-mesh quantization; it's drawn as an overlay sitting on the ground.
+const airportBoundaryLines = {}; // key -> { line, poly }
 
 function updateAirportBoundaries() {
   if (!THREEJS) return;
@@ -5334,32 +5337,38 @@ function updateAirportBoundaries() {
     const key = (ap.icao || '') + '|' + ap.lat.toFixed(4) + ',' + ap.lon.toFixed(4);
     active[key] = true;
 
-    if (!airportBoundaryLines[key]) {
-      // Build geometry from polygon points, sampled at terrain height + 3 m
-      const positions = [];
-      for (let p = 0; p < ap.poly.length; p++) {
-        const pt = ap.poly[p];
-        const altM = Math.max(0, terrainHeightAtM(pt.lat, pt.lon)) + 3;
-        const v = enuVec(pt.lat, pt.lon, altM);
-        positions.push(v.x, v.y, v.z);
-      }
+    let rec = airportBoundaryLines[key];
+    if (!rec) {
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      const mat = new THREE.LineBasicMaterial({ color: 0x00ff41, transparent: true, opacity: 0.75, depthTest: true });
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(ap.poly.length * 3), 3));
+      const mat = new THREE.LineBasicMaterial({ color: 0x00ff41, transparent: true, opacity: 0.8, depthTest: false });
       const line = new THREE.LineLoop(geo, mat);
+      line.renderOrder = 999;          // draw after terrain so it's always visible
+      line.frustumCulled = false;
       THREEJS.scene.add(line);
-      airportBoundaryLines[key] = line;
+      rec = { line: line, poly: ap.poly };
+      airportBoundaryLines[key] = rec;
     }
 
-    // Fade based on distance
-    const alpha = Math.max(0.3, Math.min(0.85, 1 - distM / MAX_DIST_M * 0.7));
-    airportBoundaryLines[key].material.opacity = alpha;
-    airportBoundaryLines[key].visible = true;
+    // Re-ground vertices to current terrain each frame (cheap — few airports, small polys)
+    const attr = rec.line.geometry.getAttribute('position');
+    const arr = attr.array;
+    for (let p = 0; p < ap.poly.length; p++) {
+      const pt = ap.poly[p];
+      const altM = Math.max(0, terrainHeightAtM(pt.lat, pt.lon)) + 4;
+      const v = enuVec(pt.lat, pt.lon, altM);
+      arr[p * 3] = v.x; arr[p * 3 + 1] = v.y; arr[p * 3 + 2] = v.z;
+    }
+    attr.needsUpdate = true;
+
+    const alpha = Math.max(0.35, Math.min(0.9, 1 - distM / MAX_DIST_M * 0.6));
+    rec.line.material.opacity = alpha;
+    rec.line.visible = true;
   }
 
   // Hide lines for airports no longer in range
   for (const key in airportBoundaryLines) {
-    if (!active[key]) airportBoundaryLines[key].visible = false;
+    if (!active[key]) airportBoundaryLines[key].line.visible = false;
   }
 }
 
@@ -6384,7 +6393,7 @@ function nmGetViewBbox() {
 function fetchAirportsForBbox(minLat, minLon, maxLat, maxLon, callback) {
   const bbox = minLat + ',' + minLon + ',' + maxLat + ',' + maxLon;
   // out geom gives polygon coords for ways; out center gives centroid fallback for relations
-  const query = '[out:json][timeout:25];(node[aeroway=aerodrome](' + bbox + ');way[aeroway=aerodrome](' + bbox + ');relation[aeroway=aerodrome](' + bbox + '););out geom tags qt;';
+  const query = '[out:json][timeout:25];(node[aeroway=aerodrome](' + bbox + ');way[aeroway=aerodrome](' + bbox + ');relation[aeroway=aerodrome](' + bbox + '););out geom qt;';
   const ctrl = new AbortController();
   const tid = setTimeout(function(){ ctrl.abort(); callback(null); }, 27000);
   fetch('https://overpass-api.de/api/interpreter', {
@@ -6466,12 +6475,14 @@ function nmFetchAirports() {
 }
 
 // Airport cache in localStorage — survives refresh, avoids hammering Overpass
+// v2 = airports now carry polygon boundary geometry (`poly`); bumping the prefix
+// auto-invalidates pre-boundary cached entries that lack it.
 function airportCacheSave(key, airports) {
-  try { localStorage.setItem('ap_cache_' + key, JSON.stringify({ t: Date.now(), data: airports })); } catch(e){}
+  try { localStorage.setItem('ap_cache_v2_' + key, JSON.stringify({ t: Date.now(), data: airports })); } catch(e){}
 }
 function airportCacheLoad(key) {
   try {
-    const raw = localStorage.getItem('ap_cache_' + key);
+    const raw = localStorage.getItem('ap_cache_v2_' + key);
     if (!raw) return null;
     const obj = JSON.parse(raw);
     if (Date.now() - obj.t > 7 * 24 * 3600 * 1000) return null; // 7-day TTL
