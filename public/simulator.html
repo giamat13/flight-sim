@@ -1816,14 +1816,18 @@ async function initThree() {
   const groundGroup = new THREE.Group(); scene.add(groundGroup);
   const buildingGroup = new THREE.Group(); scene.add(buildingGroup);
   const aircraft = new THREE.Group(); scene.add(aircraft);
+  const landmarkGroup = new THREE.Group(); scene.add(landmarkGroup);
 
   THREEJS = {
     renderer, scene, camera, sun, hemi, amb,
-    groundGroup, buildingGroup, aircraft,
+    groundGroup, buildingGroup, aircraft, landmarkGroup,
     groundTiles: {}, acFlaps: -1, acGear: null, bldBoxes: [],
     bld: { center: null, loading: false },
     _v: new THREE.Vector3(), _cs: new THREE.Vector3(), _acPos: new THREE.Vector3()
   };
+
+  // eiffelTower is null until the model is downloaded on-demand in updateLandmarks().
+  THREEJS.eiffelTower = null;
 
   window.addEventListener('resize', function () {
     if (!THREEJS) return;
@@ -1866,7 +1870,21 @@ function resetWorld() {
 // True when the aircraft is inside any building's footprint and below its roof —
 // i.e. it flew into a building. Cheap point-in-box test against the cached boxes.
 function buildingCollision() {
-  return false;
+  return eiffelCollision();
+}
+
+// Tapered-cylinder collision for the Eiffel Tower.
+// Only active once the GLB has been placed in the scene (within LANDMARK_LOAD_KM).
+function eiffelCollision() {
+  if (!THREEJS || !THREEJS.eiffelTower) return false;
+  const altM    = state.altitude * FT_TO_M;
+  const groundM = meshGroundHeightM(EIFFEL_LAT, EIFFEL_LON);
+  if (altM < groundM || altM > groundM + EIFFEL_REAL_HEIGHT_M) return false;
+  const horizM  = distFromPlayerM(EIFFEL_LAT, EIFFEL_LON);
+  // Radius tapers from 72 m at base (wide lattice legs) to 4 m at spire.
+  const frac   = (altM - groundM) / EIFFEL_REAL_HEIGHT_M;  // 0 = base, 1 = top
+  const radius = 72 * (1 - frac) + 4;
+  return horizM < radius;
 }
 
 // ===================== Ground tiles (imagery draped over elevation) =====================
@@ -2120,6 +2138,79 @@ function buildBuildings(json, qLat, qLon, baseFallback, satImg, satBox) {
 }
 function updateBuildings() {
   // Buildings 3D disabled.
+}
+
+// ===================== Landmarks — on-demand GLB loading (like traffic models) =====================
+// Eiffel Tower coords (WGS-84) and real height.
+const EIFFEL_LAT = 48.8584, EIFFEL_LON = 2.2945;
+const EIFFEL_REAL_HEIGHT_M = 330;
+// "SM - EIffel Tower" by Scott Marshall, hosted on poly.pizza (CC Attribution, CORS open).
+const EIFFEL_GLB_URL = 'https://static.poly.pizza/95771d85-7ef5-4bbb-8d22-4baa2820396b.glb';
+// Only start the download when the camera is within this distance.
+const LANDMARK_LOAD_KM = 100;
+
+// Per-URL cache, same concept as trafficModelCache.
+// { status: 'loading'|'ready'|'failed', obj: THREE.Group|null }
+const landmarkModelCache = {};
+
+function ensureLandmarkModel(url, realHeightM) {
+  let rec = landmarkModelCache[url];
+  if (rec) return rec;
+  if (!_gltfLoader) return null;
+  rec = { obj: null, status: 'loading' };
+  landmarkModelCache[url] = rec;
+  _gltfLoader.load(
+    url,
+    function (gltf) {
+      const model = gltf.scene || gltf.scenes[0];
+      // Scale so the tallest dimension equals the real-world height.
+      const box = new THREE.Box3().setFromObject(model);
+      const h = box.max.y - box.min.y;
+      if (h > 0.01) model.scale.setScalar(realHeightM / h);
+      // Sit the base at Y = 0 inside the group (group.position carries MSL offset).
+      const box2 = new THREE.Box3().setFromObject(model);
+      model.position.y -= box2.min.y;
+      rec.obj = model;
+      rec.status = 'ready';
+      console.log('[Landmark] loaded', url, '— rendered size (m):', (box2.max.x-box2.min.x).toFixed(1)+'W x'+(box2.max.y-box2.min.y).toFixed(1)+'H x'+(box2.max.z-box2.min.z).toFixed(1)+'D');
+    },
+    undefined,
+    function (err) { rec.status = 'failed'; console.warn('[Landmark] failed', url, err); }
+  );
+  return rec;
+}
+
+// Called every frame from updateCamera().  Mirrors updateTrafficModels():
+// • if too far  → don't download, hide the group
+// • if in range → ensure the GLB is loading/loaded, position the group
+function updateLandmarks() {
+  if (!THREEJS) return;
+
+  const groundM = meshGroundHeightM(EIFFEL_LAT, EIFFEL_LON);
+  const distM   = distCamToGeo(EIFFEL_LAT, EIFFEL_LON, groundM + EIFFEL_REAL_HEIGHT_M * 0.5);
+
+  // Out of range — hide existing group and skip load.
+  if (distM > LANDMARK_LOAD_KM * 1000) {
+    if (THREEJS.eiffelTower) THREEJS.eiffelTower.visible = false;
+    return;
+  }
+
+  // Start (or poll) the download.
+  const rec = ensureLandmarkModel(EIFFEL_GLB_URL, EIFFEL_REAL_HEIGHT_M);
+  if (!rec || rec.status !== 'ready' || !rec.obj) return; // still loading
+
+  // First time the model is ready: add it to the scene.
+  if (!THREEJS.eiffelTower) {
+    const g = new THREE.Group();
+    g.add(rec.obj.clone(true));   // clone shares geometry/material (cheap, same as traffic)
+    g.userData.isLandmark = true;
+    THREEJS.landmarkGroup.add(g);
+    THREEJS.eiffelTower = g;
+  }
+
+  // Reposition every frame (geoOrigin shifts as the world re-anchors).
+  THREEJS.eiffelTower.visible = true;
+  THREEJS.eiffelTower.position.copy(enuVec(EIFFEL_LAT, EIFFEL_LON, groundM));
 }
 
 // Find a flat, runway-capable spawn point near (lat, lon).
@@ -2476,6 +2567,7 @@ function updateCamera() {
 
   updateGround();
   updateBuildings();
+  updateLandmarks();
   updateTrafficModels();   // place/refresh real downloaded aircraft models in the scene
   THREEJS.renderer.render(THREEJS.scene, cam);
 }
