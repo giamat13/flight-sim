@@ -2080,14 +2080,19 @@ const TUT = (function () {
         'box-shadow:0 0 18px rgba(0,255,65,0.25);text-shadow:0 0 6px rgba(0,255,65,0.5);}' +
         '#tut-box .tut-title{font-size:11px;letter-spacing:3px;opacity:0.7;margin-bottom:6px;}' +
         '#tut-msg{font-size:15px;}#tut-msg b{color:#aaffcc;}' +
-        '#tut-box .tut-prog{font-size:10px;letter-spacing:2px;opacity:0.55;margin-top:8px;}';
+        '#tut-box .tut-prog{font-size:10px;letter-spacing:2px;opacity:0.55;margin-top:8px;}' +
+        '#tut-skip{margin-top:10px;background:none;border:1px solid rgba(0,255,65,0.35);' +
+        'color:rgba(0,255,65,0.55);font-family:inherit;font-size:10px;letter-spacing:2px;' +
+        'padding:3px 10px;cursor:pointer;border-radius:4px;}' +
+        '#tut-skip:hover{border-color:rgba(0,255,65,0.7);color:#00FF41;}';
       document.head.appendChild(st);
     }
     boxEl = document.createElement('div');
     boxEl.id = 'tut-box';
-    boxEl.innerHTML = '<div class="tut-title">FLIGHT SCHOOL</div><div id="tut-msg"></div><div class="tut-prog" id="tut-prog"></div>';
+    boxEl.innerHTML = '<div class="tut-title">FLIGHT SCHOOL</div><div id="tut-msg"></div><div class="tut-prog" id="tut-prog"></div><br><button id="tut-skip">SKIP TUTORIAL</button>';
     document.body.appendChild(boxEl);
     msgEl = document.getElementById('tut-msg');
+    document.getElementById('tut-skip').addEventListener('click', function () { finish(); });
   }
 
   function toast(t) { if (typeof showToast === 'function') { try { showToast(t); } catch (e) {} } }
@@ -2124,6 +2129,7 @@ const TUT = (function () {
 
   function begin() {
     if (active) return;
+    try { if (localStorage.getItem(KEY)) return; } catch (e) {}
     active = true;
     for (const k in unlocked) unlocked[k] = false;
     contPrev = false; contEdge = false; lastHtml = ''; lastGp = null;
