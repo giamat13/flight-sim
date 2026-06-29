@@ -972,44 +972,54 @@ function offlineTileUrlsForArea(lat, lon, ring, imgZooms) {
 }
 
 // Send URLs to SW for precaching; calls onProgress(done,total) and onDone(total, err).
+// Precache tiles directly from the page using a fixed-size worker pool writing
+// into the same Cache the SW reads from. Full control over concurrency, per-tile
+// timeout and continuous progress — no SW message round-trip that can stall.
 function precacheUrls(urls, onProgress, onDone) {
-  if (!_sw || !navigator.serviceWorker.controller) {
-    onDone && onDone(0, 'Service worker not ready — reload page');
+  if (!('caches' in window)) {
+    onDone && onDone(0, 'Cache API unavailable');
     return;
   }
+  const total = urls.length;
+  const CONCURRENCY = 8;     // simultaneous fetches — keeps the connection pool healthy
+  const TILE_TIMEOUT = 7000; // ms before a single tile is aborted and skipped
+  let done = 0;
+  let next = 0;
   let finished = false;
-  let lastDone = 0;
-  let watchdog = null;
-  const WATCHDOG_MS = 30000; // if no progress for 30s, assume the rest stalled and finish
 
-  function finish(total, err) {
-    if (finished) return;
-    finished = true;
-    if (watchdog) clearTimeout(watchdog);
-    navigator.serviceWorker.onmessage = null;
-    onDone && onDone(total, err);
-  }
-  function armWatchdog() {
-    if (watchdog) clearTimeout(watchdog);
-    watchdog = setTimeout(function() {
-      // No progress messages for a while — network is stuck on the remaining tiles.
-      // Finish anyway so the rest of the download (airports/weather/traffic) can proceed.
-      finish(lastDone);
-    }, WATCHDOG_MS);
-  }
-
-  navigator.serviceWorker.onmessage = function(ev) {
-    const d = ev.data;
-    if (d.type === 'PRECACHE_PROGRESS') {
-      lastDone = d.done;
-      onProgress && onProgress(d.done, d.total);
-      armWatchdog();
-    } else if (d.type === 'PRECACHE_DONE') {
-      finish(d.total);
+  caches.open('flight-sim-tiles-v1').then(function(cache) {
+    function fetchOne(url) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(function(){ ctrl.abort(); }, TILE_TIMEOUT);
+      return cache.match(url).then(function(hit) {
+        if (hit) return; // already cached, skip network
+        return fetch(url, { mode: 'cors', signal: ctrl.signal }).then(function(r) {
+          if (r && r.ok) return cache.put(url, r);
+        });
+      }).catch(function(){ /* timeout / network / CORS — skip this tile */ })
+        .then(function(){ clearTimeout(timer); });
     }
-  };
-  armWatchdog();
-  navigator.serviceWorker.controller.postMessage({ type: 'PRECACHE', urls });
+
+    // Worker loop: each of CONCURRENCY workers pulls the next URL until exhausted.
+    function worker() {
+      if (next >= total) return Promise.resolve();
+      const url = urls[next++];
+      return fetchOne(url).then(function() {
+        done++;
+        onProgress && onProgress(done, total);
+        return worker();
+      });
+    }
+
+    const workers = [];
+    for (let i = 0; i < Math.min(CONCURRENCY, total); i++) workers.push(worker());
+    Promise.all(workers).then(function() {
+      if (!finished) { finished = true; onDone && onDone(total); }
+    });
+    if (total === 0) { finished = true; onDone && onDone(0); }
+  }).catch(function(e) {
+    onDone && onDone(0, String(e));
+  });
 }
 
 // Remove specific URLs from SW cache.
