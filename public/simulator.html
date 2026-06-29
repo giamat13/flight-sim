@@ -1068,6 +1068,7 @@ if (_smDownloadMapBtn) _smDownloadMapBtn.addEventListener('click', openNavPicker
 
 // ---- Rectangle selection state (used in download mode) ----
 let nmDownloadMode = false;
+let nmSelectDrawing = false;
 let nmSelectStart = null; // {x,y} canvas pixels at drag start
 let nmSelectEnd   = null; // {x,y} canvas pixels at drag end
 let nmSelectRect  = null; // {minLat,maxLat,minLon,maxLon} finalised on pointerup
@@ -1132,6 +1133,7 @@ function openNavPickerForDownload() {
   if (elems.title) elems.title.textContent = 'DRAW SELECTION BOX';
 
   nmDownloadMode = true;
+  nmSelectDrawing = false;
   nmSelectStart = null; nmSelectEnd = null; nmSelectRect = null;
   initNavPicker();
   navPickerOpen = true;
@@ -1155,19 +1157,21 @@ document.addEventListener('DOMContentLoaded', function() {
   cv.addEventListener('pointerdown', function(e) {
     if (!nmDownloadMode) return;
     e.stopImmediatePropagation();
+    nmSelectDrawing = true;
     nmSelectStart = { x: e.offsetX, y: e.offsetY };
     nmSelectEnd = null; nmSelectRect = null;
   }, true);
-  // pointermove — extend box
+  // pointermove — extend box only while actively drawing
   cv.addEventListener('pointermove', function(e) {
-    if (!nmDownloadMode || !nmSelectStart) return;
+    if (!nmDownloadMode || !nmSelectDrawing) return;
     e.stopImmediatePropagation();
     nmSelectEnd = { x: e.offsetX, y: e.offsetY };
     drawNavMap();
   }, true);
-  // pointerup — finalise box
+  // pointerup — finalise box and lock it
   cv.addEventListener('pointerup', function(e) {
-    if (!nmDownloadMode || !nmSelectStart) return;
+    if (!nmDownloadMode || !nmSelectDrawing) return;
+    nmSelectDrawing = false;
     e.stopImmediatePropagation();
     nmSelectEnd = { x: e.offsetX, y: e.offsetY };
     // Convert to lat/lon bbox
@@ -9515,6 +9519,7 @@ function openNavPicker() {
 function closeNavPicker() {
   navPickerOpen = false;
   nmDownloadMode = false;
+  nmSelectDrawing = false;
   nmSelectStart = null; nmSelectEnd = null; nmSelectRect = null;
   const ov = document.getElementById('nav-map'); if (ov) ov.style.display = 'none';
   // Restore nav buttons and crosshair
