@@ -16,47 +16,55 @@ self.addEventListener('fetch', event => {
       cache.match(event.request).then(cached => {
         if (cached) return cached;
         return fetch(event.request).then(response => {
-          // Cache successful responses; pass through errors (404, 504, etc.) transparently
           if (response.ok) cache.put(event.request, response.clone());
           return response;
-        }).catch(err => {
-          // Network failure (offline, DNS, etc.) — nothing in cache, let browser handle it
-          return Response.error();
-        });
+        }).catch(() => Response.error());
       })
     )
   );
 });
 
-// Pre-cache a list of URLs sent from the main page.
-self.addEventListener('message', event => {
-  if (!event.data || event.data.type !== 'PRECACHE') return;
-  const urls = event.data.urls || [];
-  caches.open(CACHE).then(cache => {
-    let done = 0;
-    const total = urls.length;
-    const tick = () => {
-      done++;
-      event.source && event.source.postMessage({ type: 'PRECACHE_PROGRESS', done, total });
-    };
-    Promise.all(urls.map(url =>
-      cache.match(url).then(hit => {
-        if (hit) { tick(); return; }
-        return fetch(url, { mode: 'cors' }).then(r => {
-          if (r.ok) cache.put(url, r);
-          tick();
-        }).catch(() => tick());
-      })
-    )).then(() => {
-      event.source && event.source.postMessage({ type: 'PRECACHE_DONE', total });
-    });
+// Fetch one tile with timeout; resolves regardless of error so we never hang.
+function fetchWithTimeout(url, timeoutMs) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    fetch(url, { mode: 'cors' })
+      .then(r => { clearTimeout(timer); resolve(r.ok ? r : null); })
+      .catch(() => { clearTimeout(timer); resolve(null); });
   });
-});
+}
 
-// Purge tile cache on demand.
+// Pre-cache URLs in batches to avoid flooding the network and getting stuck.
 self.addEventListener('message', event => {
-  if (!event.data || event.data.type !== 'CLEAR_CACHE') return;
-  caches.delete(CACHE).then(() => {
-    event.source && event.source.postMessage({ type: 'CACHE_CLEARED' });
-  });
+  if (!event.data) return;
+
+  if (event.data.type === 'PRECACHE') {
+    const urls = event.data.urls || [];
+    const total = urls.length;
+    let done = 0;
+    const BATCH = 12;      // concurrent fetches per batch
+    const TILE_TIMEOUT = 15000; // ms per tile before giving up
+
+    caches.open(CACHE).then(async cache => {
+      for (let i = 0; i < urls.length; i += BATCH) {
+        const batch = urls.slice(i, i + BATCH);
+        await Promise.all(batch.map(async url => {
+          const hit = await cache.match(url);
+          if (!hit) {
+            const r = await fetchWithTimeout(url, TILE_TIMEOUT);
+            if (r) cache.put(url, r);
+          }
+          done++;
+          event.source && event.source.postMessage({ type: 'PRECACHE_PROGRESS', done, total });
+        }));
+      }
+      event.source && event.source.postMessage({ type: 'PRECACHE_DONE', total: done });
+    });
+  }
+
+  if (event.data.type === 'CLEAR_CACHE') {
+    caches.delete(CACHE).then(() => {
+      event.source && event.source.postMessage({ type: 'CACHE_CLEARED' });
+    });
+  }
 });

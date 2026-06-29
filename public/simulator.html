@@ -1027,6 +1027,14 @@ function renderSavedAreas() {
       delBtn.textContent = '…';
       const urls = urlsForSavedArea(area);
       deleteUrlsFromCache(urls, function() {
+        // Also remove weather + traffic snapshots for this area
+        try {
+          ['flight-sim-offline-wx', 'flight-sim-offline-traffic'].forEach(function(key) {
+            const store = JSON.parse(localStorage.getItem(key) || '{}');
+            delete store[area.id];
+            localStorage.setItem(key, JSON.stringify(store));
+          });
+        } catch(e){}
         removeSavedArea(area.id);
         renderSavedAreas();
         if (_oflStatus) { _oflStatus.textContent = '"' + (area.name || 'Area') + '" deleted'; setTimeout(function(){ if(_oflStatus) _oflStatus.textContent=''; }, 2500); }
@@ -1222,6 +1230,66 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // Step 2: confirm name → download
+  // Pre-fetch airports for a bbox and store in localStorage via existing cache.
+  function prefetchAirports(bbox, onDone) {
+    const key = [bbox.minLat, bbox.minLon, bbox.maxLat, bbox.maxLon].map(function(v){ return v.toFixed(3); }).join(',');
+    if (airportCacheLoad && airportCacheLoad(key)) { onDone(); return; } // already cached
+    if (typeof fetchAirportsForBbox !== 'function') { onDone(); return; }
+    fetchAirportsForBbox(bbox.minLat, bbox.minLon, bbox.maxLat, bbox.maxLon, function(airports) {
+      if (airports && airports.length && typeof airportCacheSave === 'function') airportCacheSave(key, airports);
+      onDone();
+    });
+  }
+
+  // Pre-fetch weather for bbox center and store in localStorage.
+  const OFFLINE_WX_KEY = 'flight-sim-offline-wx';
+  function prefetchWeather(bbox, areaId, onDone) {
+    const lat = ((bbox.minLat + bbox.maxLat) / 2).toFixed(4);
+    const lon = ((bbox.minLon + bbox.maxLon) / 2).toFixed(4);
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
+      '&current=weathercode,windspeed_10m,winddirection_10m,is_day' +
+      '&hourly=windspeed_925hPa,winddirection_925hPa,windspeed_850hPa,winddirection_850hPa' +
+      ',windspeed_700hPa,winddirection_700hPa,windspeed_500hPa,winddirection_500hPa' +
+      ',windspeed_300hPa,winddirection_300hPa' +
+      '&daily=sunrise,sunset&timezone=auto&forecast_days=7';
+    fetch(url).then(function(r){ return r.json(); }).then(function(d){
+      try {
+        const store = JSON.parse(localStorage.getItem(OFFLINE_WX_KEY) || '{}');
+        store[areaId] = { lat: +lat, lon: +lon, data: d, savedAt: Date.now() };
+        localStorage.setItem(OFFLINE_WX_KEY, JSON.stringify(store));
+      } catch(e){}
+      onDone();
+    }).catch(function(){ onDone(); });
+  }
+
+  // Snapshot current live traffic and save to localStorage.
+  const OFFLINE_TRAFFIC_KEY = 'flight-sim-offline-traffic';
+  function snapshotTraffic(bbox, areaId, onDone) {
+    // Fetch from ADSB source for the bbox center
+    const lat = ((bbox.minLat + bbox.maxLat) / 2).toFixed(4);
+    const lon = ((bbox.minLon + bbox.maxLon) / 2).toFixed(4);
+    const radNM = Math.max(50, Math.ceil(
+      Math.hypot((bbox.maxLat - bbox.minLat) * 111, (bbox.maxLon - bbox.minLon) * 85) / 1.852
+    ));
+    const sources = (typeof TRAFFIC_SOURCES !== 'undefined') ? TRAFFIC_SOURCES : [];
+    let done = false;
+    function tryNext(i) {
+      if (i >= sources.length || done) { if (!done) onDone(); done = true; return; }
+      fetch(sources[i].url(lat, lon, radNM), { signal: AbortSignal.timeout(10000) })
+        .then(function(r){ return r.json(); })
+        .then(function(json){
+          const ac = (json.aircraft || json.ac || []).filter(function(a){ return a.lat && a.lon; });
+          try {
+            const store = JSON.parse(localStorage.getItem(OFFLINE_TRAFFIC_KEY) || '{}');
+            store[areaId] = { ac: ac, bbox: bbox, savedAt: Date.now() };
+            localStorage.setItem(OFFLINE_TRAFFIC_KEY, JSON.stringify(store));
+          } catch(e){}
+          if (!done) onDone(); done = true;
+        }).catch(function(){ tryNext(i + 1); });
+    }
+    if (sources.length) tryNext(0); else onDone();
+  }
+
   function startDownload() {
     const name = (nameInput && nameInput.value.trim()) || ('Area ' + new Date().toLocaleString());
     const z = nmView.zoom;
@@ -1231,7 +1299,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (nmSelectRect) {
       bbox = nmSelectRect;
     } else {
-      // Fallback: viewport ring
       const cv = document.getElementById('nm-canvas');
       const cw = cv ? cv.width : window.innerWidth, ch = cv ? cv.height : window.innerHeight;
       const tl = nmPixelToLatLon(0, 0), br = nmPixelToLatLon(cw, ch);
@@ -1239,8 +1306,9 @@ document.addEventListener('DOMContentLoaded', function() {
                minLon: Math.min(tl.lon,br.lon), maxLon: Math.max(tl.lon,br.lon) };
     }
     const urls = offlineTileUrlsForBbox(bbox.minLat, bbox.maxLat, bbox.minLon, bbox.maxLon, zooms);
+    const areaId = Date.now().toString();
 
-    if (saveTitle) saveTitle.textContent = 'DOWNLOADING…';
+    if (saveTitle) saveTitle.textContent = 'DOWNLOADING TILES…';
     if (nameRow) nameRow.style.display = 'none';
     if (barWrap) barWrap.style.display = 'block';
     if (saveBar) saveBar.style.width = '0%';
@@ -1252,7 +1320,7 @@ document.addEventListener('DOMContentLoaded', function() {
       function(done, total) {
         const pct = Math.round(done / total * 100);
         if (saveBar) saveBar.style.width = pct + '%';
-        if (saveStatus) saveStatus.textContent = done + ' / ' + total + ' (' + pct + '%)';
+        if (saveStatus) saveStatus.textContent = 'Tiles: ' + done + ' / ' + total + ' (' + pct + '%)';
       },
       function(total, err) {
         saveBtn.disabled = false;
@@ -1261,22 +1329,35 @@ document.addEventListener('DOMContentLoaded', function() {
           if (saveDismiss) saveDismiss.style.display = 'block';
           return;
         }
-        // Save area record
-        const area = {
-          id: Date.now().toString(),
-          name: name,
-          bbox: bbox,
-          minLat: bbox.minLat, maxLat: bbox.maxLat,
-          minLon: bbox.minLon, maxLon: bbox.maxLon,
-          zooms: zooms,
-          tileCount: total,
-          savedAt: new Date().toISOString()
-        };
-        putSavedArea(area);
-        if (saveBar) saveBar.style.width = '100%';
-        if (saveStatus) saveStatus.textContent = 'Done — ' + total + ' tiles saved';
-        if (saveTitle) saveTitle.textContent = '"' + name + '" SAVED ✓';
-        if (saveDismiss) saveDismiss.style.display = 'block';
+        // Phase 2: airports + weather + traffic snapshot (parallel)
+        if (saveTitle) saveTitle.textContent = 'SAVING EXTRA DATA…';
+        if (saveStatus) saveStatus.textContent = 'Airports · Weather · Traffic…';
+        let pending = 3;
+        const extra = { airports: false, weather: false, traffic: false };
+        function phase2tick(which) {
+          extra[which] = true;
+          if (saveStatus) saveStatus.textContent =
+            (extra.airports ? '✓' : '⟳') + ' Airports  ' +
+            (extra.weather  ? '✓' : '⟳') + ' Weather  ' +
+            (extra.traffic  ? '✓' : '⟳') + ' Traffic';
+          if (--pending > 0) return;
+          // All done — save area record
+          const area = {
+            id: areaId, name: name,
+            bbox: bbox, minLat: bbox.minLat, maxLat: bbox.maxLat,
+            minLon: bbox.minLon, maxLon: bbox.maxLon,
+            zooms: zooms, tileCount: total,
+            savedAt: new Date().toISOString()
+          };
+          putSavedArea(area);
+          if (saveBar) saveBar.style.width = '100%';
+          if (saveTitle) saveTitle.textContent = '"' + name + '" SAVED ✓';
+          if (saveStatus) saveStatus.textContent = total + ' tiles · airports · weather · traffic snapshot';
+          if (saveDismiss) saveDismiss.style.display = 'block';
+        }
+        prefetchAirports(bbox, function(){ phase2tick('airports'); });
+        prefetchWeather(bbox, areaId, function(){ phase2tick('weather'); });
+        snapshotTraffic(bbox, areaId, function(){ phase2tick('traffic'); });
       }
     );
   }
@@ -2072,70 +2153,69 @@ function fetchRealWeather(lat, lon, isFirst) {
   const wxStatus = document.getElementById('wx-status');
   if (wxStatus && isFirst) wxStatus.textContent = '⟳ FETCHING REAL WEATHER…';
 
+  function applyWeatherData(d, first) {
+    if (!d || !d.current) return;
+    const c = d.current;
+    const windKts = (c.windspeed_10m || 0) * 0.539957;
+    const windDir = c.winddirection_10m || 0;
+    const wxKind  = wmoToWeather(c.weathercode);
+    let timeOfDay = c.is_day ? 'day' : 'night';
+    if (d.daily && d.daily.sunrise && d.daily.sunrise[0] && d.daily.sunset && d.daily.sunset[0]) {
+      timeOfDay = classifyTimeOfDay(d.daily.sunrise[0], d.daily.sunset[0]);
+    }
+    const timeChanged = !env.timeOverride && env.time !== timeOfDay;
+    const wxChanged   = env.weather !== wxKind;
+    if (!env.timeOverride) env.time = timeOfDay;
+    env.weather = wxKind;
+    if (d.hourly) {
+      const h = d.hourly, i = 0;
+      windAloftLayers = [
+        { altFt:  2500, speedKts: (h.windspeed_925hPa  && h.windspeed_925hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_925hPa  && h.winddirection_925hPa[i]  || 0 },
+        { altFt:  5000, speedKts: (h.windspeed_850hPa  && h.windspeed_850hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_850hPa  && h.winddirection_850hPa[i]  || 0 },
+        { altFt: 10000, speedKts: (h.windspeed_700hPa  && h.windspeed_700hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_700hPa  && h.winddirection_700hPa[i]  || 0 },
+        { altFt: 18000, speedKts: (h.windspeed_500hPa  && h.windspeed_500hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_500hPa  && h.winddirection_500hPa[i]  || 0 },
+        { altFt: 30000, speedKts: (h.windspeed_300hPa  && h.windspeed_300hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_300hPa  && h.winddirection_300hPa[i]  || 0 },
+      ];
+    }
+    env.windState.baseSpeedKts = windKts;
+    env.windState.baseFromDeg  = windDir;
+    env.windState.active       = true;
+    if (first) {
+      env.windState.speedKts = windKts; env.windState.fromDeg = windDir;
+      env.windState.targetSpeedKts = windKts; env.windState.targetFromDeg = windDir;
+      env.windState.timer = 2 + Math.random() * 4;
+      updateWindVector(); applyEnvironment(true);
+    } else if (timeChanged || wxChanged) { applyEnvironment(false); }
+    const wxIcons = { clear:'☀', clouds:'☁', rain:'🌧', snow:'❄', fog:'🌫' };
+    const timeIcons = { dawn:'🌅', day:'☀️', dusk:'🌇', night:'🌙' };
+    const speedLabel = windKts < 1 ? 'CALM' : Math.round(windKts) + 'KT';
+    if (wxStatus) wxStatus.textContent = (timeIcons[timeOfDay] || '') + ' ' + timeOfDay.toUpperCase() +
+      '  ' + (wxIcons[wxKind] || '') + ' ' + wxKind.toUpperCase() + '  🌬 ' + speedLabel;
+  }
+
   fetch(url)
     .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (!d || !d.current) return;
-      const c = d.current;
-      const windKts = (c.windspeed_10m || 0) * 0.539957; // km/h → knots
-      const windDir = c.winddirection_10m || 0;
-      const wxKind  = wmoToWeather(c.weathercode);
-
-      let timeOfDay = c.is_day ? 'day' : 'night';
-      if (d.daily && d.daily.sunrise && d.daily.sunrise[0] && d.daily.sunset && d.daily.sunset[0]) {
-        timeOfDay = classifyTimeOfDay(d.daily.sunrise[0], d.daily.sunset[0]);
-      }
-
-      const timeChanged = !env.timeOverride && env.time !== timeOfDay;
-      const wxChanged   = env.weather !== wxKind;
-      if (!env.timeOverride) env.time = timeOfDay;
-      env.weather = wxKind;
-
-      // Parse wind aloft layers from hourly data (use index 0 = current hour)
-      if (d.hourly) {
-        const h = d.hourly;
-        const i = 0; // current hour index
-        windAloftLayers = [
-          { altFt:  2500, speedKts: (h.windspeed_925hPa  && h.windspeed_925hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_925hPa  && h.winddirection_925hPa[i]  || 0 },
-          { altFt:  5000, speedKts: (h.windspeed_850hPa  && h.windspeed_850hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_850hPa  && h.winddirection_850hPa[i]  || 0 },
-          { altFt: 10000, speedKts: (h.windspeed_700hPa  && h.windspeed_700hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_700hPa  && h.winddirection_700hPa[i]  || 0 },
-          { altFt: 18000, speedKts: (h.windspeed_500hPa  && h.windspeed_500hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_500hPa  && h.winddirection_500hPa[i]  || 0 },
-          { altFt: 30000, speedKts: (h.windspeed_300hPa  && h.windspeed_300hPa[i]  || 0) * 0.539957, fromDeg: h.winddirection_300hPa  && h.winddirection_300hPa[i]  || 0 },
-        ];
-      }
-
-      // Update base wind for the stochastic model
-      env.windState.baseSpeedKts = windKts;
-      env.windState.baseFromDeg  = windDir;
-      env.windState.active       = true;
-
-      if (isFirst) {
-        // Snap wind immediately on first fetch
-        env.windState.speedKts       = windKts;
-        env.windState.fromDeg        = windDir;
-        env.windState.targetSpeedKts = windKts;
-        env.windState.targetFromDeg  = windDir;
-        env.windState.timer          = 2 + Math.random() * 4;
-        updateWindVector();
-        applyEnvironment(true);
-      } else if (timeChanged || wxChanged) {
-        applyEnvironment(false); // gradual — don't reset windState
-      }
-
-      // Update status indicators
-      const wxIcons = { clear:'☀', clouds:'☁', rain:'🌧', snow:'❄', fog:'🌫' };
-      const timeIcons = { dawn:'🌅', day:'☀️', dusk:'🌇', night:'🌙' };
-      const speedLabel = windKts < 1 ? 'CALM' : Math.round(windKts) + 'KT';
-      if (wxStatus) {
-        wxStatus.textContent = (timeIcons[timeOfDay] || '') + ' ' + timeOfDay.toUpperCase() +
-          '  ' + (wxIcons[wxKind] || '') + ' ' + wxKind.toUpperCase() +
-          '  🌬 ' + speedLabel;
-      }
-    })
+    .then(function(d) { applyWeatherData(d, isFirst); })
     .catch(function(e) {
       console.warn('[Weather] fetch failed', e);
+      // Try offline cached weather snapshot nearest to current position
+      try {
+        const store = JSON.parse(localStorage.getItem('flight-sim-offline-wx') || '{}');
+        let best = null, bestDist = Infinity;
+        for (const id in store) {
+          const snap = store[id];
+          if (!snap.data || !snap.data.current) continue;
+          const dist = Math.hypot((snap.lat || 0) - lat, (snap.lon || 0) - lon);
+          if (dist < bestDist) { bestDist = dist; best = snap; }
+        }
+        if (best) {
+          const age = Math.round((Date.now() - best.savedAt) / 3600000);
+          if (wxStatus && isFirst) wxStatus.textContent = '⚠ OFFLINE WX (' + age + 'h old)';
+          applyWeatherData(best.data, isFirst);
+          return;
+        }
+      } catch(_e){}
       if (wxStatus && isFirst) wxStatus.textContent = 'WEATHER UNAVAILABLE — USING DEFAULTS';
-      // Fall back to default environment on failure
       if (isFirst) applyEnvironment(true);
     });
 }
@@ -4408,8 +4488,29 @@ async function fetchRealFlights() {
   }
 
   if (!rawAircraft) {
-    trafficStatus = 'ERR – no data';
-    console.warn('[Traffic] All sources failed:', errors.join(' | '));
+    // Offline fallback: load cached traffic snapshot nearest to current position
+    try {
+      const store = JSON.parse(localStorage.getItem('flight-sim-offline-traffic') || '{}');
+      let best = null, bestDist = Infinity;
+      for (const id in store) {
+        const snap = store[id];
+        if (!snap.bbox) continue;
+        const cLat = (snap.bbox.minLat + snap.bbox.maxLat) / 2;
+        const cLon = (snap.bbox.minLon + snap.bbox.maxLon) / 2;
+        const d = Math.hypot(state.lat - cLat, state.lon - cLon);
+        if (d < bestDist) { bestDist = d; best = snap; }
+      }
+      if (best && best.ac) {
+        rawAircraft = best.ac;
+        const age = Math.round((Date.now() - best.savedAt) / 60000);
+        trafficStatus = 'OFFLINE SNAPSHOT (' + age + 'min ago)';
+      } else {
+        trafficStatus = 'OFFLINE – no snapshot';
+      }
+    } catch(e) {
+      trafficStatus = 'ERR – no data';
+    }
+    if (!rawAircraft) console.warn('[Traffic] All sources failed:', errors.join(' | '));
   }
 
   if (rawAircraft) {
