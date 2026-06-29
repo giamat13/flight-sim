@@ -1034,12 +1034,79 @@ function precacheUrls(urls, onProgress, onDone) {
   });
 }
 
+// Track how many tile fetches are in-flight so background refresh can yield.
+let _activeTileFetches = 0;
+(function() {
+  const _origFetch = window.fetch;
+  window.fetch = function(input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const isTile = url.indexOf('arcgisonline.com') !== -1 || url.indexOf('elevation-tiles-prod') !== -1;
+    if (isTile) _activeTileFetches++;
+    const p = _origFetch.apply(this, arguments);
+    if (isTile) p.then(function(){ _activeTileFetches--; }, function(){ _activeTileFetches--; });
+    return p;
+  };
+})();
+
 // Remove specific URLs from SW cache.
 function deleteUrlsFromCache(urls, onDone) {
   if (!('caches' in window)) { onDone && onDone(); return; }
   caches.open('flight-sim-tiles-v1').then(function(cache) {
     Promise.all(urls.map(function(u) { return cache.delete(u); })).then(function() { onDone && onDone(); });
   });
+}
+
+// ---- Background area refresh ----
+// On every page load, after a short idle period, silently re-download stale saved areas.
+// Yields to foreground tile loads by waiting whenever _activeTileFetches > 0.
+const BG_REFRESH_AGE_MS = 7 * 24 * 60 * 60 * 1000; // refresh areas older than 7 days
+const BG_TILE_DELAY_MS  = 250;  // gap between background tiles (keeps network free for sim)
+const BG_IDLE_WAIT_MS   = 600;  // wait when foreground fetches are active
+
+function _bgFetchTile(url, cache) {
+  return new Promise(function(resolve) {
+    function attempt() {
+      if (_activeTileFetches > 0) { setTimeout(attempt, BG_IDLE_WAIT_MS); return; }
+      const ctrl = new AbortController();
+      const timer = setTimeout(function() { ctrl.abort(); }, 12000);
+      fetch(url, { mode: 'cors', signal: ctrl.signal })
+        .then(function(r) { clearTimeout(timer); if (r && r.ok) return cache.put(url, r); })
+        .catch(function() { clearTimeout(timer); })
+        .then(resolve);
+    }
+    attempt();
+  });
+}
+
+let _bgRefreshRunning = false;
+function startBackgroundRefresh() {
+  if (_bgRefreshRunning || !('caches' in window)) return;
+  const areas = getSavedAreas();
+  if (!areas.length) return;
+  const now = Date.now();
+  const stale = areas.filter(function(a) {
+    const t = a.lastRefreshed ? new Date(a.lastRefreshed).getTime() : new Date(a.savedAt || 0).getTime();
+    return (now - t) > BG_REFRESH_AGE_MS;
+  });
+  if (!stale.length) return;
+  _bgRefreshRunning = true;
+  caches.open('flight-sim-tiles-v1').then(async function(cache) {
+    for (let i = 0; i < stale.length; i++) {
+      const area = stale[i];
+      const urls = urlsForSavedArea(area);
+      for (let j = 0; j < urls.length; j++) {
+        await _bgFetchTile(urls[j], cache);
+        await new Promise(function(r) { setTimeout(r, BG_TILE_DELAY_MS); });
+      }
+      // Refresh airports / weather / traffic for this area
+      prefetchAirports(area, function(){});
+      prefetchWeather(area, area.id, function(){});
+      snapshotTraffic(area, area.id, function(){});
+      area.lastRefreshed = new Date().toISOString();
+      putSavedArea(area);
+    }
+    _bgRefreshRunning = false;
+  }).catch(function() { _bgRefreshRunning = false; });
 }
 
 // ---- Saved-areas registry (localStorage) ----
@@ -1330,6 +1397,9 @@ function openNavPickerForDownload() {
 const _origDrawNavMap_ref = { fn: null }; // set after drawNavMap is defined (below, lazy)
 // Intercept pointer events on nm-canvas for rectangle drawing.
 // We attach a capturing listener so it runs before the nav-map's own handlers.
+// Kick off background refresh 20 s after page load — long enough for initial tile loading to settle.
+setTimeout(startBackgroundRefresh, 20000);
+
 document.addEventListener('DOMContentLoaded', function() {
   const cv = document.getElementById('nm-canvas'); if (!cv) return;
   // pointerdown — start drawing
@@ -1568,7 +1638,8 @@ document.addEventListener('DOMContentLoaded', function() {
             minLon: bbox.minLon, maxLon: bbox.maxLon,
             zooms: zooms, tileCount: total,
             estBytes: urls._estBytes || 0,
-            savedAt: new Date().toISOString()
+            savedAt: new Date().toISOString(),
+            lastRefreshed: new Date().toISOString()
           };
           putSavedArea(area);
           if (overallBar) overallBar.style.width = '100%';
