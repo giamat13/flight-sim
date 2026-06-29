@@ -498,6 +498,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
           <span>OVERALL</span><span id="nm-dl-overall-pct">0%</span>
         </div>
         <div class="nso-bar-wrap" style="height:8px"><div class="nso-bar" id="nm-dl-overall-bar" style="transition:width 0.3s"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;letter-spacing:1px;color:rgba(255,200,0,0.4);margin-top:5px">
+          <span id="nm-dl-speed">— MB/s</span><span id="nm-dl-eta">ETA —</span>
+        </div>
       </div>
       <!-- Step list -->
       <div id="nm-dl-steps" style="width:100%;display:flex;flex-direction:column;gap:6px">
@@ -996,6 +999,7 @@ function precacheUrls(urls, onProgress, onDone) {
   const CONCURRENCY = 32;    // simultaneous fetches — saturate fast connections
   const TILE_TIMEOUT = 10000; // ms before a single tile is aborted and skipped
   let done = 0;
+  let fetched = 0; // tiles actually downloaded from network (not served from cache)
   let next = 0;
   let finished = false;
 
@@ -1004,21 +1008,23 @@ function precacheUrls(urls, onProgress, onDone) {
       const ctrl = new AbortController();
       const timer = setTimeout(function(){ ctrl.abort(); }, TILE_TIMEOUT);
       return cache.match(url).then(function(hit) {
-        if (hit) return; // already cached, skip network
+        if (hit) return false; // already cached
         return fetch(url, { mode: 'cors', signal: ctrl.signal }).then(function(r) {
-          if (r && r.ok) return cache.put(url, r);
+          if (r && r.ok) { cache.put(url, r); return true; }
+          return false;
         });
-      }).catch(function(){ /* timeout / network / CORS — skip this tile */ })
-        .then(function(){ clearTimeout(timer); });
+      }).catch(function(){ return false; })
+        .then(function(wasNetwork){ clearTimeout(timer); return wasNetwork; });
     }
 
     // Worker loop: each of CONCURRENCY workers pulls the next URL until exhausted.
     function worker() {
       if (next >= total) return Promise.resolve();
       const url = urls[next++];
-      return fetchOne(url).then(function() {
+      return fetchOne(url).then(function(wasNetwork) {
         done++;
-        onProgress && onProgress(done, total);
+        if (wasNetwork) fetched++;
+        onProgress && onProgress(done, total, fetched);
         return worker();
       });
     }
@@ -1546,6 +1552,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const dlAreaName   = document.getElementById('nm-dl-area-name');
   const overallBar   = document.getElementById('nm-dl-overall-bar');
   const overallPct   = document.getElementById('nm-dl-overall-pct');
+  const dlSpeedEl    = document.getElementById('nm-dl-speed');
+  const dlEtaEl      = document.getElementById('nm-dl-eta');
   const doneSummary  = document.getElementById('nm-dl-done-summary');
   const doneTitle    = document.getElementById('nm-dl-done-title');
 
@@ -1595,6 +1603,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (dlAreaName)   dlAreaName.textContent      = name.toUpperCase();
     if (overallBar)   overallBar.style.width      = '0%';
     if (overallPct)   overallPct.textContent      = '0%';
+    if (dlSpeedEl)    dlSpeedEl.textContent        = '— MB/s';
+    if (dlEtaEl)      dlEtaEl.textContent          = 'ETA —';
 
     const estSize = urls._estBytes ? ' · ~' + formatBytes(urls._estBytes) : '';
     setStep('tiles', '⬇', urls.length + ' tiles' + estSize, 0);
@@ -1603,14 +1613,33 @@ document.addEventListener('DOMContentLoaded', function() {
     setStep('traffic',  '⏸', 'waiting…', 0);
     saveBtn.disabled = true;
 
+    const _dlStartTime = Date.now();
+    const _bytesPerTile = urls._estBytes && urls.length ? urls._estBytes / urls.length : 150 * 1024;
+
     precacheUrls(urls,
-      function(done, total) {
+      function(done, total, fetched) {
         const pct = Math.round(done / total * 100);
-        setStep('tiles', '⬇', done + ' / ' + total + ' (' + pct + '%)', pct);
+        setStep('tiles', '⬇', done.toLocaleString() + ' / ' + total.toLocaleString() + ' (' + pct + '%)', pct);
         setOverall(done, total, 0, 3);
+        const elapsed = (Date.now() - _dlStartTime) / 1000;
+        if (elapsed > 1 && fetched > 0) {
+          const speedBps  = (fetched * _bytesPerTile) / elapsed;
+          // ETA based only on tiles not yet done, scaled by cache-hit ratio
+          const networkRatio = fetched / done;
+          const remaining = (total - done) * _bytesPerTile * networkRatio;
+          const etaSec    = Math.round(remaining / speedBps);
+          if (dlSpeedEl) dlSpeedEl.textContent = formatBytes(speedBps) + '/s';
+          let etaStr;
+          if (etaSec < 60) etaStr = etaSec + 's';
+          else if (etaSec < 3600) etaStr = Math.ceil(etaSec / 60) + 'm';
+          else etaStr = Math.floor(etaSec / 3600) + 'h ' + Math.ceil((etaSec % 3600) / 60) + 'm';
+          if (dlEtaEl) dlEtaEl.textContent = 'ETA ' + etaStr;
+        }
       },
       function(total, err) {
         saveBtn.disabled = false;
+        if (dlSpeedEl) dlSpeedEl.textContent = '— MB/s';
+        if (dlEtaEl)   dlEtaEl.textContent   = '';
         if (err) {
           setStep('tiles', '✕', String(err), 0);
           if (stepProgress) stepProgress.style.display = 'none';
