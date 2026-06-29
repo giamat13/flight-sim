@@ -993,8 +993,8 @@ function precacheUrls(urls, onProgress, onDone) {
     return;
   }
   const total = urls.length;
-  const CONCURRENCY = 8;     // simultaneous fetches — keeps the connection pool healthy
-  const TILE_TIMEOUT = 7000; // ms before a single tile is aborted and skipped
+  const CONCURRENCY = 32;    // simultaneous fetches — saturate fast connections
+  const TILE_TIMEOUT = 10000; // ms before a single tile is aborted and skipped
   let done = 0;
   let next = 0;
   let finished = false;
