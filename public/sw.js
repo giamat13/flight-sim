@@ -24,14 +24,18 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// Fetch one tile with timeout; resolves regardless of error so we never hang.
-function fetchWithTimeout(url, timeoutMs) {
-  return new Promise(resolve => {
-    const timer = setTimeout(() => resolve(null), timeoutMs);
-    fetch(url, { mode: 'cors' })
-      .then(r => { clearTimeout(timer); resolve(r.ok ? r : null); })
-      .catch(() => { clearTimeout(timer); resolve(null); });
-  });
+// Fetch one tile with hard abort; resolves null on any error/timeout so we never hang.
+async function fetchWithTimeout(url, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { mode: 'cors', signal: ctrl.signal });
+    clearTimeout(timer);
+    return r.ok ? r : null;
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
 }
 
 // Pre-cache URLs in batches to avoid flooding the network and getting stuck.
@@ -42,8 +46,8 @@ self.addEventListener('message', event => {
     const urls = event.data.urls || [];
     const total = urls.length;
     let done = 0;
-    const BATCH = 12;      // concurrent fetches per batch
-    const TILE_TIMEOUT = 15000; // ms per tile before giving up
+    const BATCH = 16;      // concurrent fetches per batch
+    const TILE_TIMEOUT = 8000;  // ms per tile before aborting and moving on
 
     caches.open(CACHE).then(async cache => {
       for (let i = 0; i < urls.length; i += BATCH) {
