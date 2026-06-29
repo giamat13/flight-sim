@@ -145,7 +145,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .nm-act.nm-resume{background:rgba(80,180,255,0.14);border-color:rgba(80,180,255,0.55);color:#7fd0ff}
 .nm-act.nm-resume:hover{background:rgba(80,180,255,0.28)}
 .nm-act.nm-focus{outline:2px solid #ffe066;outline-offset:2px}
+.nm-act.nm-save{background:rgba(255,200,0,0.12);border-color:rgba(255,200,0,0.55);color:#ffe066}
+.nm-act.nm-save:hover{background:rgba(255,200,0,0.24)}
+.nm-act.nm-save:disabled{opacity:0.35;cursor:default}
 #nm-hint{position:absolute;bottom:2px;left:0;right:0;z-index:4;text-align:center;font-size:8px;letter-spacing:1px;color:rgba(0,255,65,0.4);pointer-events:none;padding:0 8px}
+#nm-save-overlay{position:absolute;inset:0;z-index:5;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(6,12,8,0.82);backdrop-filter:blur(2px)}
+#nm-save-overlay .nso-title{font-size:14px;letter-spacing:4px;color:#ffe066}
+#nm-save-overlay .nso-bar-wrap{width:min(340px,80%);height:6px;background:rgba(255,200,0,0.15);border-radius:3px;overflow:hidden}
+#nm-save-overlay .nso-bar{height:100%;width:0%;background:#ffe066;border-radius:3px;transition:width 0.2s}
+#nm-save-overlay .nso-status{font-size:11px;letter-spacing:1px;color:rgba(255,200,0,0.8)}
 @keyframes flash{0%,100%{opacity:1}50%{opacity:0}}
 .flashing{animation:flash 0.4s infinite}
 @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
@@ -314,6 +322,23 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #vjoy-knob{width:52px;height:52px;border-radius:50%;background:rgba(0,255,65,0.22);border:1.5px solid rgba(0,255,65,0.7);box-shadow:0 0 12px rgba(0,255,65,0.25);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;transition:box-shadow 0.1s}
 #vjoy-knob.active{background:rgba(0,255,65,0.38);box-shadow:0 0 20px rgba(0,255,65,0.5)}
 #vjoy-label{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:8px;letter-spacing:2px;color:rgba(0,255,65,0.4);font-family:'JetBrains Mono',monospace}
+/* Offline indicator */
+#offline-indicator{position:fixed;bottom:44px;right:16px;z-index:25;pointer-events:none;display:none;color:#ffaa00;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(60,30,0,0.85);border:1px solid rgba(255,170,0,0.55);border-radius:4px;padding:3px 9px}
+/* Offline download panel */
+#offline-panel{position:fixed;bottom:70px;right:16px;z-index:30;display:none;flex-direction:column;gap:8px;background:rgba(0,12,3,0.94);border:1px solid rgba(0,255,65,0.4);border-radius:6px;padding:12px 14px;font-family:'JetBrains Mono',monospace;color:#00FF41;min-width:220px;backdrop-filter:blur(4px)}
+#offline-panel .ofl-title{font-size:11px;letter-spacing:3px;opacity:0.7;text-align:center}
+#offline-panel .ofl-row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+#offline-panel .ofl-label{font-size:10px;letter-spacing:1px;opacity:0.6}
+#offline-panel .ofl-val{font-size:10px;letter-spacing:1px;color:#00FF41}
+.ofl-btn{background:rgba(0,255,65,0.08);border:1px solid rgba(0,255,65,0.45);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:5px 10px;border-radius:3px;cursor:pointer;transition:background 0.15s}
+.ofl-btn:hover{background:rgba(0,255,65,0.18)}
+.ofl-btn:disabled{opacity:0.35;cursor:default}
+#ofl-progress-bar{width:100%;height:3px;background:rgba(0,255,65,0.12);border-radius:2px;overflow:hidden}
+#ofl-progress-fill{height:100%;width:0%;background:#00FF41;transition:width 0.2s;border-radius:2px}
+#ofl-status{font-size:9px;letter-spacing:1px;opacity:0.55;text-align:center;min-height:12px}
+/* Download trigger button in coord display area */
+#offline-toggle{position:fixed;bottom:44px;right:16px;z-index:25;color:rgba(0,255,65,0.65);font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);border-radius:4px;padding:3px 9px;cursor:pointer;transition:background 0.15s;display:none}
+#offline-toggle:hover{background:rgba(0,255,65,0.1)}
 </style>
 </head>
 <body>
@@ -392,6 +417,19 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <div id="cam-label">COCKPIT</div>
 <div id="coord-display">LAT — / LON —</div>
 <div id="gp-indicator">🎮 CONTROLLER</div>
+<div id="offline-indicator">⚠ OFFLINE</div>
+<button id="offline-toggle">⬇ OFFLINE MAP</button>
+<div id="offline-panel">
+  <div class="ofl-title">OFFLINE MAP</div>
+  <div class="ofl-row"><span class="ofl-label">CACHED TILES</span><span class="ofl-val" id="ofl-cached">—</span></div>
+  <div id="ofl-status"></div>
+  <div class="ofl-row" style="gap:6px">
+    <button class="ofl-btn" id="ofl-open-map-btn">OPEN MAP</button>
+    <button class="ofl-btn" id="ofl-clear-btn">CLEAR CACHE</button>
+    <button class="ofl-btn" id="ofl-close-btn">CLOSE</button>
+  </div>
+  <div style="font-size:9px;opacity:0.45;text-align:center;letter-spacing:1px">Pan the map to your area, then click<br>⬇ SAVE AREA</div>
+</div>
 <div id="ap-indicator">✈ AUTOPILOT</div>
 <div id="nav-hud"></div>
 
@@ -417,9 +455,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="nm-act nm-resume" id="nm-resume">▶ RESUME</button>
     <button class="nm-act nm-go" id="nm-fly">✈ FLY HERE</button>
     <button class="nm-act nm-justfly" id="nm-justfly">⟳ JUST FLY</button>
+    <button class="nm-act nm-save" id="nm-save-area">⬇ SAVE AREA</button>
     <button class="nm-act" id="nm-cancel">✕ CANCEL</button>
   </div>
   <div id="nm-hint">DRAG / ARROWS = PAN &nbsp;·&nbsp; WHEEL / ± = ZOOM &nbsp;·&nbsp; CLICK = SET &nbsp;·&nbsp; 🎮 L-STICK PAN · RT/LT ZOOM · A FLY · B CANCEL</div>
+  <div id="nm-save-overlay">
+    <div class="nso-title">SAVING AREA FOR OFFLINE</div>
+    <div class="nso-bar-wrap"><div class="nso-bar" id="nm-save-bar"></div></div>
+    <div class="nso-status" id="nm-save-status">Preparing…</div>
+    <button class="ofl-btn" id="nm-save-dismiss" style="margin-top:6px;display:none">DONE</button>
+  </div>
 </div>
 
 <!-- Autopilot control panel -->
@@ -639,6 +684,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   </div>
   <div id="sm-status"></div>
   <div id="wx-status" style="font-size:9px;letter-spacing:2px;color:rgba(0,255,65,0.45);min-height:14px;text-align:center"></div>
+  <button id="sm-download-map-btn" style="cursor:pointer;pointer-events:auto;background:rgba(255,200,0,0.08);border:1px solid rgba(255,200,0,0.35);color:#ffe066;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:2px;padding:10px 28px;border-radius:5px;transition:all .15s;margin-bottom:4px">⬇ DOWNLOAD MAP</button>
   <button id="sm-settings-btn">⚙ SETTINGS</button>
   <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
 </div>
@@ -814,6 +860,216 @@ function showFatal(msg){
 }
 window.addEventListener('error', function(e){ showFatal('ERR: ' + (e.message || (e.error && e.error.message) || 'unknown')); });
 window.addEventListener('unhandledrejection', function(e){ showFatal('ERR: ' + ((e.reason && (e.reason.message || e.reason)) || 'promise rejected')); });
+
+// ===================== Service Worker + Offline Map =====================
+let _sw = null;
+(function initSW() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('./sw.js').then(() => {
+    _sw = navigator.serviceWorker;
+  }).catch(() => {});
+})();
+
+// Build tile URL list covering (lat,lon) center with given ring at given zoom levels.
+function offlineTileUrlsForArea(lat, lon, ring, imgZooms) {
+  const urls = [];
+  for (let iz = 0; iz < imgZooms.length; iz++) {
+    const z = imgZooms[iz];
+    const cx = Math.floor(lonToTileXf(lon, z));
+    const cy = Math.floor(latToTileYf(lat, z));
+    const n = Math.pow(2, z);
+    for (let dx = -ring; dx <= ring; dx++) {
+      for (let dy = -ring; dy <= ring; dy++) {
+        const y = cy + dy;
+        if (y < 0 || y >= n) continue;
+        const wx = (((cx + dx) % n) + n) % n;
+        urls.push('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + wx);
+      }
+    }
+  }
+  // Elevation tiles (zoom 12)
+  const ez = 12;
+  const ecx = Math.floor(lonToTileXf(lon, ez));
+  const ecy = Math.floor(latToTileYf(lat, ez));
+  const en = Math.pow(2, ez);
+  for (let dx = -ring; dx <= ring; dx++) {
+    for (let dy = -ring; dy <= ring; dy++) {
+      const y = ecy + dy;
+      if (y < 0 || y >= en) continue;
+      const wx = (((ecx + dx) % en) + en) % en;
+      urls.push('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + ez + '/' + wx + '/' + y + '.png');
+    }
+  }
+  return urls;
+}
+
+// Send a list of URLs to the SW for precaching; call onProgress(done,total) and onDone(total).
+function precacheUrls(urls, onProgress, onDone) {
+  if (!_sw || !navigator.serviceWorker.controller) {
+    onDone && onDone(0, 'Service worker not ready — reload page');
+    return;
+  }
+  navigator.serviceWorker.onmessage = function(ev) {
+    const d = ev.data;
+    if (d.type === 'PRECACHE_PROGRESS') onProgress && onProgress(d.done, d.total);
+    else if (d.type === 'PRECACHE_DONE') onDone && onDone(d.total);
+    else if (d.type === 'CACHE_CLEARED') onDone && onDone(0, 'cleared');
+  };
+  navigator.serviceWorker.controller.postMessage({ type: 'PRECACHE', urls });
+}
+
+// ---- Offline panel (cache info + clear) ----
+const _oflPanel = document.getElementById('offline-panel');
+const _oflToggle = document.getElementById('offline-toggle');
+const _oflIndicator = document.getElementById('offline-indicator');
+const _oflClearBtn = document.getElementById('ofl-clear-btn');
+const _oflCloseBtn = document.getElementById('ofl-close-btn');
+const _oflOpenMapBtn = document.getElementById('ofl-open-map-btn');
+const _oflCached = document.getElementById('ofl-cached');
+const _oflStatus = document.getElementById('ofl-status');
+
+function refreshCacheCount() {
+  if (!('caches' in window)) return;
+  caches.open('flight-sim-tiles-v1').then(cache =>
+    cache.keys().then(keys => { if (_oflCached) _oflCached.textContent = keys.length; })
+  );
+}
+
+function updateOfflineIndicator() {
+  if (_oflIndicator) _oflIndicator.style.display = navigator.onLine ? 'none' : 'block';
+  if (_oflToggle) _oflToggle.style.display = 'block'; // always show
+}
+window.addEventListener('online', updateOfflineIndicator);
+window.addEventListener('offline', updateOfflineIndicator);
+
+if (_oflToggle) _oflToggle.addEventListener('click', function() {
+  if (!_oflPanel) return;
+  const open = _oflPanel.style.display === 'flex';
+  _oflPanel.style.display = open ? 'none' : 'flex';
+  if (!open) refreshCacheCount();
+});
+
+if (_oflCloseBtn) _oflCloseBtn.addEventListener('click', function() {
+  if (_oflPanel) _oflPanel.style.display = 'none';
+});
+
+if (_oflOpenMapBtn) _oflOpenMapBtn.addEventListener('click', function() {
+  if (_oflPanel) _oflPanel.style.display = 'none';
+  // Open the nav map (reuse existing function, called after a short delay to let panel close)
+  setTimeout(function() { openNavPickerForDownload(); }, 80);
+});
+
+// ---- Download map from start menu ----
+const _smDownloadMapBtn = document.getElementById('sm-download-map-btn');
+if (_smDownloadMapBtn) _smDownloadMapBtn.addEventListener('click', function() {
+  // Simulate starting a flight at (0,0) just to make simReady true, then open download map
+  if (typeof chosen !== 'undefined') {
+    // If already in flight, use existing state
+    openNavPickerForDownload();
+  } else {
+    // Fake a start position to enable the nav map
+    chosen = { lat: 0, lon: 0, alt: 1000, hdg: 0, name: 'Download' };
+    simReady = true;
+    state = { lat: 0, lon: 0, altitude: 1000, heading: 0, groundLevel: 0 };
+    setTimeout(function() { openNavPickerForDownload(); }, 100);
+  }
+});
+
+// Open nav map in download mode (hide crosshair, hide fly buttons, show only save area)
+function openNavPickerForDownload() {
+  if (!simReady) return;
+  const ov = document.getElementById('nav-map'); if (!ov) return;
+  const cross = document.getElementById('nm-cross');
+  const pin = document.getElementById('nm-pin');
+  const btnResume = document.getElementById('nm-resume');
+  const btnFly = document.getElementById('nm-fly');
+  const btnJustFly = document.getElementById('nm-justfly');
+  const btnSave = document.getElementById('nm-save-area');
+  const title = document.getElementById('nm-title');
+
+  // Hide fly/resume buttons, show save area only
+  if (btnResume) btnResume.style.display = 'none';
+  if (btnFly) btnFly.style.display = 'none';
+  if (btnJustFly) btnJustFly.style.display = 'none';
+  if (btnSave) btnSave.style.display = 'block';
+
+  // Hide crosshair/pin (confusing for save mode)
+  if (cross) cross.style.display = 'none';
+  if (pin) pin.style.display = 'none';
+  if (title) title.textContent = 'SELECT AREA & SAVE';
+
+  // Initialize nav picker state
+  if (typeof initNavPicker === 'function') initNavPicker();
+  navPickerOpen = true;
+  ov.style.display = 'block';
+  document.body.style.cursor = 'default';
+  nmView.lat = state.lat; nmView.lon = state.lon; nmView.zoom = 9;
+  nmDestName = null; nmElevFt = null; nmElevKey = ''; nmAirportFetchKey = ''; nmAirports = []; nmAirportFetching = false;
+  if (typeof drawNavMap === 'function') drawNavMap();
+}
+
+if (_oflClearBtn) _oflClearBtn.addEventListener('click', function() {
+  if (!_sw || !navigator.serviceWorker.controller) return;
+  if (_oflStatus) _oflStatus.textContent = 'Clearing…';
+  navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
+  navigator.serviceWorker.onmessage = function(ev) {
+    if (ev.data && ev.data.type === 'CACHE_CLEARED') {
+      if (_oflStatus) _oflStatus.textContent = 'Cache cleared';
+      if (_oflCached) _oflCached.textContent = '0';
+    }
+  };
+});
+
+// ---- Nav map "SAVE AREA" button ----
+(function() {
+  const saveBtn = document.getElementById('nm-save-area');
+  const saveOverlay = document.getElementById('nm-save-overlay');
+  const saveBar = document.getElementById('nm-save-bar');
+  const saveStatus = document.getElementById('nm-save-status');
+  const saveDismiss = document.getElementById('nm-save-dismiss');
+  if (!saveBtn) return;
+
+  saveBtn.addEventListener('click', function() {
+    // nmView is the nav map viewport state — defined later in the file but accessible at call time.
+    if (typeof nmView === 'undefined') return;
+    const lat = nmView.lat, lon = nmView.lon, z = nmView.zoom;
+    // Calculate ring: cover at least the visible viewport (assume ~1024px wide at 256px/tile)
+    const ring = Math.max(8, Math.ceil(window.innerWidth / 256 / 2) + 4);
+    // Imagery at current zoom + one coarser + one finer (if sensible)
+    const zooms = [Math.max(9, z - 1), z, Math.min(15, z + 1)].filter((v, i, a) => a.indexOf(v) === i);
+    const urls = offlineTileUrlsForArea(lat, lon, ring, zooms);
+    if (saveOverlay) { saveOverlay.style.display = 'flex'; }
+    if (saveBar) saveBar.style.width = '0%';
+    if (saveStatus) saveStatus.textContent = 'Preparing ' + urls.length + ' tiles…';
+    if (saveDismiss) saveDismiss.style.display = 'none';
+    saveBtn.disabled = true;
+    precacheUrls(urls,
+      function(done, total) {
+        const pct = Math.round(done / total * 100);
+        if (saveBar) saveBar.style.width = pct + '%';
+        if (saveStatus) saveStatus.textContent = done + ' / ' + total + ' (' + pct + '%)';
+      },
+      function(total, err) {
+        if (err) {
+          if (saveStatus) saveStatus.textContent = typeof err === 'string' ? err : 'Error';
+        } else {
+          if (saveBar) saveBar.style.width = '100%';
+          if (saveStatus) saveStatus.textContent = 'Saved — ' + total + ' tiles ready offline';
+          refreshCacheCount();
+        }
+        if (saveDismiss) saveDismiss.style.display = 'block';
+        saveBtn.disabled = false;
+      }
+    );
+  });
+
+  if (saveDismiss) saveDismiss.addEventListener('click', function() {
+    if (saveOverlay) saveOverlay.style.display = 'none';
+  });
+}());
+
+setTimeout(updateOfflineIndicator, 800);
+// ===================== End Offline Map =====================
 
 const canvas = document.getElementById('sim-canvas');
 const ctx = canvas.getContext('2d');
@@ -9036,6 +9292,21 @@ function openNavPicker() {
 function closeNavPicker() {
   navPickerOpen = false;
   const ov = document.getElementById('nav-map'); if (ov) ov.style.display = 'none';
+  // Restore nav buttons and crosshair (in case they were hidden for download mode)
+  const cross = document.getElementById('nm-cross');
+  const pin = document.getElementById('nm-pin');
+  const btnResume = document.getElementById('nm-resume');
+  const btnFly = document.getElementById('nm-fly');
+  const btnJustFly = document.getElementById('nm-justfly');
+  const btnSave = document.getElementById('nm-save-area');
+  const title = document.getElementById('nm-title');
+  if (cross) cross.style.display = 'block';
+  if (pin) pin.style.display = 'block';
+  if (btnResume) btnResume.style.display = chosen ? 'block' : 'none';
+  if (btnFly) btnFly.style.display = chosen ? 'block' : 'none';
+  if (btnJustFly) btnJustFly.style.display = chosen ? 'block' : 'none';
+  if (btnSave) btnSave.style.display = 'block';
+  if (title) title.textContent = 'SELECT DESTINATION';
   document.body.style.cursor = 'none';
   lastTime = performance.now();
   try { window.focus(); } catch (e) {}
