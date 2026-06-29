@@ -1061,6 +1061,15 @@ function urlsForSavedArea(area) {
 }
 
 // Build tile URLs for a bounding box (lat/lon min/max).
+// Rough size estimate: imagery ~28KB avg, elevation ~9KB avg
+function estimateTileSizeBytes(imgCount, elevCount) {
+  return imgCount * 28 * 1024 + elevCount * 9 * 1024;
+}
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 function offlineTileUrlsForBbox(minLat, maxLat, minLon, maxLon, imgZooms) {
   const urls = [];
   for (let iz = 0; iz < imgZooms.length; iz++) {
@@ -1078,6 +1087,7 @@ function offlineTileUrlsForBbox(minLat, maxLat, minLon, maxLon, imgZooms) {
       }
     }
   }
+  const imgCount = urls.length;
   // Elevation (zoom 12)
   const ez = 12, en = Math.pow(2, ez);
   const etxMin = Math.floor(lonToTileXf(minLon, ez));
@@ -1091,6 +1101,10 @@ function offlineTileUrlsForBbox(minLat, maxLat, minLon, maxLon, imgZooms) {
       urls.push('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + ez + '/' + wx + '/' + ty + '.png');
     }
   }
+  const elevCount = urls.length - imgCount;
+  urls._imgCount  = imgCount;
+  urls._elevCount = elevCount;
+  urls._estBytes  = estimateTileSizeBytes(imgCount, elevCount);
   return urls;
 }
 
@@ -1195,7 +1209,8 @@ function renderSmSavedAreas() {
     name.textContent = area.name || 'Unnamed';
     const detail = document.createElement('div');
     detail.style.cssText = 'font-size:9px;color:rgba(255,200,0,0.4);letter-spacing:1px;margin-top:2px';
-    detail.textContent = (area.tileCount || '?') + ' tiles · ' + new Date(area.savedAt).toLocaleDateString();
+    const sizeStr = area.estBytes ? ' · ~' + formatBytes(area.estBytes) : '';
+    detail.textContent = (area.tileCount || '?') + ' tiles' + sizeStr + ' · ' + new Date(area.savedAt).toLocaleDateString();
     info.appendChild(name); info.appendChild(detail);
     const del = document.createElement('button');
     del.textContent = '✕';
@@ -1490,7 +1505,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (overallBar)   overallBar.style.width      = '0%';
     if (overallPct)   overallPct.textContent      = '0%';
 
-    setStep('tiles',    '⬇', urls.length + ' tiles', 0);
+    const estSize = urls._estBytes ? ' · ~' + formatBytes(urls._estBytes) : '';
+    setStep('tiles', '⬇', urls.length + ' tiles' + estSize, 0);
     setStep('airports', '⏸', 'waiting…', 0);
     setStep('weather',  '⏸', 'waiting…', 0);
     setStep('traffic',  '⏸', 'waiting…', 0);
@@ -1524,12 +1540,13 @@ document.addEventListener('DOMContentLoaded', function() {
           setStep(id, icon, detail, 100);
           setOverall(total, total, extraDone, 3);
           if (extraDone < 3) return;
-          // All done
+          // All done — measure actual cache size then save area record
           const area = {
             id: areaId, name: name,
             bbox: bbox, minLat: bbox.minLat, maxLat: bbox.maxLat,
             minLon: bbox.minLon, maxLon: bbox.maxLon,
             zooms: zooms, tileCount: total,
+            estBytes: urls._estBytes || 0,
             savedAt: new Date().toISOString()
           };
           putSavedArea(area);
@@ -1538,8 +1555,9 @@ document.addEventListener('DOMContentLoaded', function() {
           if (stepProgress) stepProgress.style.display = 'none';
           if (stepDone) stepDone.style.display = 'flex';
           if (doneTitle) doneTitle.textContent = '"' + name + '" SAVED ✓';
+          const sizeLabel = urls._estBytes ? '  ·  ~' + formatBytes(urls._estBytes) : '';
           if (doneSummary) doneSummary.textContent =
-            total + ' map tiles  ·  airports  ·  7-day weather  ·  traffic snapshot';
+            total + ' map tiles' + sizeLabel + '  ·  airports  ·  7-day weather  ·  traffic';
         }
 
         prefetchAirports(bbox, function(found) {
