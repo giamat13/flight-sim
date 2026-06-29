@@ -482,6 +482,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <!-- Step 1: name -->
     <div id="nm-dl-step-name">
       <div class="nso-title">NAME THIS AREA</div>
+      <div id="nm-dl-size-preview" style="font-size:10px;letter-spacing:1px;color:rgba(255,200,0,0.5);text-align:center;margin-bottom:2px"></div>
       <div class="nso-name-row">
         <input id="nm-save-name-input" type="text" placeholder="e.g. Israel North, Alps…" maxlength="40" autocomplete="off" spellcheck="false" />
         <button class="ofl-btn" id="nm-save-confirm-btn" style="color:#ffe066;border-color:rgba(255,200,0,0.5)">DOWNLOAD</button>
@@ -1385,6 +1386,25 @@ document.addEventListener('DOMContentLoaded', function() {
     if (stepProg0)  { stepProg0.style.display  = 'none';  }
     if (stepDone0)  { stepDone0.style.display  = 'none';  }
     if (nameInput) { nameInput.value = ''; setTimeout(function(){ nameInput.focus(); }, 50); }
+    // Compute and show tile count + size estimate for the current selection
+    const sizeEl = document.getElementById('nm-dl-size-preview');
+    if (sizeEl) {
+      const z = nmView.zoom;
+      const zooms = [Math.max(9, z-1), z, Math.min(14, z+1)].filter(function(v,i,a){ return a.indexOf(v)===i; });
+      let bbox2;
+      if (nmSelectRect) {
+        bbox2 = nmSelectRect;
+      } else {
+        const cv2 = document.getElementById('nm-canvas');
+        const cw2 = cv2 ? cv2.width : window.innerWidth, ch2 = cv2 ? cv2.height : window.innerHeight;
+        const tl2 = nmPixelToLatLon(0,0), br2 = nmPixelToLatLon(cw2, ch2);
+        bbox2 = { minLat: Math.min(tl2.lat,br2.lat), maxLat: Math.max(tl2.lat,br2.lat),
+                  minLon: Math.min(tl2.lon,br2.lon), maxLon: Math.max(tl2.lon,br2.lon) };
+      }
+      const previewUrls = offlineTileUrlsForBbox(bbox2.minLat, bbox2.maxLat, bbox2.minLon, bbox2.maxLon, zooms);
+      const estMB = previewUrls._estBytes ? formatBytes(previewUrls._estBytes) : '?';
+      sizeEl.textContent = previewUrls.length + ' tiles · ~' + estMB;
+    }
   });
 
   // Step 2: confirm name → download
