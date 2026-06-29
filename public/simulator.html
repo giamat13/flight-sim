@@ -962,22 +962,11 @@ if (_oflOpenMapBtn) _oflOpenMapBtn.addEventListener('click', function() {
 // ---- Download map from start menu ----
 const _smDownloadMapBtn = document.getElementById('sm-download-map-btn');
 if (_smDownloadMapBtn) _smDownloadMapBtn.addEventListener('click', function() {
-  // Simulate starting a flight at (0,0) just to make simReady true, then open download map
-  if (typeof chosen !== 'undefined') {
-    // If already in flight, use existing state
-    openNavPickerForDownload();
-  } else {
-    // Fake a start position to enable the nav map
-    chosen = { lat: 0, lon: 0, alt: 1000, hdg: 0, name: 'Download' };
-    simReady = true;
-    state = { lat: 0, lon: 0, altitude: 1000, heading: 0, groundLevel: 0 };
-    setTimeout(function() { openNavPickerForDownload(); }, 100);
-  }
+  openNavPickerForDownload();
 });
 
 // Open nav map in download mode (hide crosshair, hide fly buttons, show only save area)
 function openNavPickerForDownload() {
-  if (!simReady) return;
   const ov = document.getElementById('nav-map'); if (!ov) return;
   const cross = document.getElementById('nm-cross');
   const pin = document.getElementById('nm-pin');
@@ -999,13 +988,16 @@ function openNavPickerForDownload() {
   if (title) title.textContent = 'SELECT AREA & SAVE';
 
   // Initialize nav picker state
-  if (typeof initNavPicker === 'function') initNavPicker();
+  initNavPicker();
   navPickerOpen = true;
   ov.style.display = 'block';
   document.body.style.cursor = 'default';
-  nmView.lat = state.lat; nmView.lon = state.lon; nmView.zoom = 9;
+  // Use aircraft position if in flight, otherwise center on Israel as default
+  const centerLat = (state && state.lat) ? state.lat : 31.5;
+  const centerLon = (state && state.lon) ? state.lon : 35.0;
+  nmView.lat = centerLat; nmView.lon = centerLon; nmView.zoom = 9;
   nmDestName = null; nmElevFt = null; nmElevKey = ''; nmAirportFetchKey = ''; nmAirports = []; nmAirportFetching = false;
-  if (typeof drawNavMap === 'function') drawNavMap();
+  drawNavMap();
 }
 
 if (_oflClearBtn) _oflClearBtn.addEventListener('click', function() {

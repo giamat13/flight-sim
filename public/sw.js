@@ -16,9 +16,13 @@ self.addEventListener('fetch', event => {
       cache.match(event.request).then(cached => {
         if (cached) return cached;
         return fetch(event.request).then(response => {
+          // Cache successful responses; pass through errors (404, 504, etc.) transparently
           if (response.ok) cache.put(event.request, response.clone());
           return response;
-        }).catch(() => cached || Response.error());
+        }).catch(err => {
+          // Network failure (offline, DNS, etc.) — nothing in cache, let browser handle it
+          return Response.error();
+        });
       })
     )
   );
