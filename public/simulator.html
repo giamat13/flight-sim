@@ -154,6 +154,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #nm-save-overlay .nso-bar-wrap{width:min(340px,80%);height:6px;background:rgba(255,200,0,0.15);border-radius:3px;overflow:hidden}
 #nm-save-overlay .nso-bar{height:100%;width:0%;background:#ffe066;border-radius:3px;transition:width 0.2s}
 #nm-save-overlay .nso-status{font-size:11px;letter-spacing:1px;color:rgba(255,200,0,0.8)}
+#nm-save-overlay .nso-name-row{display:flex;gap:8px;width:min(340px,80%);align-items:center}
+#nm-save-overlay .nso-name-row input{flex:1;background:rgba(255,200,0,0.08);border:1px solid rgba(255,200,0,0.45);color:#ffe066;font-family:'JetBrains Mono',monospace;font-size:12px;padding:7px 10px;border-radius:4px;outline:none}
+#nm-save-overlay .nso-name-row input::placeholder{color:rgba(255,200,0,0.35)}
+#nm-save-overlay .nso-name-row input:focus{border-color:#ffe066}
+/* Saved areas list in offline panel */
+#ofl-saved-list{display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;width:100%}
+.ofl-saved-item{display:flex;align-items:center;gap:8px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.18);border-radius:4px;padding:5px 8px}
+.ofl-saved-name{flex:1;font-size:10px;letter-spacing:1px;color:rgba(0,255,65,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ofl-saved-info{font-size:9px;opacity:0.45;white-space:nowrap}
+.ofl-saved-del{background:rgba(255,60,60,0.1);border:1px solid rgba(255,60,60,0.4);color:#ff6060;font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;border-radius:3px;cursor:pointer;flex-shrink:0}
+.ofl-saved-del:hover{background:rgba(255,60,60,0.25)}
 @keyframes flash{0%,100%{opacity:1}50%{opacity:0}}
 .flashing{animation:flash 0.4s infinite}
 @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
@@ -421,14 +432,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <button id="offline-toggle">⬇ OFFLINE MAP</button>
 <div id="offline-panel">
   <div class="ofl-title">OFFLINE MAP</div>
-  <div class="ofl-row"><span class="ofl-label">CACHED TILES</span><span class="ofl-val" id="ofl-cached">—</span></div>
+  <div id="ofl-saved-list"></div>
+  <div id="ofl-empty-msg" style="font-size:9px;opacity:0.4;text-align:center;letter-spacing:1px;padding:4px 0">No saved areas</div>
   <div id="ofl-status"></div>
   <div class="ofl-row" style="gap:6px">
-    <button class="ofl-btn" id="ofl-open-map-btn">OPEN MAP</button>
-    <button class="ofl-btn" id="ofl-clear-btn">CLEAR CACHE</button>
+    <button class="ofl-btn" id="ofl-open-map-btn">+ SAVE NEW AREA</button>
     <button class="ofl-btn" id="ofl-close-btn">CLOSE</button>
   </div>
-  <div style="font-size:9px;opacity:0.45;text-align:center;letter-spacing:1px">Pan the map to your area, then click<br>⬇ SAVE AREA</div>
 </div>
 <div id="ap-indicator">✈ AUTOPILOT</div>
 <div id="nav-hud"></div>
@@ -459,11 +469,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button class="nm-act" id="nm-cancel">✕ CANCEL</button>
   </div>
   <div id="nm-hint">DRAG / ARROWS = PAN &nbsp;·&nbsp; WHEEL / ± = ZOOM &nbsp;·&nbsp; CLICK = SET &nbsp;·&nbsp; 🎮 L-STICK PAN · RT/LT ZOOM · A FLY · B CANCEL</div>
+  <div id="nm-dl-hint" style="display:none;position:absolute;bottom:2px;left:0;right:0;z-index:4;text-align:center;font-size:9px;letter-spacing:1px;color:rgba(255,200,0,0.6);pointer-events:none;padding:0 8px">DRAG TO DRAW SELECTION BOX &nbsp;·&nbsp; SCROLL TO ZOOM &nbsp;·&nbsp; ✕ CANCEL</div>
   <div id="nm-save-overlay">
-    <div class="nso-title">SAVING AREA FOR OFFLINE</div>
-    <div class="nso-bar-wrap"><div class="nso-bar" id="nm-save-bar"></div></div>
-    <div class="nso-status" id="nm-save-status">Preparing…</div>
-    <button class="ofl-btn" id="nm-save-dismiss" style="margin-top:6px;display:none">DONE</button>
+    <div class="nso-title" id="nm-save-overlay-title">NAME THIS AREA</div>
+    <div class="nso-name-row" id="nm-save-name-row">
+      <input id="nm-save-name-input" type="text" placeholder="e.g. Israel North, Alps…" maxlength="40" autocomplete="off" spellcheck="false" />
+      <button class="ofl-btn" id="nm-save-confirm-btn" style="color:#ffe066;border-color:rgba(255,200,0,0.5)">DOWNLOAD</button>
+      <button class="ofl-btn" id="nm-save-cancel-btn">CANCEL</button>
+    </div>
+    <div class="nso-bar-wrap" id="nm-save-bar-wrap" style="display:none"><div class="nso-bar" id="nm-save-bar"></div></div>
+    <div class="nso-status" id="nm-save-status"></div>
+    <button class="ofl-btn" id="nm-save-dismiss" style="margin-top:6px;display:none">DONE ✓</button>
   </div>
 </div>
 
@@ -903,7 +919,7 @@ function offlineTileUrlsForArea(lat, lon, ring, imgZooms) {
   return urls;
 }
 
-// Send a list of URLs to the SW for precaching; call onProgress(done,total) and onDone(total).
+// Send URLs to SW for precaching; calls onProgress(done,total) and onDone(total, err).
 function precacheUrls(urls, onProgress, onDone) {
   if (!_sw || !navigator.serviceWorker.controller) {
     onDone && onDone(0, 'Service worker not ready — reload page');
@@ -913,31 +929,119 @@ function precacheUrls(urls, onProgress, onDone) {
     const d = ev.data;
     if (d.type === 'PRECACHE_PROGRESS') onProgress && onProgress(d.done, d.total);
     else if (d.type === 'PRECACHE_DONE') onDone && onDone(d.total);
-    else if (d.type === 'CACHE_CLEARED') onDone && onDone(0, 'cleared');
   };
   navigator.serviceWorker.controller.postMessage({ type: 'PRECACHE', urls });
 }
 
-// ---- Offline panel (cache info + clear) ----
+// Remove specific URLs from SW cache.
+function deleteUrlsFromCache(urls, onDone) {
+  if (!('caches' in window)) { onDone && onDone(); return; }
+  caches.open('flight-sim-tiles-v1').then(function(cache) {
+    Promise.all(urls.map(function(u) { return cache.delete(u); })).then(function() { onDone && onDone(); });
+  });
+}
+
+// ---- Saved-areas registry (localStorage) ----
+const SAVED_AREAS_KEY = 'flight-sim-offline-areas';
+function getSavedAreas() {
+  try { return JSON.parse(localStorage.getItem(SAVED_AREAS_KEY) || '[]'); } catch(e) { return []; }
+}
+function putSavedArea(area) {
+  const list = getSavedAreas().filter(function(a) { return a.id !== area.id; });
+  list.push(area);
+  try { localStorage.setItem(SAVED_AREAS_KEY, JSON.stringify(list)); } catch(e) {}
+}
+function removeSavedArea(id) {
+  const list = getSavedAreas().filter(function(a) { return a.id !== id; });
+  try { localStorage.setItem(SAVED_AREAS_KEY, JSON.stringify(list)); } catch(e) {}
+}
+// Build tile URLs from a saved bbox record.
+function urlsForSavedArea(area) {
+  return offlineTileUrlsForBbox(area.minLat, area.maxLat, area.minLon, area.maxLon, area.zooms || [11,12,13]);
+}
+
+// Build tile URLs for a bounding box (lat/lon min/max).
+function offlineTileUrlsForBbox(minLat, maxLat, minLon, maxLon, imgZooms) {
+  const urls = [];
+  for (let iz = 0; iz < imgZooms.length; iz++) {
+    const z = imgZooms[iz];
+    const n = Math.pow(2, z);
+    const txMin = Math.floor(lonToTileXf(minLon, z));
+    const txMax = Math.floor(lonToTileXf(maxLon, z));
+    const tyMin = Math.floor(latToTileYf(maxLat, z)); // lat flipped in tile coords
+    const tyMax = Math.floor(latToTileYf(minLat, z));
+    for (let tx = txMin; tx <= txMax; tx++) {
+      for (let ty = tyMin; ty <= tyMax; ty++) {
+        if (ty < 0 || ty >= n) continue;
+        const wx = ((tx % n) + n) % n;
+        urls.push('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + ty + '/' + wx);
+      }
+    }
+  }
+  // Elevation (zoom 12)
+  const ez = 12, en = Math.pow(2, ez);
+  const etxMin = Math.floor(lonToTileXf(minLon, ez));
+  const etxMax = Math.floor(lonToTileXf(maxLon, ez));
+  const etyMin = Math.floor(latToTileYf(maxLat, ez));
+  const etyMax = Math.floor(latToTileYf(minLat, ez));
+  for (let tx = etxMin; tx <= etxMax; tx++) {
+    for (let ty = etyMin; ty <= etyMax; ty++) {
+      if (ty < 0 || ty >= en) continue;
+      const wx = ((tx % en) + en) % en;
+      urls.push('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + ez + '/' + wx + '/' + ty + '.png');
+    }
+  }
+  return urls;
+}
+
+// ---- Offline panel ----
 const _oflPanel = document.getElementById('offline-panel');
 const _oflToggle = document.getElementById('offline-toggle');
 const _oflIndicator = document.getElementById('offline-indicator');
-const _oflClearBtn = document.getElementById('ofl-clear-btn');
 const _oflCloseBtn = document.getElementById('ofl-close-btn');
 const _oflOpenMapBtn = document.getElementById('ofl-open-map-btn');
-const _oflCached = document.getElementById('ofl-cached');
 const _oflStatus = document.getElementById('ofl-status');
+const _oflSavedList = document.getElementById('ofl-saved-list');
+const _oflEmptyMsg = document.getElementById('ofl-empty-msg');
 
-function refreshCacheCount() {
-  if (!('caches' in window)) return;
-  caches.open('flight-sim-tiles-v1').then(cache =>
-    cache.keys().then(keys => { if (_oflCached) _oflCached.textContent = keys.length; })
-  );
+function renderSavedAreas() {
+  if (!_oflSavedList) return;
+  const areas = getSavedAreas();
+  _oflSavedList.innerHTML = '';
+  if (_oflEmptyMsg) _oflEmptyMsg.style.display = areas.length ? 'none' : 'block';
+  areas.forEach(function(area) {
+    const item = document.createElement('div');
+    item.className = 'ofl-saved-item';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'ofl-saved-name';
+    nameEl.textContent = area.name || 'Unnamed';
+    const infoEl = document.createElement('div');
+    infoEl.className = 'ofl-saved-info';
+    infoEl.textContent = (area.tileCount || '?') + ' tiles';
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ofl-saved-del';
+    delBtn.textContent = '✕';
+    delBtn.title = 'Delete ' + (area.name || 'this area');
+    delBtn.addEventListener('click', function() {
+      delBtn.disabled = true;
+      delBtn.textContent = '…';
+      const urls = urlsForSavedArea(area);
+      deleteUrlsFromCache(urls, function() {
+        removeSavedArea(area.id);
+        renderSavedAreas();
+        if (_oflStatus) { _oflStatus.textContent = '"' + (area.name || 'Area') + '" deleted'; setTimeout(function(){ if(_oflStatus) _oflStatus.textContent=''; }, 2500); }
+      });
+    });
+    item.appendChild(nameEl);
+    item.appendChild(infoEl);
+    item.appendChild(delBtn);
+    _oflSavedList.appendChild(item);
+  });
 }
 
 function updateOfflineIndicator() {
   if (_oflIndicator) _oflIndicator.style.display = navigator.onLine ? 'none' : 'block';
-  if (_oflToggle) _oflToggle.style.display = 'block'; // always show
+  if (_oflToggle) _oflToggle.style.display = 'block';
 }
 window.addEventListener('online', updateOfflineIndicator);
 window.addEventListener('offline', updateOfflineIndicator);
@@ -946,7 +1050,7 @@ if (_oflToggle) _oflToggle.addEventListener('click', function() {
   if (!_oflPanel) return;
   const open = _oflPanel.style.display === 'flex';
   _oflPanel.style.display = open ? 'none' : 'flex';
-  if (!open) refreshCacheCount();
+  if (!open) renderSavedAreas();
 });
 
 if (_oflCloseBtn) _oflCloseBtn.addEventListener('click', function() {
@@ -955,44 +1059,84 @@ if (_oflCloseBtn) _oflCloseBtn.addEventListener('click', function() {
 
 if (_oflOpenMapBtn) _oflOpenMapBtn.addEventListener('click', function() {
   if (_oflPanel) _oflPanel.style.display = 'none';
-  // Open the nav map (reuse existing function, called after a short delay to let panel close)
-  setTimeout(function() { openNavPickerForDownload(); }, 80);
+  setTimeout(openNavPickerForDownload, 80);
 });
 
 // ---- Download map from start menu ----
 const _smDownloadMapBtn = document.getElementById('sm-download-map-btn');
-if (_smDownloadMapBtn) _smDownloadMapBtn.addEventListener('click', function() {
-  openNavPickerForDownload();
-});
+if (_smDownloadMapBtn) _smDownloadMapBtn.addEventListener('click', openNavPickerForDownload);
 
-// Open nav map in download mode (hide crosshair, hide fly buttons, show only save area)
+// ---- Rectangle selection state (used in download mode) ----
+let nmDownloadMode = false;
+let nmSelectStart = null; // {x,y} canvas pixels at drag start
+let nmSelectEnd   = null; // {x,y} canvas pixels at drag end
+let nmSelectRect  = null; // {minLat,maxLat,minLon,maxLon} finalised on pointerup
+
+// Convert canvas pixel → lat/lon using current nmView
+function nmPixelToLatLon(px, py) {
+  const cv = document.getElementById('nm-canvas');
+  if (!cv) return { lat: nmView.lat, lon: nmView.lon };
+  const cw = cv.width, ch = cv.height, z = nmView.zoom;
+  const cgx = lon2tileX(nmView.lon, z) * 256, cgy = lat2tileY(nmView.lat, z) * 256;
+  const wx = cgx - cw / 2 + px, wy = cgy - ch / 2 + py;
+  return { lat: tileY2lat(wy / 256, z), lon: tileX2lon(wx / 256, z) };
+}
+// tileX/Y → geo (inverse of lon2tileX / lat2tileY used in nav map)
+function tileX2lon(x, z) { return x / Math.pow(2, z) * 360 - 180; }
+function tileY2lat(y, z) { const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z); return Math.atan(Math.sinh(n)) * 180 / Math.PI; }
+
+// Draw the selection rectangle on the nav-map canvas (called from drawNavMap).
+function nmDrawSelectRect(ctx, cw, ch) {
+  if (!nmDownloadMode || !nmSelectStart) return;
+  const end = nmSelectEnd || nmSelectStart;
+  const x0 = Math.min(nmSelectStart.x, end.x), y0 = Math.min(nmSelectStart.y, end.y);
+  const x1 = Math.max(nmSelectStart.x, end.x), y1 = Math.max(nmSelectStart.y, end.y);
+  ctx.save();
+  ctx.strokeStyle = '#ffe066';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  ctx.fillStyle = 'rgba(255,200,0,0.08)';
+  ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// Open nav map in download mode
 function openNavPickerForDownload() {
   const ov = document.getElementById('nav-map'); if (!ov) return;
-  const cross = document.getElementById('nm-cross');
-  const pin = document.getElementById('nm-pin');
-  const btnResume = document.getElementById('nm-resume');
-  const btnFly = document.getElementById('nm-fly');
-  const btnJustFly = document.getElementById('nm-justfly');
-  const btnSave = document.getElementById('nm-save-area');
-  const title = document.getElementById('nm-title');
+  // Toggle UI for download mode
+  const elems = {
+    cross: document.getElementById('nm-cross'),
+    pin: document.getElementById('nm-pin'),
+    resume: document.getElementById('nm-resume'),
+    fly: document.getElementById('nm-fly'),
+    justfly: document.getElementById('nm-justfly'),
+    save: document.getElementById('nm-save-area'),
+    title: document.getElementById('nm-title'),
+    hint: document.getElementById('nm-hint'),
+    dlHint: document.getElementById('nm-dl-hint'),
+    info: document.getElementById('nm-info'),
+    search: document.getElementById('nm-search'),
+  };
+  if (elems.resume) elems.resume.style.display = 'none';
+  if (elems.fly) elems.fly.style.display = 'none';
+  if (elems.justfly) elems.justfly.style.display = 'none';
+  if (elems.save) elems.save.style.display = 'block';
+  if (elems.cross) elems.cross.style.display = 'none';
+  if (elems.pin) elems.pin.style.display = 'none';
+  if (elems.hint) elems.hint.style.display = 'none';
+  if (elems.dlHint) elems.dlHint.style.display = 'block';
+  if (elems.search) elems.search.style.display = 'none';
+  if (elems.info) elems.info.style.display = 'none';
+  if (elems.title) elems.title.textContent = 'DRAW SELECTION BOX';
 
-  // Hide fly/resume buttons, show save area only
-  if (btnResume) btnResume.style.display = 'none';
-  if (btnFly) btnFly.style.display = 'none';
-  if (btnJustFly) btnJustFly.style.display = 'none';
-  if (btnSave) btnSave.style.display = 'block';
-
-  // Hide crosshair/pin (confusing for save mode)
-  if (cross) cross.style.display = 'none';
-  if (pin) pin.style.display = 'none';
-  if (title) title.textContent = 'SELECT AREA & SAVE';
-
-  // Initialize nav picker state
+  nmDownloadMode = true;
+  nmSelectStart = null; nmSelectEnd = null; nmSelectRect = null;
   initNavPicker();
   navPickerOpen = true;
   ov.style.display = 'block';
-  document.body.style.cursor = 'default';
-  // Use aircraft position if in flight, otherwise center on Israel as default
+  document.body.style.cursor = 'crosshair';
   const centerLat = (state && state.lat) ? state.lat : 31.5;
   const centerLon = (state && state.lon) ? state.lon : 35.0;
   nmView.lat = centerLat; nmView.lon = centerLon; nmView.zoom = 9;
@@ -1000,41 +1144,106 @@ function openNavPickerForDownload() {
   drawNavMap();
 }
 
-if (_oflClearBtn) _oflClearBtn.addEventListener('click', function() {
-  if (!_sw || !navigator.serviceWorker.controller) return;
-  if (_oflStatus) _oflStatus.textContent = 'Clearing…';
-  navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
-  navigator.serviceWorker.onmessage = function(ev) {
-    if (ev.data && ev.data.type === 'CACHE_CLEARED') {
-      if (_oflStatus) _oflStatus.textContent = 'Cache cleared';
-      if (_oflCached) _oflCached.textContent = '0';
-    }
-  };
+// ---- Override nav map pointer events in download mode ----
+// We patch into the draw cycle: inject rectangle drawing after drawNavMap.
+const _origDrawNavMap_ref = { fn: null }; // set after drawNavMap is defined (below, lazy)
+// Intercept pointer events on nm-canvas for rectangle drawing.
+// We attach a capturing listener so it runs before the nav-map's own handlers.
+document.addEventListener('DOMContentLoaded', function() {
+  const cv = document.getElementById('nm-canvas'); if (!cv) return;
+  // pointerdown — start drawing
+  cv.addEventListener('pointerdown', function(e) {
+    if (!nmDownloadMode) return;
+    e.stopImmediatePropagation();
+    nmSelectStart = { x: e.offsetX, y: e.offsetY };
+    nmSelectEnd = null; nmSelectRect = null;
+  }, true);
+  // pointermove — extend box
+  cv.addEventListener('pointermove', function(e) {
+    if (!nmDownloadMode || !nmSelectStart) return;
+    e.stopImmediatePropagation();
+    nmSelectEnd = { x: e.offsetX, y: e.offsetY };
+    drawNavMap();
+  }, true);
+  // pointerup — finalise box
+  cv.addEventListener('pointerup', function(e) {
+    if (!nmDownloadMode || !nmSelectStart) return;
+    e.stopImmediatePropagation();
+    nmSelectEnd = { x: e.offsetX, y: e.offsetY };
+    // Convert to lat/lon bbox
+    const a = nmPixelToLatLon(nmSelectStart.x, nmSelectStart.y);
+    const b = nmPixelToLatLon(nmSelectEnd.x, nmSelectEnd.y);
+    nmSelectRect = {
+      minLat: Math.min(a.lat, b.lat), maxLat: Math.max(a.lat, b.lat),
+      minLon: Math.min(a.lon, b.lon), maxLon: Math.max(a.lon, b.lon)
+    };
+    // Only show save if box is big enough
+    const saveBtn = document.getElementById('nm-save-area');
+    if (saveBtn) saveBtn.style.display = Math.abs(nmSelectEnd.x - nmSelectStart.x) > 10 ? 'block' : 'none';
+    drawNavMap();
+  }, true);
 });
 
-// ---- Nav map "SAVE AREA" button ----
+// ---- Nav map "SAVE AREA" button + name dialog ----
 (function() {
-  const saveBtn = document.getElementById('nm-save-area');
-  const saveOverlay = document.getElementById('nm-save-overlay');
-  const saveBar = document.getElementById('nm-save-bar');
-  const saveStatus = document.getElementById('nm-save-status');
-  const saveDismiss = document.getElementById('nm-save-dismiss');
+  const saveBtn       = document.getElementById('nm-save-area');
+  const saveOverlay   = document.getElementById('nm-save-overlay');
+  const saveTitle     = document.getElementById('nm-save-overlay-title');
+  const nameRow       = document.getElementById('nm-save-name-row');
+  const nameInput     = document.getElementById('nm-save-name-input');
+  const confirmBtn    = document.getElementById('nm-save-confirm-btn');
+  const cancelNameBtn = document.getElementById('nm-save-cancel-btn');
+  const barWrap       = document.getElementById('nm-save-bar-wrap');
+  const saveBar       = document.getElementById('nm-save-bar');
+  const saveStatus    = document.getElementById('nm-save-status');
+  const saveDismiss   = document.getElementById('nm-save-dismiss');
+
   if (!saveBtn) return;
 
+  // Step 1: show name dialog
   saveBtn.addEventListener('click', function() {
-    // nmView is the nav map viewport state — defined later in the file but accessible at call time.
-    if (typeof nmView === 'undefined') return;
-    const lat = nmView.lat, lon = nmView.lon, z = nmView.zoom;
-    // Calculate ring: cover at least the visible viewport (assume ~1024px wide at 256px/tile)
-    const ring = Math.max(8, Math.ceil(window.innerWidth / 256 / 2) + 4);
-    // Imagery at current zoom + one coarser + one finer (if sensible)
-    const zooms = [Math.max(9, z - 1), z, Math.min(15, z + 1)].filter((v, i, a) => a.indexOf(v) === i);
-    const urls = offlineTileUrlsForArea(lat, lon, ring, zooms);
-    if (saveOverlay) { saveOverlay.style.display = 'flex'; }
+    if (!nmSelectRect && nmDownloadMode) { return; } // no box drawn yet
+    if (saveOverlay) saveOverlay.style.display = 'flex';
+    if (saveTitle) saveTitle.textContent = 'NAME THIS AREA';
+    if (nameRow) nameRow.style.display = 'flex';
+    if (barWrap) barWrap.style.display = 'none';
+    if (saveStatus) saveStatus.textContent = '';
+    if (saveDismiss) saveDismiss.style.display = 'none';
+    if (nameInput) { nameInput.value = ''; setTimeout(function(){ nameInput.focus(); }, 50); }
+  });
+
+  // Cancel name
+  if (cancelNameBtn) cancelNameBtn.addEventListener('click', function() {
+    if (saveOverlay) saveOverlay.style.display = 'none';
+  });
+
+  // Step 2: confirm name → download
+  function startDownload() {
+    const name = (nameInput && nameInput.value.trim()) || ('Area ' + new Date().toLocaleString());
+    const z = nmView.zoom;
+    const zooms = [Math.max(9, z - 1), z, Math.min(14, z + 1)].filter(function(v,i,a){ return a.indexOf(v)===i; });
+
+    let bbox;
+    if (nmSelectRect) {
+      bbox = nmSelectRect;
+    } else {
+      // Fallback: viewport ring
+      const cv = document.getElementById('nm-canvas');
+      const cw = cv ? cv.width : window.innerWidth, ch = cv ? cv.height : window.innerHeight;
+      const tl = nmPixelToLatLon(0, 0), br = nmPixelToLatLon(cw, ch);
+      bbox = { minLat: Math.min(tl.lat,br.lat), maxLat: Math.max(tl.lat,br.lat),
+               minLon: Math.min(tl.lon,br.lon), maxLon: Math.max(tl.lon,br.lon) };
+    }
+    const urls = offlineTileUrlsForBbox(bbox.minLat, bbox.maxLat, bbox.minLon, bbox.maxLon, zooms);
+
+    if (saveTitle) saveTitle.textContent = 'DOWNLOADING…';
+    if (nameRow) nameRow.style.display = 'none';
+    if (barWrap) barWrap.style.display = 'block';
     if (saveBar) saveBar.style.width = '0%';
-    if (saveStatus) saveStatus.textContent = 'Preparing ' + urls.length + ' tiles…';
+    if (saveStatus) saveStatus.textContent = '0 / ' + urls.length;
     if (saveDismiss) saveDismiss.style.display = 'none';
     saveBtn.disabled = true;
+
     precacheUrls(urls,
       function(done, total) {
         const pct = Math.round(done / total * 100);
@@ -1042,21 +1251,41 @@ if (_oflClearBtn) _oflClearBtn.addEventListener('click', function() {
         if (saveStatus) saveStatus.textContent = done + ' / ' + total + ' (' + pct + '%)';
       },
       function(total, err) {
-        if (err) {
-          if (saveStatus) saveStatus.textContent = typeof err === 'string' ? err : 'Error';
-        } else {
-          if (saveBar) saveBar.style.width = '100%';
-          if (saveStatus) saveStatus.textContent = 'Saved — ' + total + ' tiles ready offline';
-          refreshCacheCount();
-        }
-        if (saveDismiss) saveDismiss.style.display = 'block';
         saveBtn.disabled = false;
+        if (err) {
+          if (saveStatus) saveStatus.textContent = String(err);
+          if (saveDismiss) saveDismiss.style.display = 'block';
+          return;
+        }
+        // Save area record
+        const area = {
+          id: Date.now().toString(),
+          name: name,
+          bbox: bbox,
+          minLat: bbox.minLat, maxLat: bbox.maxLat,
+          minLon: bbox.minLon, maxLon: bbox.maxLon,
+          zooms: zooms,
+          tileCount: total,
+          savedAt: new Date().toISOString()
+        };
+        putSavedArea(area);
+        if (saveBar) saveBar.style.width = '100%';
+        if (saveStatus) saveStatus.textContent = 'Done — ' + total + ' tiles saved';
+        if (saveTitle) saveTitle.textContent = '"' + name + '" SAVED ✓';
+        if (saveDismiss) saveDismiss.style.display = 'block';
       }
     );
+  }
+
+  if (confirmBtn) confirmBtn.addEventListener('click', startDownload);
+  if (nameInput) nameInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); startDownload(); }
   });
 
   if (saveDismiss) saveDismiss.addEventListener('click', function() {
     if (saveOverlay) saveOverlay.style.display = 'none';
+    // Close the nav map and return to previous screen
+    closeNavPicker();
   });
 }());
 
@@ -9232,8 +9461,10 @@ function drawNavMap() {
     ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(8, 9); ctx.lineTo(0, 4); ctx.lineTo(-8, 9); ctx.closePath();
     ctx.fill(); ctx.stroke(); ctx.restore();
   }
-  navPickerUpdateInfo();
+  if (!nmDownloadMode) navPickerUpdateInfo();
   nmFetchAirports();
+  // Draw selection rectangle on top (download mode)
+  nmDrawSelectRect(ctx, cw, ch);
 }
 
 // Precise (async) elevation/water for the selected point, debounced while panning.
@@ -9283,8 +9514,10 @@ function openNavPicker() {
 }
 function closeNavPicker() {
   navPickerOpen = false;
+  nmDownloadMode = false;
+  nmSelectStart = null; nmSelectEnd = null; nmSelectRect = null;
   const ov = document.getElementById('nav-map'); if (ov) ov.style.display = 'none';
-  // Restore nav buttons and crosshair (in case they were hidden for download mode)
+  // Restore nav buttons and crosshair
   const cross = document.getElementById('nm-cross');
   const pin = document.getElementById('nm-pin');
   const btnResume = document.getElementById('nm-resume');
@@ -9292,6 +9525,10 @@ function closeNavPicker() {
   const btnJustFly = document.getElementById('nm-justfly');
   const btnSave = document.getElementById('nm-save-area');
   const title = document.getElementById('nm-title');
+  const hint = document.getElementById('nm-hint');
+  const dlHint = document.getElementById('nm-dl-hint');
+  const info = document.getElementById('nm-info');
+  const search = document.getElementById('nm-search');
   if (cross) cross.style.display = 'block';
   if (pin) pin.style.display = 'block';
   if (btnResume) btnResume.style.display = chosen ? 'block' : 'none';
@@ -9299,6 +9536,10 @@ function closeNavPicker() {
   if (btnJustFly) btnJustFly.style.display = chosen ? 'block' : 'none';
   if (btnSave) btnSave.style.display = 'block';
   if (title) title.textContent = 'SELECT DESTINATION';
+  if (hint) hint.style.display = 'block';
+  if (dlHint) dlHint.style.display = 'none';
+  if (info) info.style.display = 'block';
+  if (search) search.style.display = 'flex';
   document.body.style.cursor = 'none';
   lastTime = performance.now();
   try { window.focus(); } catch (e) {}
