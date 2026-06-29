@@ -154,10 +154,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #nm-save-overlay .nso-bar-wrap{width:min(340px,80%);height:6px;background:rgba(255,200,0,0.15);border-radius:3px;overflow:hidden}
 #nm-save-overlay .nso-bar{height:100%;width:0%;background:#ffe066;border-radius:3px;transition:width 0.2s}
 #nm-save-overlay .nso-status{font-size:11px;letter-spacing:1px;color:rgba(255,200,0,0.8)}
-#nm-save-overlay .nso-name-row{display:flex;gap:8px;width:min(340px,80%);align-items:center}
+#nm-save-overlay .nso-name-row{display:flex;gap:8px;width:min(400px,88%);align-items:center}
 #nm-save-overlay .nso-name-row input{flex:1;background:rgba(255,200,0,0.08);border:1px solid rgba(255,200,0,0.45);color:#ffe066;font-family:'JetBrains Mono',monospace;font-size:12px;padding:7px 10px;border-radius:4px;outline:none}
 #nm-save-overlay .nso-name-row input::placeholder{color:rgba(255,200,0,0.35)}
 #nm-save-overlay .nso-name-row input:focus{border-color:#ffe066}
+/* Download step rows */
+.nm-dl-step-row{display:grid;grid-template-columns:22px 1fr auto;grid-template-rows:auto 4px;gap:2px 8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,200,0,0.08)}
+.nm-dl-step-row:last-child{border-bottom:none}
+.nm-dl-step-icon{font-size:13px;line-height:1;text-align:center;grid-row:1}
+.nm-dl-step-label{font-size:10px;letter-spacing:1px;color:rgba(255,200,0,0.7);grid-row:1}
+.nm-dl-step-detail{font-size:9px;letter-spacing:1px;color:rgba(255,200,0,0.45);text-align:right;white-space:nowrap;grid-row:1}
+.nm-dl-step-subbar{grid-column:2/-1;grid-row:2;height:3px;background:rgba(255,200,0,0.1);border-radius:2px;overflow:hidden}
+.nm-dl-step-fill{height:100%;width:0%;background:#ffe066;border-radius:2px;transition:width 0.25s}
 /* Saved areas list in offline panel */
 #ofl-saved-list{display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;width:100%}
 .ofl-saved-item{display:flex;align-items:center;gap:8px;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.18);border-radius:4px;padding:5px 8px}
@@ -471,15 +479,59 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div id="nm-hint">DRAG / ARROWS = PAN &nbsp;·&nbsp; WHEEL / ± = ZOOM &nbsp;·&nbsp; CLICK = SET &nbsp;·&nbsp; 🎮 L-STICK PAN · RT/LT ZOOM · A FLY · B CANCEL</div>
   <div id="nm-dl-hint" style="display:none;position:absolute;bottom:2px;left:0;right:0;z-index:4;text-align:center;font-size:9px;letter-spacing:1px;color:rgba(255,200,0,0.6);pointer-events:none;padding:0 8px">DRAG TO DRAW SELECTION BOX &nbsp;·&nbsp; SCROLL TO ZOOM &nbsp;·&nbsp; ✕ CANCEL</div>
   <div id="nm-save-overlay">
-    <div class="nso-title" id="nm-save-overlay-title">NAME THIS AREA</div>
-    <div class="nso-name-row" id="nm-save-name-row">
-      <input id="nm-save-name-input" type="text" placeholder="e.g. Israel North, Alps…" maxlength="40" autocomplete="off" spellcheck="false" />
-      <button class="ofl-btn" id="nm-save-confirm-btn" style="color:#ffe066;border-color:rgba(255,200,0,0.5)">DOWNLOAD</button>
-      <button class="ofl-btn" id="nm-save-cancel-btn">CANCEL</button>
+    <!-- Step 1: name -->
+    <div id="nm-dl-step-name">
+      <div class="nso-title">NAME THIS AREA</div>
+      <div class="nso-name-row">
+        <input id="nm-save-name-input" type="text" placeholder="e.g. Israel North, Alps…" maxlength="40" autocomplete="off" spellcheck="false" />
+        <button class="ofl-btn" id="nm-save-confirm-btn" style="color:#ffe066;border-color:rgba(255,200,0,0.5)">DOWNLOAD</button>
+        <button class="ofl-btn" id="nm-save-cancel-btn">CANCEL</button>
+      </div>
     </div>
-    <div class="nso-bar-wrap" id="nm-save-bar-wrap" style="display:none"><div class="nso-bar" id="nm-save-bar"></div></div>
-    <div class="nso-status" id="nm-save-status"></div>
-    <button class="ofl-btn" id="nm-save-dismiss" style="margin-top:6px;display:none">DONE ✓</button>
+    <!-- Step 2: progress -->
+    <div id="nm-dl-step-progress" style="display:none;flex-direction:column;align-items:center;gap:10px;width:min(480px,90%)">
+      <div class="nso-title" id="nm-dl-area-name"></div>
+      <!-- Overall bar -->
+      <div style="width:100%">
+        <div style="display:flex;justify-content:space-between;font-size:9px;letter-spacing:1px;color:rgba(255,200,0,0.55);margin-bottom:4px">
+          <span>OVERALL</span><span id="nm-dl-overall-pct">0%</span>
+        </div>
+        <div class="nso-bar-wrap" style="height:8px"><div class="nso-bar" id="nm-dl-overall-bar" style="transition:width 0.3s"></div></div>
+      </div>
+      <!-- Step list -->
+      <div id="nm-dl-steps" style="width:100%;display:flex;flex-direction:column;gap:6px">
+        <div class="nm-dl-step-row" id="nm-dlr-tiles">
+          <div class="nm-dl-step-icon" id="nm-dli-tiles">⏳</div>
+          <div class="nm-dl-step-label">Satellite imagery &amp; terrain</div>
+          <div class="nm-dl-step-detail" id="nm-dld-tiles">—</div>
+          <div class="nm-dl-step-subbar"><div class="nm-dl-step-fill" id="nm-dlf-tiles"></div></div>
+        </div>
+        <div class="nm-dl-step-row" id="nm-dlr-airports">
+          <div class="nm-dl-step-icon" id="nm-dli-airports">⏸</div>
+          <div class="nm-dl-step-label">Airports &amp; runways</div>
+          <div class="nm-dl-step-detail" id="nm-dld-airports">—</div>
+          <div class="nm-dl-step-subbar"><div class="nm-dl-step-fill" id="nm-dlf-airports"></div></div>
+        </div>
+        <div class="nm-dl-step-row" id="nm-dlr-weather">
+          <div class="nm-dl-step-icon" id="nm-dli-weather">⏸</div>
+          <div class="nm-dl-step-label">Weather forecast (7 days)</div>
+          <div class="nm-dl-step-detail" id="nm-dld-weather">—</div>
+          <div class="nm-dl-step-subbar"><div class="nm-dl-step-fill" id="nm-dlf-weather"></div></div>
+        </div>
+        <div class="nm-dl-step-row" id="nm-dlr-traffic">
+          <div class="nm-dl-step-icon" id="nm-dli-traffic">⏸</div>
+          <div class="nm-dl-step-label">Live traffic snapshot</div>
+          <div class="nm-dl-step-detail" id="nm-dld-traffic">—</div>
+          <div class="nm-dl-step-subbar"><div class="nm-dl-step-fill" id="nm-dlf-traffic"></div></div>
+        </div>
+      </div>
+    </div>
+    <!-- Step 3: done -->
+    <div id="nm-dl-step-done" style="display:none;flex-direction:column;align-items:center;gap:10px">
+      <div class="nso-title" id="nm-dl-done-title">SAVED ✓</div>
+      <div class="nso-status" id="nm-dl-done-summary"></div>
+      <button class="ofl-btn" id="nm-save-dismiss" style="color:#ffe066;border-color:rgba(255,200,0,0.5)">CLOSE</button>
+    </div>
   </div>
 </div>
 
@@ -1198,17 +1250,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ---- Nav map "SAVE AREA" button + name dialog ----
 (function() {
-  const saveBtn       = document.getElementById('nm-save-area');
-  const saveOverlay   = document.getElementById('nm-save-overlay');
-  const saveTitle     = document.getElementById('nm-save-overlay-title');
-  const nameRow       = document.getElementById('nm-save-name-row');
-  const nameInput     = document.getElementById('nm-save-name-input');
+  const saveBtn     = document.getElementById('nm-save-area');
+  const saveOverlay = document.getElementById('nm-save-overlay');
+  const nameInput   = document.getElementById('nm-save-name-input');
   const confirmBtn    = document.getElementById('nm-save-confirm-btn');
-  const cancelNameBtn = document.getElementById('nm-save-cancel-btn');
-  const barWrap       = document.getElementById('nm-save-bar-wrap');
-  const saveBar       = document.getElementById('nm-save-bar');
-  const saveStatus    = document.getElementById('nm-save-status');
-  const saveDismiss   = document.getElementById('nm-save-dismiss');
 
   if (!saveBtn) return;
 
@@ -1216,28 +1261,24 @@ document.addEventListener('DOMContentLoaded', function() {
   saveBtn.addEventListener('click', function() {
     if (!nmSelectRect && nmDownloadMode) { return; } // no box drawn yet
     if (saveOverlay) saveOverlay.style.display = 'flex';
-    if (saveTitle) saveTitle.textContent = 'NAME THIS AREA';
-    if (nameRow) nameRow.style.display = 'flex';
-    if (barWrap) barWrap.style.display = 'none';
-    if (saveStatus) saveStatus.textContent = '';
-    if (saveDismiss) saveDismiss.style.display = 'none';
+    const stepName0 = document.getElementById('nm-dl-step-name');
+    const stepProg0 = document.getElementById('nm-dl-step-progress');
+    const stepDone0 = document.getElementById('nm-dl-step-done');
+    if (stepName0)  { stepName0.style.display  = 'block'; }
+    if (stepProg0)  { stepProg0.style.display  = 'none';  }
+    if (stepDone0)  { stepDone0.style.display  = 'none';  }
     if (nameInput) { nameInput.value = ''; setTimeout(function(){ nameInput.focus(); }, 50); }
-  });
-
-  // Cancel name
-  if (cancelNameBtn) cancelNameBtn.addEventListener('click', function() {
-    if (saveOverlay) saveOverlay.style.display = 'none';
   });
 
   // Step 2: confirm name → download
   // Pre-fetch airports for a bbox and store in localStorage via existing cache.
   function prefetchAirports(bbox, onDone) {
     const key = [bbox.minLat, bbox.minLon, bbox.maxLat, bbox.maxLon].map(function(v){ return v.toFixed(3); }).join(',');
-    if (airportCacheLoad && airportCacheLoad(key)) { onDone(); return; } // already cached
-    if (typeof fetchAirportsForBbox !== 'function') { onDone(); return; }
+    if (airportCacheLoad && airportCacheLoad(key)) { const cached = airportCacheLoad(key); onDone(cached ? cached.length : 0); return; }
+    if (typeof fetchAirportsForBbox !== 'function') { onDone(0); return; }
     fetchAirportsForBbox(bbox.minLat, bbox.minLon, bbox.maxLat, bbox.maxLon, function(airports) {
       if (airports && airports.length && typeof airportCacheSave === 'function') airportCacheSave(key, airports);
-      onDone();
+      onDone(airports ? airports.length : 0);
     });
   }
 
@@ -1258,8 +1299,8 @@ document.addEventListener('DOMContentLoaded', function() {
         store[areaId] = { lat: +lat, lon: +lon, data: d, savedAt: Date.now() };
         localStorage.setItem(OFFLINE_WX_KEY, JSON.stringify(store));
       } catch(e){}
-      onDone();
-    }).catch(function(){ onDone(); });
+      onDone(true);
+    }).catch(function(){ onDone(false); });
   }
 
   // Snapshot current live traffic and save to localStorage.
@@ -1284,10 +1325,40 @@ document.addEventListener('DOMContentLoaded', function() {
             store[areaId] = { ac: ac, bbox: bbox, savedAt: Date.now() };
             localStorage.setItem(OFFLINE_TRAFFIC_KEY, JSON.stringify(store));
           } catch(e){}
-          if (!done) onDone(); done = true;
+          if (!done) onDone(ac.length); done = true;
         }).catch(function(){ tryNext(i + 1); });
     }
-    if (sources.length) tryNext(0); else onDone();
+    if (sources.length) tryNext(0); else onDone(0);
+  }
+
+  // UI element refs for the new progress screen
+  const stepName     = document.getElementById('nm-dl-step-name');
+  const stepProgress = document.getElementById('nm-dl-step-progress');
+  const stepDone     = document.getElementById('nm-dl-step-done');
+  const dlAreaName   = document.getElementById('nm-dl-area-name');
+  const overallBar   = document.getElementById('nm-dl-overall-bar');
+  const overallPct   = document.getElementById('nm-dl-overall-pct');
+  const doneSummary  = document.getElementById('nm-dl-done-summary');
+  const doneTitle    = document.getElementById('nm-dl-done-title');
+
+  // Helper: update one step row
+  function setStep(id, icon, detail, fillPct) {
+    const iconEl   = document.getElementById('nm-dli-' + id);
+    const detailEl = document.getElementById('nm-dld-' + id);
+    const fillEl   = document.getElementById('nm-dlf-' + id);
+    if (iconEl)   iconEl.textContent   = icon;
+    if (detailEl) detailEl.textContent = detail;
+    if (fillEl)   fillEl.style.width   = (fillPct || 0) + '%';
+  }
+
+  // Overall progress: tiles are 80% of total weight; airports/weather/traffic 20%
+  function setOverall(tilesDone, tilesTotal, extraDone, extraTotal) {
+    const tileWeight  = 0.80, extraWeight = 0.20;
+    const tileFrac  = tilesTotal  > 0 ? tilesDone  / tilesTotal  : 1;
+    const extraFrac = extraTotal  > 0 ? extraDone  / extraTotal  : 0;
+    const pct = Math.round((tileFrac * tileWeight + extraFrac * extraWeight) * 100);
+    if (overallBar) overallBar.style.width = pct + '%';
+    if (overallPct) overallPct.textContent = pct + '%';
   }
 
   function startDownload() {
@@ -1308,40 +1379,50 @@ document.addEventListener('DOMContentLoaded', function() {
     const urls = offlineTileUrlsForBbox(bbox.minLat, bbox.maxLat, bbox.minLon, bbox.maxLon, zooms);
     const areaId = Date.now().toString();
 
-    if (saveTitle) saveTitle.textContent = 'DOWNLOADING TILES…';
-    if (nameRow) nameRow.style.display = 'none';
-    if (barWrap) barWrap.style.display = 'block';
-    if (saveBar) saveBar.style.width = '0%';
-    if (saveStatus) saveStatus.textContent = '0 / ' + urls.length;
-    if (saveDismiss) saveDismiss.style.display = 'none';
+    // Switch to progress screen
+    if (saveOverlay) saveOverlay.style.display = 'flex';
+    if (stepName)     stepName.style.display     = 'none';
+    if (stepProgress) stepProgress.style.display = 'flex';
+    if (stepDone)     stepDone.style.display     = 'none';
+    if (dlAreaName)   dlAreaName.textContent      = name.toUpperCase();
+    if (overallBar)   overallBar.style.width      = '0%';
+    if (overallPct)   overallPct.textContent      = '0%';
+
+    setStep('tiles',    '⬇', urls.length + ' tiles', 0);
+    setStep('airports', '⏸', 'waiting…', 0);
+    setStep('weather',  '⏸', 'waiting…', 0);
+    setStep('traffic',  '⏸', 'waiting…', 0);
     saveBtn.disabled = true;
 
     precacheUrls(urls,
       function(done, total) {
         const pct = Math.round(done / total * 100);
-        if (saveBar) saveBar.style.width = pct + '%';
-        if (saveStatus) saveStatus.textContent = 'Tiles: ' + done + ' / ' + total + ' (' + pct + '%)';
+        setStep('tiles', '⬇', done + ' / ' + total + ' (' + pct + '%)', pct);
+        setOverall(done, total, 0, 3);
       },
       function(total, err) {
         saveBtn.disabled = false;
         if (err) {
-          if (saveStatus) saveStatus.textContent = String(err);
-          if (saveDismiss) saveDismiss.style.display = 'block';
+          setStep('tiles', '✕', String(err), 0);
+          if (stepProgress) stepProgress.style.display = 'none';
+          if (stepName) stepName.style.display = 'block';
           return;
         }
-        // Phase 2: airports + weather + traffic snapshot (parallel)
-        if (saveTitle) saveTitle.textContent = 'SAVING EXTRA DATA…';
-        if (saveStatus) saveStatus.textContent = 'Airports · Weather · Traffic…';
-        let pending = 3;
-        const extra = { airports: false, weather: false, traffic: false };
-        function phase2tick(which) {
-          extra[which] = true;
-          if (saveStatus) saveStatus.textContent =
-            (extra.airports ? '✓' : '⟳') + ' Airports  ' +
-            (extra.weather  ? '✓' : '⟳') + ' Weather  ' +
-            (extra.traffic  ? '✓' : '⟳') + ' Traffic';
-          if (--pending > 0) return;
-          // All done — save area record
+        setStep('tiles', '✓', total + ' tiles cached', 100);
+        setOverall(total, total, 0, 3);
+
+        // Phase 2: airports + weather + traffic (parallel)
+        setStep('airports', '⬇', 'fetching…', 0);
+        setStep('weather',  '⬇', 'fetching…', 0);
+        setStep('traffic',  '⬇', 'fetching…', 0);
+
+        let extraDone = 0;
+        function extraTick(id, icon, detail) {
+          extraDone++;
+          setStep(id, icon, detail, 100);
+          setOverall(total, total, extraDone, 3);
+          if (extraDone < 3) return;
+          // All done
           const area = {
             id: areaId, name: name,
             bbox: bbox, minLat: bbox.minLat, maxLat: bbox.maxLat,
@@ -1350,14 +1431,24 @@ document.addEventListener('DOMContentLoaded', function() {
             savedAt: new Date().toISOString()
           };
           putSavedArea(area);
-          if (saveBar) saveBar.style.width = '100%';
-          if (saveTitle) saveTitle.textContent = '"' + name + '" SAVED ✓';
-          if (saveStatus) saveStatus.textContent = total + ' tiles · airports · weather · traffic snapshot';
-          if (saveDismiss) saveDismiss.style.display = 'block';
+          if (overallBar) overallBar.style.width = '100%';
+          if (overallPct) overallPct.textContent = '100%';
+          if (stepProgress) stepProgress.style.display = 'none';
+          if (stepDone) stepDone.style.display = 'flex';
+          if (doneTitle) doneTitle.textContent = '"' + name + '" SAVED ✓';
+          if (doneSummary) doneSummary.textContent =
+            total + ' map tiles  ·  airports  ·  7-day weather  ·  traffic snapshot';
         }
-        prefetchAirports(bbox, function(){ phase2tick('airports'); });
-        prefetchWeather(bbox, areaId, function(){ phase2tick('weather'); });
-        snapshotTraffic(bbox, areaId, function(){ phase2tick('traffic'); });
+
+        prefetchAirports(bbox, function(found) {
+          extraTick('airports', '✓', found ? found + ' airports' : 'saved');
+        });
+        prefetchWeather(bbox, areaId, function(ok) {
+          extraTick('weather', ok ? '✓' : '⚠', ok ? '7-day forecast saved' : 'unavailable');
+        });
+        snapshotTraffic(bbox, areaId, function(count) {
+          extraTick('traffic', count > 0 ? '✓' : '⚠', count > 0 ? count + ' aircraft' : 'none in area');
+        });
       }
     );
   }
@@ -1367,9 +1458,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (e.key === 'Enter') { e.preventDefault(); startDownload(); }
   });
 
+  const cancelNameBtn2 = document.getElementById('nm-save-cancel-btn');
+  if (cancelNameBtn2) cancelNameBtn2.addEventListener('click', function() {
+    if (saveOverlay) saveOverlay.style.display = 'none';
+  });
+
+  const saveDismiss = document.getElementById('nm-save-dismiss');
   if (saveDismiss) saveDismiss.addEventListener('click', function() {
     if (saveOverlay) saveOverlay.style.display = 'none';
-    // Close the nav map and return to previous screen
     closeNavPicker();
   });
 }());
