@@ -2,6 +2,10 @@
 const CACHE = 'flight-sim-tiles-v1';
 const TILE_HOSTS = ['services.arcgisonline.com', 's3.amazonaws.com'];
 
+// Take over immediately so updated SW logic (e.g. abort/timeout fixes) applies without a reload.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+
 function isTileRequest(url) {
   try {
     const h = new URL(url).hostname;

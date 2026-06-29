@@ -977,11 +977,38 @@ function precacheUrls(urls, onProgress, onDone) {
     onDone && onDone(0, 'Service worker not ready — reload page');
     return;
   }
+  let finished = false;
+  let lastDone = 0;
+  let watchdog = null;
+  const WATCHDOG_MS = 30000; // if no progress for 30s, assume the rest stalled and finish
+
+  function finish(total, err) {
+    if (finished) return;
+    finished = true;
+    if (watchdog) clearTimeout(watchdog);
+    navigator.serviceWorker.onmessage = null;
+    onDone && onDone(total, err);
+  }
+  function armWatchdog() {
+    if (watchdog) clearTimeout(watchdog);
+    watchdog = setTimeout(function() {
+      // No progress messages for a while — network is stuck on the remaining tiles.
+      // Finish anyway so the rest of the download (airports/weather/traffic) can proceed.
+      finish(lastDone);
+    }, WATCHDOG_MS);
+  }
+
   navigator.serviceWorker.onmessage = function(ev) {
     const d = ev.data;
-    if (d.type === 'PRECACHE_PROGRESS') onProgress && onProgress(d.done, d.total);
-    else if (d.type === 'PRECACHE_DONE') onDone && onDone(d.total);
+    if (d.type === 'PRECACHE_PROGRESS') {
+      lastDone = d.done;
+      onProgress && onProgress(d.done, d.total);
+      armWatchdog();
+    } else if (d.type === 'PRECACHE_DONE') {
+      finish(d.total);
+    }
   };
+  armWatchdog();
   navigator.serviceWorker.controller.postMessage({ type: 'PRECACHE', urls });
 }
 
