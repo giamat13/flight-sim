@@ -661,7 +661,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
         <option value="speed">TOP SPEED</option>
         <option value="heavy">HEAVIEST</option>
         <option value="range">LONGEST RANGE</option>
-        <option value="easy">EASIEST TO FLY</option>
+        <option value="easy">DIFFICULTY ↑</option>
       </select>
       <button id="acs-archive-btn" class="acs-toolbar-btn" style="opacity:0.45;font-size:9px;padding:8px 11px">📦 ARCHIVE</button>
       <button id="acs-custom-btn" class="acs-toolbar-btn">+ CUSTOM</button>
@@ -3198,6 +3198,7 @@ const AIRCRAFT_DEFS = {
     label: 'CLASSIC JET',
     desc: 'Light business jet',
     strengths: 'Nimble and forgiving — perfect for beginners, canyon runs and low-altitude scenic exploration',
+    difficulty: 2,
     archive: true,
     m: 5200,            // mass (kg)
     S: 30,              // wing area (m^2)
@@ -3220,6 +3221,7 @@ const AIRCRAFT_DEFS = {
     label: 'BOEING 737-800',
     desc: 'Narrow-body airliner',
     strengths: 'Heavy and capable — best for long-range cruising and realistic airline-style approaches',
+    difficulty: 3,
     m: 65000,           // kg — typical operating weight (OEW 41,145 / MTOW 70,535)
     S: 125.0,           // m² — reference wing area (boeing.com)
     CL_a: 4.8,          // per rad — swept 25-deg wing, AR=9.5
@@ -3254,6 +3256,7 @@ const AIRCRAFT_DEFS = {
     label: 'AIRBUS A320',
     desc: 'Narrow-body airliner',
     strengths: 'Fly-by-wire precision — excellent stability and fuel efficiency in all weather conditions',
+    difficulty: 3,
     m: 73500,           // kg — MTOW 73,500 (A320-200)
     S: 122.6,           // m² — reference wing area
     CL_a: 4.8,          // per rad — swept ~25-deg wing, similar to 737
@@ -3288,6 +3291,7 @@ const AIRCRAFT_DEFS = {
     label: 'F-16 FIGHTING FALCON',
     desc: 'Air superiority fighter',
     strengths: 'Blazing speed and razor agility — for pilots who demand total performance at the edge of the envelope',
+    difficulty: 7,
     m: 9500,            // kg — F-16C light combat weight (empty 8,570 kg + partial fuel/stores)
     S: 27.87,           // m² — F-16 reference wing area (exact)
     CL_a: 3.6,          // per rad — low-aspect (AR≈3.2) thin cropped-delta wing
@@ -3316,6 +3320,7 @@ const AIRCRAFT_DEFS = {
     label: 'CESSNA 172 SKYHAWK',
     desc: 'Single-engine prop plane',
     strengths: 'Ultra-low and slow — perfect for sightseeing, landmarks and practising short-field landings at treetop height',
+    difficulty: 1,
     m: 1000,           // kg — mid-load (OEW 767 kg, MTOW 1,111 kg per POH)
     S: 16.2,           // m² — POH confirmed (174 sq ft)
     CL_a: 5.7,         // per rad — high-AR (AR≈7.4) flat wing
@@ -3341,6 +3346,7 @@ const AIRCRAFT_DEFS = {
     label: 'BOEING 747-400',
     desc: 'Wide-body jumbo jet',
     strengths: 'Queen of the skies — massive scale, 4-engine endurance and the longest legs of any plane in the sim',
+    difficulty: 5,
     m: 375000,         // kg — typical heavy takeoff weight (MTOW 396,890 kg per Boeing)
     S: 541.2,          // m² — Boeing Aircraft Characteristics document
     CL_a: 5.0,
@@ -3365,6 +3371,7 @@ const AIRCRAFT_DEFS = {
     label: 'CONCORDE',
     desc: 'Supersonic airliner',
     strengths: 'Faster than sound — crosses oceans in 3 hours, cruises at 60,000 ft above weather and far above interception',
+    difficulty: 8,
     m: 130000,         // kg — typical cruise weight (MTOW 187,700 kg)
     S: 358.25,         // m² — ogival delta wing (confirmed multiple sources)
     CL_a: 2.2,         // per rad — slender delta AR≈1.7; vortex lift supplements
@@ -3386,6 +3393,7 @@ const AIRCRAFT_DEFS = {
     label: 'SPITFIRE MK.IX',
     desc: 'WWII supermarine fighter',
     strengths: 'Elliptical wings and Merlin power — tightest sustained turns in the sim, built for low-altitude dogfighting',
+    difficulty: 6,
     m: 3350,           // kg — Mk.IX loaded weight (empty 2,313 kg + fuel + pilot)
     S: 22.48,          // m² — elliptical wing (242 sq ft; Jane's All the World's Aircraft)
     CL_a: 5.5,
@@ -3411,6 +3419,7 @@ const AIRCRAFT_DEFS = {
     label: 'SR-71 BLACKBIRD',
     desc: 'Strategic reconnaissance aircraft',
     strengths: 'World\'s fastest jet — Mach 3+ at 85,000 ft, no missile can catch it and no radar can track it in time',
+    difficulty: 10,
     m: 60000,          // kg — typical mission weight (MTOW ~77,000 kg; takes off lighter, refuels aloft)
     S: 167.2,          // m² — full chined-delta planform (~1,800 sq ft; multiple sources)
     CL_a: 2.8,
@@ -3465,7 +3474,7 @@ function _acSortScore(key, sortType) {
   if (sortType === 'speed')  return Vne;
   if (sortType === 'heavy')  return m;
   if (sortType === 'range')  return (fuelMax / ffMax) * cruiseKts;
-  if (sortType === 'easy')   return -rotKts;
+  if (sortType === 'easy')   return -(d.difficulty || 5);
   return 0;
 }
 
@@ -10582,7 +10591,13 @@ function initAircraftScreen() {
       });
     }
 
-    if (sortType !== 'default') {
+    if (sortType === 'default') {
+      keys.sort(function(a, b) {
+        const ac = a.startsWith('custom_') ? 1 : 0, bc = b.startsWith('custom_') ? 1 : 0;
+        if (ac !== bc) return ac - bc;
+        return (AIRCRAFT_DEFS[a].difficulty || 5) - (AIRCRAFT_DEFS[b].difficulty || 5);
+      });
+    } else {
       keys.sort(function(a, b) { return _acSortScore(b, sortType) - _acSortScore(a, sortType); });
     }
 
