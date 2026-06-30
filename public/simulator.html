@@ -661,7 +661,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
         <option value="speed">TOP SPEED</option>
         <option value="heavy">HEAVIEST</option>
         <option value="range">LONGEST RANGE</option>
-        <option value="easy">DIFFICULTY ↑</option>
       </select>
       <button id="acs-archive-btn" class="acs-toolbar-btn" style="opacity:0.45;font-size:9px;padding:8px 11px">📦 ARCHIVE</button>
       <button id="acs-custom-btn" class="acs-toolbar-btn">+ CUSTOM</button>
@@ -3346,7 +3345,7 @@ const AIRCRAFT_DEFS = {
     label: 'BOEING 747-400',
     desc: 'Wide-body jumbo jet',
     strengths: 'Queen of the skies — massive scale, 4-engine endurance and the longest legs of any plane in the sim',
-    difficulty: 5,
+    difficulty: 6,
     m: 375000,         // kg — typical heavy takeoff weight (MTOW 396,890 kg per Boeing)
     S: 541.2,          // m² — Boeing Aircraft Characteristics document
     CL_a: 5.0,
@@ -3393,7 +3392,7 @@ const AIRCRAFT_DEFS = {
     label: 'SPITFIRE MK.IX',
     desc: 'WWII supermarine fighter',
     strengths: 'Elliptical wings and Merlin power — tightest sustained turns in the sim, built for low-altitude dogfighting',
-    difficulty: 6,
+    difficulty: 4,
     m: 3350,           // kg — Mk.IX loaded weight (empty 2,313 kg + fuel + pilot)
     S: 22.48,          // m² — elliptical wing (242 sq ft; Jane's All the World's Aircraft)
     CL_a: 5.5,
@@ -3474,7 +3473,6 @@ function _acSortScore(key, sortType) {
   if (sortType === 'speed')  return Vne;
   if (sortType === 'heavy')  return m;
   if (sortType === 'range')  return (fuelMax / ffMax) * cruiseKts;
-  if (sortType === 'easy')   return -(d.difficulty || 5);
   return 0;
 }
 
