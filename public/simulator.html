@@ -3214,6 +3214,7 @@ const AIRCRAFT_DEFS = {
     fuelMax: 800,       // kg — total fuel capacity (gameplay)
     rotationKts: 100,   // takeoff rotation speed (kt)
     cruiseKts: 280,     // autopilot target cruise speed (kt)
+    radarNm: 40,        // TCAS II max range (NM)
   },
   boeing737: {
     label: 'BOEING 737-800',
@@ -3237,6 +3238,7 @@ const AIRCRAFT_DEFS = {
     playerModelUrl: 'https://raw.githubusercontent.com/djzoom/MU5735/main/b738.glb',
     playerModelDims: { span: 35.8, len: 39.5 }, // metres (with winglets / fuselage)
     modelYOffset: 3,    // metres — lifts the centred GLB so gear sits on the terrain
+    radarNm: 40,        // Honeywell TCAS II v7.1 max surveillance range (NM)
     // Flaps: pick the trailing-edge flap meshes by exact GLB node name. Each is
     // hinged at its own forward edge and rotated trailing-edge-down. Tune maxDeg
     // (full-flap angle) and sign (flip if they deflect up) here — pure JSON.
@@ -3268,6 +3270,7 @@ const AIRCRAFT_DEFS = {
     rotationKts: 155,   // kt — typical Vr at 73.5t MTOW
     cruiseKts: 290,     // autopilot target cruise speed (kt)
     playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/a320/glTF2/A320.glb',
+    radarNm: 40,        // Thales/Honeywell TCAS II v7.1 (NM)
     playerModelDims: { span: 34.1, len: 37.6 }, // metres (wingspan / fuselage length)
     modelYOffset: 2,    // metres — lifts the centred GLB so it rests on the terrain
     // Trailing-edge flap meshes (exact GLB node names), hinged at each forward edge.
@@ -3300,6 +3303,7 @@ const AIRCRAFT_DEFS = {
     fuelMax: 3900,      // kg — F-16C internal fuel (real: 3,986 kg / 8,780 lb)
     rotationKts: 140,   // kt — typical Vr for F-16C
     cruiseKts: 480,     // autopilot target cruise speed (kt) — subsonic cruise
+    radarNm: 80,        // AN/APG-68 pulse-Doppler radar — 80+ NM detection range vs fighter-size target
     // F-16C Fighting Falcon GLB from cutechicken/3D-Airforce-Simulator on Hugging Face.
     // Hugging Face CDN sends Access-Control-Allow-Origin: * so this loads correctly
     // in the browser without CORS issues.
@@ -3327,6 +3331,7 @@ const AIRCRAFT_DEFS = {
     fuelMax: 115,      // kg — ~170 l usable fuel
     rotationKts: 55,
     cruiseKts: 122,    // kt — 75% power per POH
+    radarNm: 20,       // ADS-B In via Garmin GDL 50 — no TCAS; 15–20 NM air-to-air range
     playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/c182/glTF2/C182.glb',
     playerModelDims: { span: 11.0, len: 8.6 },  // metres — C182 ≈ C172 (high-wing single engine)
     modelAxes: { nose: '+z', up: '+y' },
@@ -3354,6 +3359,7 @@ const AIRCRAFT_DEFS = {
     playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/b744/glTF2/B747.glb',
     playerModelDims: { span: 64.4, len: 70.7 },  // metres — 747-400 (with winglets / fuselage)
     modelYOffset: 6,
+    radarNm: 40,        // Honeywell TCAS II v7.0/7.1 max surveillance range (NM)
   },
   concorde: {
     label: 'CONCORDE',
@@ -3374,6 +3380,7 @@ const AIRCRAFT_DEFS = {
     fuelMax: 14000,
     rotationKts: 195,  // kt — Vr per Air France/BA operational data (Wikipedia: 199 kt)
     cruiseKts: 600,    // kt — high-speed autopilot target (supersonic cruise; IAS varies with altitude)
+    radarNm: 40,       // Thomson-CSF/Rockwell Collins TCAS II (NM)
   },
   spitfire: {
     label: 'SPITFIRE MK.IX',
@@ -3398,6 +3405,7 @@ const AIRCRAFT_DEFS = {
     playerModelDims: { span: 11.4, len: 9.7 },   // metres — P-40 (WWII inline fighter, era-appropriate stand-in)
     modelAxes: { nose: '+z', up: '+y' },
     modelYOffset: 1.2,
+    radarNm: 8,         // no radar (WWII era); AI Mk.IV airborne intercept radar had ~5–8 NM range
   },
   sr71: {
     label: 'SR-71 BLACKBIRD',
@@ -3418,6 +3426,7 @@ const AIRCRAFT_DEFS = {
     fuelMax: 10000,
     rotationKts: 200,
     cruiseKts: 750,    // kt — supersonic cruise autopilot target
+    radarNm: 100,      // Technical Objective Camera + sensors — no air-to-air radar; 100 NM represents sensor awareness
   },
   // Add more aircraft here — they appear in the menu automatically.
 };
@@ -7970,6 +7979,173 @@ function drawCompass() {
   compassCtx.fill();
 }
 
+// ===================== Radar HUD — see updateMinimap() =====================
+// The radar overlay is drawn on the minimap canvas (mmCtx). Radar range per
+// aircraft type is stored in AIRCRAFT_DEFS[key].radarNm and controls both the
+// minimap zoom level and the sweep/blip filter.
+function _radarPlaceholder_unused() {
+  const acDef = AIRCRAFT_DEFS[selectedAircraftKey] || {};
+  const radarNm = acDef.radarNm || 40;
+  const radarM  = radarNm * 1852;
+
+  const R   = 84;   // scope radius (px)
+  const PAD = 18;
+  const cx  = PAD + R;
+  const cy  = H - PAD - R;
+
+  ctx.save();
+
+  // ── outer bezel ──
+  ctx.beginPath();
+  ctx.arc(cx, cy, R + 2, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0,255,65,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // ── background ──
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,8,0,0.82)';
+  ctx.fill();
+  ctx.clip();  // clip everything below to the circle
+
+  // ── grid crosshair ──
+  ctx.strokeStyle = 'rgba(0,255,65,0.10)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
+  ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
+  ctx.stroke();
+
+  // ── range rings ──
+  const ringFracs = [1/3, 2/3];
+  for (const f of ringFracs) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * f, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,255,65,0.10)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+
+  // ── sweep animation ──
+  const sweepPeriod = 10;  // seconds per revolution
+  const sweepAngle  = (performance.now() / 1000 / sweepPeriod * Math.PI * 2) % (Math.PI * 2);
+  // sweepAngle 0 = up (player forward), grows clockwise
+
+  const trailSpan = Math.PI * 0.45;   // 81° trailing glow
+  const STEPS     = 24;
+  for (let i = 0; i < STEPS; i++) {
+    const t0  = i / STEPS;
+    const t1  = (i + 1) / STEPS;
+    const a1  = sweepAngle - trailSpan * t0 - Math.PI / 2; // canvas angle (0=right)
+    const a2  = sweepAngle - trailSpan * t1 - Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, R, a2, a1);
+    ctx.closePath();
+    ctx.fillStyle = `rgba(0,255,65,${(1 - t0) * 0.13})`;
+    ctx.fill();
+  }
+
+  // sweep line
+  ctx.strokeStyle = 'rgba(0,255,65,0.70)';
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.sin(sweepAngle) * R, cy - Math.cos(sweepAngle) * R);
+  ctx.stroke();
+
+  // ── own aircraft symbol (center) ──
+  ctx.fillStyle = '#00FF41';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 5);
+  ctx.lineTo(cx + 3.5, cy + 2.5);
+  ctx.lineTo(cx, cy + 1);
+  ctx.lineTo(cx - 3.5, cy + 2.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // ── traffic blips ──
+  const hdgRad = state.heading * DEG;
+
+  for (let i = 0; i < traffic.length; i++) {
+    const t = traffic[i];
+    if (!t.alive) continue;
+
+    const dN    = (t.lat - state.lat) * M_PER_DEG_LAT;
+    const dE    = (t.lon - state.lon) * (M_PER_DEG_LAT * Math.cos(state.lat * DEG));
+    const distM = Math.sqrt(dN * dN + dE * dE);
+    if (distM > radarM) continue;
+
+    const pixDist = (distM / radarM) * R;
+    const northBrg  = Math.atan2(dE, dN);   // bearing from north (radians)
+    const relBrg    = northBrg - hdgRad;     // relative to player heading (heading-up)
+    const bx = cx + Math.sin(relBrg) * pixDist;
+    const by = cy - Math.cos(relBrg) * pixDist;
+
+    // altitude differential → blip color
+    const altDiff = (t.altitude || 0) - state.altitude;
+    let blipColor;
+    if (Math.abs(altDiff) < 1000) {
+      blipColor = 'rgba(0,255,65,0.90)';     // same level — bright green
+    } else if (altDiff > 0) {
+      blipColor = 'rgba(80,220,255,0.90)';   // above — cyan
+    } else {
+      blipColor = 'rgba(255,160,0,0.85)';    // below — amber
+    }
+
+    // blip diamond
+    const sz = 3.5;
+    ctx.fillStyle   = blipColor;
+    ctx.strokeStyle = blipColor;
+    ctx.lineWidth   = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(bx,      by - sz);
+    ctx.lineTo(bx + sz, by);
+    ctx.lineTo(bx,      by + sz);
+    ctx.lineTo(bx - sz, by);
+    ctx.closePath();
+    ctx.fill();
+
+    // altitude arrow (if climbing / descending more than 300 ft/min equiv.)
+    if (Math.abs(altDiff) >= 500) {
+      const dir = altDiff > 0 ? -1 : 1;   // -1 = arrow up, 1 = arrow down
+      const ax  = bx + sz + 4;
+      ctx.strokeStyle = blipColor;
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.moveTo(ax, by + dir * 4);
+      ctx.lineTo(ax, by - dir * 4);
+      ctx.moveTo(ax - 2, by - dir * 2);
+      ctx.lineTo(ax,     by - dir * 4);
+      ctx.lineTo(ax + 2, by - dir * 2);
+      ctx.stroke();
+    }
+
+    // callsign label (only if blip is not too close to center)
+    if (pixDist > 12) {
+      const cs = (t.callsign || t.icao || '?').substring(0, 8);
+      ctx.font      = '7px JetBrains Mono, monospace';
+      ctx.fillStyle = 'rgba(0,255,65,0.55)';
+      ctx.textAlign = 'left';
+      ctx.fillText(cs, bx + sz + (Math.abs(altDiff) >= 500 ? 12 : 6), by + 3);
+    }
+  }
+
+  ctx.restore();
+
+  // ── labels outside the clipped circle ──
+  ctx.font      = '8px JetBrains Mono, monospace';
+  ctx.fillStyle = 'rgba(0,255,65,0.45)';
+  ctx.textAlign = 'left';
+  ctx.fillText('RADAR', cx - R, cy - R - 5);
+
+  ctx.fillStyle = 'rgba(0,255,65,0.35)';
+  ctx.font      = '7px JetBrains Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(radarNm / 3) + ' / ' + Math.round(radarNm * 2 / 3) + ' / ' + radarNm + ' NM', cx, cy + R + 13);
+}
+
 function drawAltTape() {
   const tapeW = 52;
   const tapeH = 180;
@@ -8704,53 +8880,160 @@ const mmCv = document.getElementById('mm-cv');
 const mmCtx = mmCv ? mmCv.getContext('2d') : null;
 const minimapEl = document.getElementById('minimap');
 let mmLast = 0;
+let mmLastRadarKey = null; // track aircraft changes for satellite refresh
 function updateMinimap() {
   mmFetchAirports(); // always fetch, even if minimap is hidden (needed for 3D overlay)
   if (!mmCtx || !minimapEl || minimapEl.style.display === 'none') return;
   const s = mmCv.width;
+  const cx = s / 2, cy = s / 2, R = s / 2;
   mmCtx.clearRect(0, 0, s, s);
 
-  // Traffic blips — North-up, matching the satellite tile underneath.
-  // (No canvas rotation: the tile is always fetched North-up.)
+  // ── Radar range from current aircraft ──
+  const acDef   = AIRCRAFT_DEFS[selectedAircraftKey] || {};
+  const radarNm = acDef.radarNm || 40;
+  // Map radar range (NM) to a degrees-of-lat half-width for the minimap view.
+  // 1 NM = 1852 m; 1 deg lat = 111320 m → d = radarNm * 1852 / 111320
+  const d = radarNm * 1852 / 111320;
+
+  // ── Radar sweep animation ──
+  const sweepPeriod = 10; // seconds per revolution
+  const sweepAngle  = (performance.now() / 1000 / sweepPeriod * Math.PI * 2) % (Math.PI * 2);
+
+  // Trailing glow wedge (north-up, same orientation as the map)
+  mmCtx.save();
+  mmCtx.beginPath();
+  mmCtx.arc(cx, cy, R, 0, Math.PI * 2);
+  mmCtx.clip();
+  const trailSpan = Math.PI * 0.4;
+  const STEPS = 20;
+  for (let i = 0; i < STEPS; i++) {
+    const t0 = i / STEPS;
+    const t1 = (i + 1) / STEPS;
+    const a1 = sweepAngle - trailSpan * t0 - Math.PI / 2;
+    const a2 = sweepAngle - trailSpan * t1 - Math.PI / 2;
+    mmCtx.beginPath();
+    mmCtx.moveTo(cx, cy);
+    mmCtx.arc(cx, cy, R, a2, a1);
+    mmCtx.closePath();
+    mmCtx.fillStyle = `rgba(0,255,65,${(1 - t0) * 0.14})`;
+    mmCtx.fill();
+  }
+  // Sweep line
+  mmCtx.strokeStyle = 'rgba(0,255,65,0.65)';
+  mmCtx.lineWidth   = 1.5;
+  mmCtx.beginPath();
+  mmCtx.moveTo(cx, cy);
+  mmCtx.lineTo(cx + Math.sin(sweepAngle) * R, cy - Math.cos(sweepAngle) * R);
+  mmCtx.stroke();
+  mmCtx.restore();
+
+  // ── Range rings (1/3 and 2/3 of max range) ──
+  mmCtx.save();
+  mmCtx.beginPath(); mmCtx.arc(cx, cy, R, 0, Math.PI * 2); mmCtx.clip();
+  for (const frac of [1/3, 2/3]) {
+    mmCtx.beginPath();
+    mmCtx.arc(cx, cy, R * frac, 0, Math.PI * 2);
+    mmCtx.strokeStyle = 'rgba(0,255,65,0.13)';
+    mmCtx.lineWidth   = 0.5;
+    mmCtx.stroke();
+  }
+  // Cross-hairs
+  mmCtx.strokeStyle = 'rgba(0,255,65,0.08)';
+  mmCtx.lineWidth   = 0.5;
+  mmCtx.beginPath();
+  mmCtx.moveTo(cx - R, cy); mmCtx.lineTo(cx + R, cy);
+  mmCtx.moveTo(cx, cy - R); mmCtx.lineTo(cx, cy + R);
+  mmCtx.stroke();
+  mmCtx.restore();
+
+  // ── Traffic blips — north-up, radar-style ──
   if (traffic.length) {
-    const d = 0.035;
     mmCtx.save();
-    mmCtx.translate(s / 2, s / 2);
+    mmCtx.translate(cx, cy);
     traffic.forEach(function (t) {
       if (!t.alive) return;
       const dLat = t.lat - state.lat;
       const dLon = (t.lon - state.lon) * Math.cos(state.lat * Math.PI / 180);
-      if (Math.abs(dLat) > d || Math.abs(dLon) > d) return;
-      const px = (dLon / d) * (s / 2);
-      const py = -(dLat / d) * (s / 2);
-      // Color: ground bots = yellow, airborne = blue
-      const onGround = (t.phase === 'ground' || t.phase === 'landing' || t.phase === 'takeoff');
-      mmCtx.fillStyle = onGround ? 'rgba(255,220,80,0.85)' : 'rgba(127,208,255,0.85)';
+      // Distance check: only show within radar range
+      const distDeg = Math.hypot(dLat, dLon);
+      const distNm  = distDeg * 60;
+      if (distNm > radarNm) return;
+
+      let px = (dLon / d) * R;
+      let py = -(dLat / d) * R;
+      // Clamp blips that project outside the visible circle to the edge
+      const r2 = R - 6;
+      const mag = Math.hypot(px, py);
+      if (mag > r2) { px = (px / mag) * r2; py = (py / mag) * r2; }
+
+      // Altitude differential determines color
+      const onGround = (t.phase === 'ground');
+      const altDiff  = (t.altitude || 0) - state.altitude;
+      let blipColor;
+      if (onGround) {
+        blipColor = 'rgba(255,220,80,0.85)';   // ground — yellow
+      } else if (Math.abs(altDiff) < 1000) {
+        blipColor = 'rgba(0,255,65,0.90)';     // same level — green
+      } else if (altDiff > 0) {
+        blipColor = 'rgba(80,220,255,0.90)';   // above — cyan
+      } else {
+        blipColor = 'rgba(255,160,0,0.85)';    // below — amber
+      }
+
+      // Diamond blip
+      const sz = 3.5;
+      mmCtx.fillStyle = blipColor;
       mmCtx.beginPath();
-      mmCtx.arc(px, py, 3, 0, Math.PI * 2);
+      mmCtx.moveTo(px,      py - sz);
+      mmCtx.lineTo(px + sz, py);
+      mmCtx.lineTo(px,      py + sz);
+      mmCtx.lineTo(px - sz, py);
+      mmCtx.closePath();
       mmCtx.fill();
+
+      // Altitude arrow for climbing/descending traffic
+      if (!onGround && Math.abs(altDiff) >= 500) {
+        const dir = altDiff > 0 ? -1 : 1;
+        const ax  = px + sz + 3;
+        mmCtx.strokeStyle = blipColor;
+        mmCtx.lineWidth   = 1;
+        mmCtx.beginPath();
+        mmCtx.moveTo(ax, py + dir * 3);
+        mmCtx.lineTo(ax, py - dir * 3);
+        mmCtx.moveTo(ax - 2, py - dir * 1);
+        mmCtx.lineTo(ax,     py - dir * 3);
+        mmCtx.lineTo(ax + 2, py - dir * 1);
+        mmCtx.stroke();
+      }
+
+      // Callsign for close-in blips
+      if (mag < R * 0.75) {
+        const cs = (t.callsign || t.icao || '?').substring(0, 7);
+        mmCtx.font      = '6px "JetBrains Mono", monospace';
+        mmCtx.fillStyle = 'rgba(0,255,65,0.50)';
+        mmCtx.textAlign = 'left';
+        mmCtx.fillText(cs, px + sz + (Math.abs(altDiff) >= 500 ? 9 : 5), py + 3);
+      }
     });
     mmCtx.restore();
   }
 
-  // Airport markers — shown on minimap, clamped to edge when outside range
+  // ── Airport markers — clamped to edge when outside minimap view ──
   if (mmAirports.length) {
-    const d = 0.035; // minimap visible range in degrees
-    const R = s / 2 - 8; // clamp radius (pixels)
+    const edgeR = R - 8;
     mmCtx.save();
-    mmCtx.translate(s / 2, s / 2);
+    mmCtx.translate(cx, cy);
     mmAirports.forEach(function(ap){
       const dLat = ap.lat - state.lat;
       const dLon = (ap.lon - state.lon) * Math.cos(state.lat * Math.PI / 180);
       const distDeg = Math.hypot(dLat, dLon);
-      if (distDeg > 0.6) return; // skip truly distant
-      let px = (dLon / d) * (s / 2);
-      let py = -(dLat / d) * (s / 2);
-      const onMap = Math.hypot(px, py) <= R;
-      // Clamp to minimap edge
+      if (distDeg > d * 1.5) return; // skip truly beyond 1.5× radar range
+      let px = (dLon / d) * R;
+      let py = -(dLat / d) * R;
+      const onMap = Math.hypot(px, py) <= edgeR;
       if (!onMap) {
         const mag = Math.hypot(px, py);
-        px = (px / mag) * R; py = (py / mag) * R;
+        px = (px / mag) * edgeR; py = (py / mag) * edgeR;
       }
       mmCtx.strokeStyle = onMap ? 'rgba(0,255,65,0.9)' : 'rgba(0,255,65,0.5)';
       mmCtx.lineWidth = onMap ? 1.5 : 1;
@@ -8772,9 +9055,9 @@ function updateMinimap() {
     mmCtx.restore();
   }
 
-  // Heading-up aircraft marker at the centre
+  // ── Own aircraft marker at centre (heading-up arrow) ──
   mmCtx.save();
-  mmCtx.translate(s / 2, s / 2);
+  mmCtx.translate(cx, cy);
   mmCtx.rotate(state.heading * Math.PI / 180);
   mmCtx.fillStyle = '#00FF41';
   mmCtx.strokeStyle = 'rgba(0,0,0,0.7)';
@@ -8786,27 +9069,25 @@ function updateMinimap() {
   mmCtx.stroke();
   mmCtx.restore();
 
-  // Destination marker: shown while the nav AP is active OR while manually flying
-  // toward a remembered destination (navLastDest). North-up — no canvas rotation.
+  // ── Destination marker (nav AP or manual navLastDest) ──
   {
     const mmNavDest = (ap.on && ap.mode === 'nav' && ap.nav)
       ? { lat: ap.nav.destLat, lon: ap.nav.destLon }
       : navLastDest;
     if (mmNavDest) {
-      const d = 0.035;
       const navActive = ap.on && ap.mode === 'nav';
       mmCtx.save();
-      mmCtx.translate(s / 2, s / 2);
+      mmCtx.translate(cx, cy);
       const dLat = mmNavDest.lat - state.lat;
       const dLon = (mmNavDest.lon - state.lon) * Math.cos(state.lat * Math.PI / 180);
       let px, py;
+      const mag = Math.hypot(dLon, dLat) || 1;
+      const edgeR2 = R - 10;
       if (Math.abs(dLat) <= d && Math.abs(dLon) <= d) {
-        px = (dLon / d) * (s / 2); py = -(dLat / d) * (s / 2);
+        px = (dLon / d) * R; py = -(dLat / d) * R;
       } else {
-        const mag = Math.hypot(dLon, dLat) || 1, R = s / 2 - 10;
-        px = (dLon / mag) * R; py = -(dLat / mag) * R;
+        px = (dLon / mag) * edgeR2; py = -(dLat / mag) * edgeR2;
       }
-      // Golden when AP is flying the route, blue-white when navigating manually.
       const lineCol = navActive ? 'rgba(255,210,90,0.85)' : 'rgba(160,200,255,0.55)';
       const fillCol = navActive ? '#ffd24a' : '#aaccff';
       mmCtx.strokeStyle = lineCol; mmCtx.lineWidth = 2; mmCtx.setLineDash([5, 4]);
@@ -8819,11 +9100,23 @@ function updateMinimap() {
     }
   }
 
-  // Refresh the satellite tile as we move (throttled)
+  // ── Range ring labels ──
+  mmCtx.font      = '6px "JetBrains Mono", monospace';
+  mmCtx.fillStyle = 'rgba(0,255,65,0.30)';
+  mmCtx.textAlign = 'left';
+  mmCtx.fillText(Math.round(radarNm / 3) + 'NM', cx + 3, cy - R * (1/3) - 2);
+  mmCtx.fillText(Math.round(radarNm * 2 / 3) + 'NM', cx + 3, cy - R * (2/3) - 2);
+
+  // ── Update label ──
+  const mmLabelEl = document.getElementById('mm-label');
+  if (mmLabelEl) mmLabelEl.textContent = 'RADAR · ' + radarNm + 'NM';
+
+  // ── Refresh satellite tile when position or radar range changes ──
   const now = performance.now();
-  if (now - mmLast > 1500) {
+  const radarKey = selectedAircraftKey + ':' + state.lat.toFixed(3) + ':' + state.lon.toFixed(3);
+  if (now - mmLast > 1500 || mmLastRadarKey !== radarKey) {
     mmLast = now;
-    const d = 0.035;
+    mmLastRadarKey = radarKey;
     const dLon = d / Math.max(0.2, Math.cos(state.lat * Math.PI / 180));
     const bbox = (state.lon - dLon) + ',' + (state.lat - d) + ',' + (state.lon + dLon) + ',' + (state.lat + d);
     mmImg.src = 'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox=' +
