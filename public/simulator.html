@@ -3437,6 +3437,522 @@ const AIRCRAFT_DEFS = {
     radarNm: 100,      // Technical Objective Camera + sensors — no air-to-air radar; 100 NM represents sensor awareness
   },
   // Add more aircraft here — they appear in the menu automatically.
+
+  boeing787: {
+    label: 'BOEING 787-9 DREAMLINER',
+    desc: 'Wide-body composite airliner',
+    strengths: 'Next-gen efficiency — composite airframe, whisper-quiet GEnx engines and near-unlimited range',
+    difficulty: 4,
+    m: 254000,          // kg — MTOW 254,011 kg (Boeing spec)
+    S: 377.0,           // m² — reference wing area
+    CL_a: 5.1,          // per rad — raked winglet, AR≈9.6 supercritical wing
+    CL_max: 2.5,
+    aStall: 14,
+    Cd0: 0.016,         // exceptionally clean composite fuselage
+    k: 0.034,
+    incidence: 2.0,
+    Tmax: 678000,       // N — 2× GEnx-1B76 at 339 kN each
+    Vne: 185,           // m/s — VMO 330 KIAS
+    fuelFlowIdle: 0.35,
+    fuelFlowMax: 8.5,
+    fuelMax: 17000,
+    rotationKts: 162,
+    cruiseKts: 295,
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/b788/glTF2/B788.glb',
+    playerModelDims: { span: 60.1, len: 62.8 },
+    modelYOffset: 5,
+    radarNm: 40,
+  },
+
+  airbusA380: {
+    label: 'AIRBUS A380-800',
+    desc: 'Double-deck super-jumbo',
+    strengths: 'Largest passenger jet ever built — 4 engines, 555 seats and the smoothest ride at 35,000 ft',
+    difficulty: 7,
+    m: 575000,          // kg — MTOW 575,000 kg (Airbus spec)
+    S: 845.0,           // m²
+    CL_a: 4.8,          // per rad — swept 33.5°
+    CL_max: 1.5,
+    aStall: 15,
+    Cd0: 0.022,
+    k: 0.052,           // 1/(π × 0.82 × AR); AR = 79.75²/845 = 7.53
+    incidence: 3,
+    Tmax: 1360000,      // N — 4× Trent 970 at 340 kN each
+    Vne: 175,           // m/s — VMO 340 KIAS
+    fuelFlowIdle: 1.03,
+    fuelFlowMax: 26.0,
+    fuelMax: 25000,
+    rotationKts: 190,
+    cruiseKts: 285,
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/a380/glTF2/A380.glb',
+    playerModelDims: { span: 79.75, len: 72.72 },
+    modelYOffset: 7,
+    radarNm: 40,
+  },
+
+  fa18: {
+    label: 'F/A-18C HORNET',
+    desc: 'Carrier-based strike fighter',
+    strengths: 'Twin-engine bite with LEX vortex lift — handles from carrier deck to supersonic strike with equal confidence',
+    difficulty: 7,
+    m: 16650,           // kg — max takeoff ~23,400 kg; typical combat weight
+    S: 37.16,           // m²
+    CL_a: 4.0,          // per rad — LEX + 35° sweep, vortex augmented
+    CL_max: 1.7,
+    aStall: 30,         // deg — LEX vortices extend usable AoA significantly
+    Cd0: 0.021,
+    k: 0.116,           // 1/(π × 0.78 × AR); AR = 11.43²/37.16 = 3.516
+    incidence: 1,
+    Tmax: 196000,       // N — 2× F404-GE-402 at 98 kN each (with afterburner)
+    Vne: 360,           // m/s — tactical IAS limit ~700 kt
+    fuelFlowIdle: 0.13,
+    fuelFlowMax: 3.2,
+    fuelMax: 6531,      // kg — internal fuel capacity
+    rotationKts: 150,
+    cruiseKts: 420,
+    playerModelUrl: 'https://huggingface.co/spaces/cutechicken/3D-Airforce-Simulator/resolve/main/models/f-15.glb',
+    playerModelDims: { span: 11.43, len: 17.07 },
+    modelYOffset: 1.3,
+    radarNm: 80,        // AN/APG-73 pulse-Doppler radar
+  },
+
+  cessna208: {
+    label: 'CESSNA 208 CARAVAN',
+    desc: 'Single-engine turboprop utility',
+    strengths: 'Go-anywhere STOL workhorse — lands on dirt strips shorter than a city block, with room for cargo',
+    difficulty: 2,
+    m: 3629,            // kg — MTOW (POH)
+    S: 25.96,           // m²
+    CL_a: 5.5,
+    CL_max: 2.0,
+    aStall: 15,
+    Cd0: 0.030,         // fixed-gear drag
+    k: 0.050,
+    incidence: 1.5,
+    Tmax: 7100,         // N — PT6A-114A 675 shp; static prop thrust ~7 kN
+    Vne: 90,            // m/s — 175 kt (POH Vne)
+    fuelFlowIdle: 0.004,
+    fuelFlowMax: 0.055,
+    fuelMax: 1000,
+    rotationKts: 75,
+    cruiseKts: 175,
+    radarNm: 20,
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/c208/glTF2/C208.glb',
+    playerModelDims: { span: 15.88, len: 12.67 },
+    modelAxes: { nose: '+z', up: '+y' },
+    modelYOffset: 1.0,
+  },
+
+  b52: {
+    label: 'BOEING B-52H STRATOFORTRESS',
+    desc: 'Strategic long-range bomber',
+    strengths: 'Eight engines and Cold War pedigree — the most iconic strategic bomber still flying after 70 years',
+    difficulty: 6,
+    m: 220000,          // kg — typical mission weight (MTOW 265,350 kg)
+    S: 371.6,           // m²
+    CL_a: 4.5,
+    CL_max: 2.0,
+    aStall: 12,
+    Cd0: 0.022,
+    k: 0.038,
+    incidence: 2.0,
+    Tmax: 612000,       // N — 8× TF33-P-3/103 at 76.5 kN each
+    Vne: 200,           // m/s — VMO ~387 kt
+    fuelFlowIdle: 0.60,
+    fuelFlowMax: 10.0,
+    fuelMax: 20000,
+    rotationKts: 175,
+    cruiseKts: 290,
+    playerModelDims: { span: 56.4, len: 48.5 },
+    modelYOffset: 5,
+    radarNm: 60,        // AN/ASQ-151 electro-optical viewing system; 60 NM represents sensor suite
+  },
+
+  eurofighter: {
+    label: 'EUROFIGHTER TYPHOON',
+    desc: 'Multirole canard-delta fighter',
+    strengths: 'Supercruise-capable European thoroughbred — unstoppable at any altitude from treetop to stratosphere',
+    difficulty: 8,
+    m: 16000,           // kg — typical combat configuration (MTOW 23,500 kg)
+    S: 51.2,            // m² — canard-delta planform
+    CL_a: 2.5,          // per rad — cropped delta-canard, low AR
+    CL_max: 1.9,        // canard vortex lift augments significantly
+    aStall: 35,         // deg — FBW envelope protection
+    Cd0: 0.020,
+    k: 0.181,           // 1/(π × 0.75 × AR); AR = 10.95²/51.2 = 2.34
+    incidence: 0,
+    Tmax: 240000,       // N — 2× EJ200 at 120 kN each (with reheat)
+    Vne: 310,           // m/s — tactical IAS limit ~600 kt
+    fuelFlowIdle: 0.12,
+    fuelFlowMax: 4.0,
+    fuelMax: 4996,
+    rotationKts: 165,
+    cruiseKts: 500,
+    playerModelUrl: 'https://huggingface.co/spaces/cutechicken/3D-Airforce-Simulator/resolve/main/models/f-22.glb',
+    playerModelDims: { span: 10.95, len: 15.96 },
+    modelYOffset: 1.2,
+    radarNm: 100,       // Captor-M ECCR pulse-Doppler radar — 100+ NM air-to-air range
+  },
+
+  boeing777: {
+    label: 'BOEING 777-300ER',
+    desc: 'Twin-engine wide-body long-range',
+    strengths: 'Most powerful twin jets ever — GE90-115B engines and the range to cross any ocean non-stop',
+    difficulty: 5,
+    m: 352000,          // kg — typical max takeoff weight
+    S: 427.8,           // m²
+    CL_a: 5.0,
+    CL_max: 2.7,
+    aStall: 12,
+    Cd0: 0.018,
+    k: 0.033,
+    incidence: 1.5,
+    Tmax: 1025800,      // N — 2× GE90-115B at 512.9 kN each (world's most powerful jet engine)
+    Vne: 175,           // m/s — VMO 330 KIAS
+    fuelFlowIdle: 0.45,
+    fuelFlowMax: 13.0,
+    fuelMax: 18000,
+    rotationKts: 175,
+    cruiseKts: 290,
+    playerModelDims: { span: 64.8, len: 73.9 },
+    modelYOffset: 6,
+    radarNm: 40,
+  },
+
+  airbusA350: {
+    label: 'AIRBUS A350-900',
+    desc: 'Wide-body ultra long-range',
+    strengths: 'Composite perfection — 53% carbon fibre, 40% better fuel burn than A340 and range for any city pair on earth',
+    difficulty: 4,
+    m: 280000,          // kg — MTOW 280,000 kg
+    S: 442.0,           // m²
+    CL_a: 5.1,
+    CL_max: 2.6,
+    aStall: 13,
+    Cd0: 0.015,         // exceptionally clean composite design
+    k: 0.032,
+    incidence: 2.0,
+    Tmax: 862000,       // N — 2× Trent XWB-97 at 431 kN each
+    Vne: 185,           // m/s
+    fuelFlowIdle: 0.40,
+    fuelFlowMax: 11.0,
+    fuelMax: 17000,
+    rotationKts: 168,
+    cruiseKts: 295,
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/a350/glTF2/A350.glb',
+    playerModelDims: { span: 64.75, len: 66.89 },
+    modelYOffset: 5,
+    radarNm: 40,
+  },
+
+  mig29: {
+    label: 'MiG-29 FULCRUM',
+    desc: 'Soviet air superiority fighter',
+    strengths: 'Twin RD-33 thrust and IRST targeting — terrifyingly agile in a knife-fight, built for helmet-cued close combat',
+    difficulty: 8,
+    m: 15000,           // kg — typical combat weight (MTOW 18,480 kg)
+    S: 38.0,            // m²
+    CL_a: 3.8,          // per rad — LERX + 42° sweep, vortex augmented
+    CL_max: 1.8,        // LERX vortex lift
+    aStall: 28,         // deg — analogue FBW limits
+    Cd0: 0.022,
+    k: 0.122,           // 1/(π × 0.77 × AR); AR = 11.36²/38 = 3.40
+    incidence: 0,
+    Tmax: 162800,       // N — 2× Klimov RD-33 at 81.4 kN each (with afterburner)
+    Vne: 370,           // m/s — IAS limit ~700 kt (Mach 2.25 at altitude)
+    fuelFlowIdle: 0.12,
+    fuelFlowMax: 3.2,
+    fuelMax: 4365,      // kg — internal fuel
+    rotationKts: 160,
+    cruiseKts: 480,
+    playerModelUrl: 'https://huggingface.co/spaces/cutechicken/3D-Airforce-Simulator/resolve/main/models/mig-29.glb',
+    playerModelDims: { span: 11.36, len: 17.32 },
+    modelYOffset: 1.2,
+    radarNm: 70,        // N019 Slot Back pulse-Doppler — 70 NM detection range vs fighter
+  },
+
+  an225: {
+    label: 'ANTONOV An-225 MRIYA',
+    desc: 'World\'s largest cargo aircraft',
+    strengths: 'Six turbofan giants and 640 tonnes of maximum lift — nothing heavier has ever left the ground',
+    difficulty: 8,
+    m: 640000,          // kg — MTOW 640,000 kg
+    S: 905.0,           // m²
+    CL_a: 5.0,
+    CL_max: 2.5,
+    aStall: 11,
+    Cd0: 0.019,
+    k: 0.030,
+    incidence: 2.0,
+    Tmax: 1377000,      // N — 6× ZMKB Progress D-18T at 229.5 kN each
+    Vne: 175,           // m/s — VMO 330 KIAS
+    fuelFlowIdle: 0.80,
+    fuelFlowMax: 18.0,
+    fuelMax: 25000,
+    rotationKts: 195,
+    cruiseKts: 285,
+    radarNm: 40,
+    playerModelDims: { span: 88.4, len: 84.0 },
+    modelYOffset: 8,
+  },
+
+  p51mustang: {
+    label: 'P-51D MUSTANG',
+    desc: 'WWII long-range escort fighter',
+    strengths: 'Laminar-flow wings and Merlin power — escorted bombers to Berlin and back with speed to spare',
+    difficulty: 4,
+    m: 4175,            // kg — typical gross weight
+    S: 21.83,           // m²
+    CL_a: 5.4,
+    CL_max: 1.85,
+    aStall: 16,
+    Cd0: 0.021,         // laminar-flow NACA airfoil — impressively low drag
+    k: 0.059,
+    incidence: 1.0,
+    Tmax: 11200,        // N — Merlin V-1650-7 at 1,490 hp; prop thrust ~11 kN
+    Vne: 220,           // m/s — ~428 kt
+    fuelFlowIdle: 0.006,
+    fuelFlowMax: 0.09,
+    fuelMax: 390,
+    rotationKts: 95,
+    cruiseKts: 275,
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/p40/glTF2/P40.glb',
+    playerModelDims: { span: 11.28, len: 9.83 },
+    modelAxes: { nose: '+z', up: '+y' },
+    modelYOffset: 1.1,
+    radarNm: 8,
+  },
+
+  dc3: {
+    label: 'DOUGLAS DC-3 DAKOTA',
+    desc: 'Classic 1930s airliner',
+    strengths: 'The plane that changed aviation — still flying 90 years on, the most significant aircraft ever built',
+    difficulty: 3,
+    m: 11430,           // kg — MTOW 11,431 kg
+    S: 91.7,            // m²
+    CL_a: 5.2,
+    CL_max: 1.7,
+    aStall: 14,
+    Cd0: 0.028,
+    k: 0.040,
+    incidence: 2.0,
+    Tmax: 21000,        // N — 2× P&W R-1830-92 at ~900 hp each; ~10.5 kN prop each
+    Vne: 110,           // m/s — ~214 kt
+    fuelFlowIdle: 0.015,
+    fuelFlowMax: 0.18,
+    fuelMax: 2000,
+    rotationKts: 85,
+    cruiseKts: 150,
+    playerModelDims: { span: 28.96, len: 19.66 },
+    modelAxes: { nose: '+z', up: '+y' },
+    modelYOffset: 2.5,
+    radarNm: 10,        // No radar (pre-war era); ADF/VOR only
+  },
+
+  piperCherokee: {
+    label: 'PIPER PA-28 CHEROKEE',
+    desc: 'Light piston trainer',
+    strengths: 'The trainer that taught a generation to fly — forgiving, predictable, perfect for circuits and first solos',
+    difficulty: 1,
+    m: 850,             // kg — typical load (MTOW 1,100 kg)
+    S: 14.86,           // m²
+    CL_a: 5.8,
+    CL_max: 1.85,
+    aStall: 16,
+    Cd0: 0.033,         // fixed gear drag
+    k: 0.060,
+    incidence: 1.5,
+    Tmax: 1800,         // N — Lycoming O-320 ~150 hp; static prop thrust ~1.8 kN
+    Vne: 72,            // m/s — ~140 kt (POH Vne)
+    fuelFlowIdle: 0.002,
+    fuelFlowMax: 0.020,
+    fuelMax: 90,
+    rotationKts: 50,
+    cruiseKts: 115,
+    radarNm: 15,        // ADS-B equipped; no TCAS
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/pa28/glTF2/PA28.glb',
+    playerModelDims: { span: 10.97, len: 7.34 },
+    modelAxes: { nose: '+z', up: '+y' },
+    modelYOffset: 0.8,
+  },
+
+  embraerE175: {
+    label: 'EMBRAER E175',
+    desc: 'Regional jet airliner',
+    strengths: 'Right-sized perfection — 76 seats and the economics to fill every route a 737 can\'t justify',
+    difficulty: 3,
+    m: 40370,           // kg — MTOW
+    S: 72.7,            // m²
+    CL_a: 5.0,
+    CL_max: 2.3,
+    aStall: 14,
+    Cd0: 0.021,
+    k: 0.042,
+    incidence: 2.0,
+    Tmax: 124000,       // N — 2× GE CF34-8E at 62 kN each
+    Vne: 175,           // m/s — VMO ~315 KIAS
+    fuelFlowIdle: 0.08,
+    fuelFlowMax: 1.4,
+    fuelMax: 3500,
+    rotationKts: 135,
+    cruiseKts: 250,
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/e190/glTF2/E190.glb',
+    playerModelDims: { span: 31.04, len: 31.68 },
+    modelYOffset: 3,
+    radarNm: 35,
+  },
+
+  rafale: {
+    label: 'DASSAULT RAFALE C',
+    desc: 'Omnirole canard-delta fighter',
+    strengths: 'French omnirole mastery — supercruises clean, carries 9.5 tonnes of stores and wins every dogfight at any range',
+    difficulty: 9,
+    m: 15000,           // kg — typical combat weight (MTOW 24,500 kg)
+    S: 45.7,            // m² — active canard-delta
+    CL_a: 2.6,          // per rad — cropped delta-canard, low AR
+    CL_max: 2.0,        // canard vortex lift, exceptional high-AoA
+    aStall: 32,         // deg — FBW envelope protection
+    Cd0: 0.019,
+    k: 0.166,           // 1/(π × 0.75 × AR); AR = 10.80²/45.7 = 2.55
+    incidence: 0,
+    Tmax: 150000,       // N — 2× Snecma M88-2 at 75 kN each (with afterburner)
+    Vne: 370,           // m/s — IAS limit ~750 kt (Mach 1.8 at altitude)
+    fuelFlowIdle: 0.12,
+    fuelFlowMax: 3.0,
+    fuelMax: 4700,
+    rotationKts: 165,
+    cruiseKts: 480,
+    playerModelUrl: 'https://huggingface.co/spaces/cutechicken/3D-Airforce-Simulator/resolve/main/models/f-35.glb',
+    playerModelDims: { span: 10.8, len: 15.27 },
+    modelYOffset: 1.2,
+    radarNm: 100,       // RBE2-AA AESA radar — 100+ NM range vs fighter
+  },
+
+  c130: {
+    label: 'LOCKHEED C-130J HERCULES',
+    desc: 'Tactical airlifter',
+    strengths: 'The tactical airlifter that never quits — 4 turboprops, unprepared strip capability and 50-year combat record',
+    difficulty: 4,
+    m: 79380,           // kg — MTOW
+    S: 162.1,           // m²
+    CL_a: 5.3,
+    CL_max: 2.3,
+    aStall: 15,
+    Cd0: 0.026,         // bluff fuselage + fixed main gear pods
+    k: 0.038,
+    incidence: 2.5,
+    Tmax: 140000,       // N — 4× Rolls-Royce AE 2100D3 turboprops; ~35 kN static thrust each
+    Vne: 145,           // m/s — ~280 kt
+    fuelFlowIdle: 0.15,
+    fuelFlowMax: 2.2,
+    fuelMax: 12000,
+    rotationKts: 120,
+    cruiseKts: 280,
+    playerModelDims: { span: 40.41, len: 34.37 },
+    modelYOffset: 3,
+    radarNm: 35,
+  },
+
+  crj900: {
+    label: 'BOMBARDIER CRJ-900',
+    desc: 'Regional jet airliner',
+    strengths: 'Business-class comfort on regional routes — the jet that connects every hub and spoke across North America',
+    difficulty: 3,
+    m: 36514,           // kg — MTOW
+    S: 70.6,            // m²
+    CL_a: 5.0,
+    CL_max: 2.2,
+    aStall: 14,
+    Cd0: 0.022,
+    k: 0.044,
+    incidence: 2.0,
+    Tmax: 118000,       // N — 2× GE CF34-8C5 at 59 kN each
+    Vne: 175,           // m/s — VMO ~320 KIAS
+    fuelFlowIdle: 0.08,
+    fuelFlowMax: 1.3,
+    fuelMax: 3000,
+    rotationKts: 130,
+    cruiseKts: 260,
+    playerModelUrl: 'https://raw.githubusercontent.com/Ysurac/FlightAirMap-3dmodels/master/crj9/glTF2/CRJ9.glb',
+    playerModelDims: { span: 24.85, len: 36.4 },
+    modelYOffset: 2.5,
+    radarNm: 35,
+  },
+
+  p38lightning: {
+    label: 'LOCKHEED P-38 LIGHTNING',
+    desc: 'WWII twin-boom long-range fighter',
+    strengths: 'Twin Allisons and a pilot pod between the booms — the fighter Japan feared most in the Pacific skies',
+    difficulty: 5,
+    m: 9798,            // kg — typical gross weight
+    S: 30.42,           // m²
+    CL_a: 5.2,
+    CL_max: 1.85,
+    aStall: 15,
+    Cd0: 0.022,         // clean twin-boom layout
+    k: 0.048,
+    incidence: 1.0,
+    Tmax: 22000,        // N — 2× Allison V-1710 at ~1,600 hp each; ~11 kN prop each
+    Vne: 215,           // m/s — ~418 kt
+    fuelFlowIdle: 0.010,
+    fuelFlowMax: 0.16,
+    fuelMax: 1100,
+    rotationKts: 105,
+    cruiseKts: 250,
+    radarNm: 8,         // No radar (WWII era); visual only
+    playerModelDims: { span: 15.85, len: 11.53 },
+    modelYOffset: 1.3,
+  },
+
+  v22osprey: {
+    label: 'BELL V-22 OSPREY',
+    desc: 'Tiltrotor military transport',
+    strengths: 'VTOL agility meets fixed-wing speed — lands anywhere a helicopter can, cruises twice as fast',
+    difficulty: 9,
+    m: 27400,           // kg — MTOW
+    S: 35.49,           // m² — wing area only (not rotor disc)
+    CL_a: 4.8,          // per rad — straight tapered wing
+    CL_max: 1.6,        // rotors assist during transition
+    aStall: 14,         // deg — transitions before conventional stall
+    Cd0: 0.035,         // complex tilting nacelles and proprotors
+    k: 0.070,           // 1/(π × 0.80 × AR); AR = 14.18²/35.49 = 5.67
+    incidence: 0,
+    Tmax: 130000,       // N — 2× AE1107C turboshafts; ~65 kN equivalent forward-flight thrust
+    Vne: 157,           // m/s — Vne 305 kt in airplane mode
+    fuelFlowIdle: 0.034,
+    fuelFlowMax: 0.68,
+    fuelMax: 6804,
+    rotationKts: 80,    // kt — transition to airplane mode (VTOL capable at 0 kt)
+    cruiseKts: 275,
+    radarNm: 35,
+    playerModelDims: { span: 25.78, len: 17.47 },
+    modelYOffset: 2.5,
+  },
+
+  dhc6: {
+    label: 'DE HAVILLAND DHC-6 TWIN OTTER',
+    desc: 'STOL utility twin turboprop',
+    strengths: 'STOL legend — operates from 400 ft grass strips, floats, ice and everything in between with zero drama',
+    difficulty: 2,
+    m: 5670,            // kg — MTOW
+    S: 39.0,            // m²
+    CL_a: 5.6,
+    CL_max: 2.2,
+    aStall: 14,
+    Cd0: 0.028,         // slab fuselage + fixed gear
+    k: 0.045,
+    incidence: 2.0,
+    Tmax: 14000,        // N — 2× PT6A-27 at ~620 shp each; ~7 kN prop each
+    Vne: 85,            // m/s — ~165 kt
+    fuelFlowIdle: 0.006,
+    fuelFlowMax: 0.065,
+    fuelMax: 800,
+    rotationKts: 70,
+    cruiseKts: 165,
+    radarNm: 20,
+    playerModelDims: { span: 19.81, len: 15.77 },
+    modelYOffset: 1.8,
+  },
 };
 
 // ===================== Custom aircraft (localStorage) =====================
@@ -10462,8 +10978,17 @@ function initAircraftScreen() {
 
   gridEl.innerHTML = '';
   const CW = 280, CH = 175;
-  const previews = [];  // { renderer, scene, camera, mesh, angle, acKey }
+  const previews = [];  // { ctx2d, scene, camera, mesh, angle, acKey }
   let acAnimRunning = true;
+
+  // ONE shared WebGL context for all card thumbnails — avoids the browser
+  // ~16-context limit that fires "Too many active WebGL contexts" warnings.
+  const _sharedOffscreen = document.createElement('canvas');
+  _sharedOffscreen.width = CW; _sharedOffscreen.height = CH;
+  const _sharedRenderer = new THREE.WebGLRenderer({ canvas: _sharedOffscreen, antialias: true, alpha: true });
+  _sharedRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  _sharedRenderer.setSize(CW, CH);
+  _sharedRenderer.setClearColor(0x000000, 0);
 
   // ── Build one card ──────────────────────────────────────────────────────────
   function buildCard(acKey) {
@@ -10502,6 +11027,7 @@ function initAircraftScreen() {
     const canvas = document.createElement('canvas');
     canvas.className = 'acs-card-canvas';
     canvas.width = CW; canvas.height = CH;
+    const ctx2d = canvas.getContext('2d');
 
     const info = document.createElement('div');
     info.className = 'acs-card-info';
@@ -10514,11 +11040,7 @@ function initAircraftScreen() {
     card.appendChild(info);
     gridEl.appendChild(card);
 
-    // Mini Three.js scene
-    const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(CW, CH);
-    renderer.setClearColor(0x000000, 0);
+    // Mini Three.js scene — uses the shared renderer, no per-card WebGL context.
     const scene  = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(42, CW / CH, 0.1, 2000);
     camera.position.set(14, 6, 20); camera.lookAt(0, 0, 0);
@@ -10538,7 +11060,7 @@ function initAircraftScreen() {
     let mesh = new THREE.Mesh(geomFromFaces(raw.verts, raw.faces), mat);
     centerMesh(mesh); scene.add(mesh);
 
-    const preview = { renderer, scene, camera, mesh, angle: Math.PI / 5, acKey };
+    const preview = { ctx2d, scene, camera, mesh, angle: Math.PI / 5, acKey };
     previews.push(preview);
 
     if (def.playerModelUrl && _gltfLoader) {
@@ -10568,7 +11090,6 @@ function initAircraftScreen() {
 
   // ── Render / re-filter grid ─────────────────────────────────────────────────
   function rebuildGrid() {
-    previews.forEach(function(p){ try { p.renderer.dispose(); } catch(e){} });
     previews.length = 0;
     gridEl.innerHTML = '';
 
@@ -10621,7 +11142,9 @@ function initAircraftScreen() {
     previews.forEach(function(p) {
       p.angle += 0.007;
       if (p.mesh) p.mesh.rotation.y = p.angle;
-      p.renderer.render(p.scene, p.camera);
+      _sharedRenderer.render(p.scene, p.camera);
+      p.ctx2d.clearRect(0, 0, CW, CH);
+      p.ctx2d.drawImage(_sharedOffscreen, 0, 0, CW, CH);
     });
   }
   previewLoop();
@@ -10629,7 +11152,7 @@ function initAircraftScreen() {
   // ── Continue button ─────────────────────────────────────────────────────────
   continueBtn.addEventListener('click', function() {
     acAnimRunning = false;
-    previews.forEach(function(p){ try { p.renderer.dispose(); } catch(e){} });
+    try { _sharedRenderer.dispose(); } catch(e) {}
     screen.style.display = 'none';
     const cur = document.getElementById('sm-ac-current');
     if (cur) cur.textContent = (AIRCRAFT_DEFS[selectedAircraftKey] || {}).label || '';
