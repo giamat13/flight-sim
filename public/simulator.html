@@ -192,8 +192,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sm-settings-btn:hover{background:rgba(0,255,65,0.12);color:#00FF41;border-color:rgba(0,255,65,0.5)}
 #sm-livewatch-btn{cursor:pointer;background:rgba(255,0,60,0.05);border:1px solid rgba(255,60,90,0.3);color:#ff5577;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
 #sm-livewatch-btn:hover{background:rgba(255,0,60,0.14);color:#ff8fa3;border-color:rgba(255,60,90,0.6)}
-#sm-watch-btn,#sm-stats-btn,#sm-account-btn,#sm-replays-btn{cursor:pointer;background:rgba(0,160,255,0.05);border:1px solid rgba(80,180,255,0.3);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
-#sm-watch-btn:hover,#sm-stats-btn:hover,#sm-account-btn:hover,#sm-replays-btn:hover{background:rgba(0,160,255,0.14);color:#a8e0ff;border-color:rgba(80,180,255,0.6)}
+#sm-watch-btn,#sm-stats-btn,#sm-account-btn,#sm-replays-btn,#sm-friends-btn{cursor:pointer;background:rgba(0,160,255,0.05);border:1px solid rgba(80,180,255,0.3);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
+#sm-watch-btn:hover,#sm-stats-btn:hover,#sm-account-btn:hover,#sm-replays-btn:hover,#sm-friends-btn:hover{background:rgba(0,160,255,0.14);color:#a8e0ff;border-color:rgba(80,180,255,0.6)}
 #replays-panel{position:fixed;inset:0;z-index:52;justify-content:center;padding:24px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#7fd0ff;font-family:'JetBrains Mono',monospace;overflow-y:auto}
 .rep-row{display:flex;align-items:center;gap:10px;justify-content:space-between;border:1px solid rgba(80,180,255,0.2);border-radius:5px;padding:9px 11px}
 .rep-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -204,7 +204,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .rep-btn:disabled{opacity:0.4;cursor:default}
 #sm-account-status{font-size:9px;letter-spacing:2px;opacity:0.5;text-align:center;margin-top:-4px}
 #settings-panel{position:fixed;inset:0;z-index:52;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:24px 16px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#00FF41;font-family:'JetBrains Mono',monospace;overflow-y:auto}
-#account-panel,#stats-panel{position:fixed;inset:0;z-index:52;justify-content:center;padding:24px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#7fd0ff;font-family:'JetBrains Mono',monospace;overflow-y:auto}
+#account-panel,#stats-panel,#friends-panel{position:fixed;inset:0;z-index:52;justify-content:center;padding:24px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#7fd0ff;font-family:'JetBrains Mono',monospace;overflow-y:auto}
+.friend-row{display:flex;align-items:center;gap:8px;width:100%;background:rgba(0,0,0,0.35);border:1px solid rgba(80,180,255,0.22);border-radius:5px;padding:8px 10px;box-sizing:border-box}
+.friend-name{flex:1;font-size:12px;letter-spacing:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.friend-dot{width:8px;height:8px;border-radius:50%;flex:none;background:#3a4658}
+.friend-dot.online{background:#00FF41;box-shadow:0 0 6px #00FF41}
+.friend-sub{font-size:8px;letter-spacing:1px;opacity:0.45}
+.friend-act{cursor:pointer;background:rgba(0,160,255,0.08);border:1px solid rgba(80,180,255,0.4);color:#a8e0ff;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;padding:5px 10px;border-radius:4px;transition:all .15s}
+.friend-act:hover{background:rgba(0,160,255,0.2)}
+.friend-act.join{border-color:rgba(0,255,65,0.5);color:#00FF41;background:rgba(0,255,65,0.08)}
+.friend-act.join:hover{background:rgba(0,255,65,0.2)}
+.friend-act.danger{border-color:rgba(255,90,90,0.4);color:#ff8f8f;background:rgba(255,60,60,0.06)}
+.friend-act:disabled{opacity:0.35;cursor:default}
 .acct-input{background:rgba(0,0,0,0.4);border:1px solid rgba(80,180,255,0.35);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:1px;padding:9px 12px;border-radius:4px;width:100%;box-sizing:border-box}
 .acct-btn{cursor:pointer;background:rgba(0,160,255,0.1);border:1px solid rgba(80,180,255,0.4);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:10px 14px;border-radius:4px;transition:all .15s}
 .acct-btn:hover{background:rgba(0,160,255,0.2);border-color:#7fd0ff;color:#a8e0ff}
@@ -788,6 +799,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button id="sm-watch-btn">🔭 WATCH</button>
     <button id="sm-stats-btn">📊 STATS</button>
     <button id="sm-replays-btn">🎞 REPLAYS</button>
+    <button id="sm-friends-btn">🤝 FRIENDS</button>
     <button id="sm-account-btn">👤 ACCOUNT</button>
   </div>
   <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
@@ -977,6 +989,19 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 
   <div id="acct-status" style="font-size:10px;letter-spacing:1px;min-height:14px;text-align:center"></div>
   <button id="acct-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
+</div>
+
+<div id="friends-panel" style="display:none;flex-direction:column;align-items:center;gap:10px">
+  <div class="sm-title" style="font-size:18px;margin-bottom:2px">🤝 FRIENDS</div>
+  <div style="display:flex;gap:8px;width:min(360px,92%)">
+    <input id="friends-add-input" type="text" autocomplete="off" spellcheck="false" placeholder="Add by username…" class="acct-input" style="flex:1" />
+    <button id="friends-add-btn" class="acct-btn">ADD</button>
+  </div>
+  <div id="friends-status" style="font-size:10px;letter-spacing:1px;min-height:14px;text-align:center"></div>
+  <div id="friends-list" style="display:flex;flex-direction:column;gap:7px;width:min(360px,92%);max-height:52vh;overflow-y:auto"></div>
+  <div id="friends-empty" style="display:none;font-size:10px;opacity:0.5;letter-spacing:1px;text-align:center">No friends yet — add one by username above.</div>
+  <div id="friends-signedout" style="display:none;font-size:10px;opacity:0.6;letter-spacing:1px;text-align:center">Sign in and choose a username (👤 ACCOUNT) to use friends.</div>
+  <button id="friends-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
 </div>
 
 <div id="stats-panel" style="display:none;flex-direction:column;align-items:center;gap:10px">
@@ -6068,6 +6093,100 @@ async function claimUsername(rawName) {
   }
 }
 
+// ===== Friends (Firestore) =====
+// One doc per pair in /friendships, keyed by the two uids sorted + joined by "_".
+// A friend is "online" when their uid is present in mpEntries (they're currently
+// broadcasting a live flight), which is exactly the key we store on the friendship.
+function friendPairId(a, b) { return [a, b].sort().join('_'); }
+
+// Look up a friend's live multiplayer entry by uid (null if not flying right now).
+function friendLiveEntry(uid) { return (uid && mpEntries[uid]) ? mpEntries[uid] : null; }
+
+// Add a friend by username. If they've already sent US a request, this accepts it.
+async function sendFriendRequest(rawName) {
+  const name = (rawName || '').trim();
+  if (!currentUser) return { ok: false, error: 'Sign in first.' };
+  if (!currentUsername) return { ok: false, error: 'Claim a username before adding friends.' };
+  if (!USERNAME_RE.test(name)) return { ok: false, error: 'Enter a valid username.' };
+  if (name.toLowerCase() === currentUsername.toLowerCase()) return { ok: false, error: "You can't add yourself." };
+  try {
+    const snap = await fsMod.getDoc(fsMod.doc(fsDb, 'usernames', name.toLowerCase()));
+    if (!snap.exists()) return { ok: false, error: 'No pilot named "' + name + '".' };
+    const otherUid = snap.data().uid;
+    const otherName = snap.data().displayName || name;
+    if (otherUid === currentUser.uid) return { ok: false, error: "You can't add yourself." };
+    const pid = friendPairId(currentUser.uid, otherUid);
+    const ref = fsMod.doc(fsDb, 'friendships', pid);
+    const existing = await fsMod.getDoc(ref);
+    if (existing.exists()) {
+      const d = existing.data();
+      if (d.status === 'accepted') return { ok: false, error: 'Already friends with ' + otherName + '.' };
+      if (d.requestedBy === currentUser.uid) return { ok: false, error: 'Request to ' + otherName + ' already sent.' };
+      await fsMod.updateDoc(ref, { status: 'accepted' }); // they'd requested us — accept it
+      return { ok: true, accepted: true, name: otherName };
+    }
+    const usernames = {};
+    usernames[currentUser.uid] = currentUsername;
+    usernames[otherUid] = otherName;
+    await fsMod.setDoc(ref, {
+      members: [currentUser.uid, otherUid].sort(),
+      usernames: usernames,
+      requestedBy: currentUser.uid,
+      status: 'pending',
+      createdAt: Date.now(),
+    });
+    return { ok: true, name: otherName };
+  } catch (e) { console.warn('[Friends] request failed', e); return { ok: false, error: 'Could not send request.' }; }
+}
+
+async function acceptFriendRequest(pid) {
+  try { await fsMod.updateDoc(fsMod.doc(fsDb, 'friendships', pid), { status: 'accepted' }); return { ok: true }; }
+  catch (e) { return { ok: false, error: 'Could not accept.' }; }
+}
+async function removeFriendship(pid) {
+  try { await fsMod.deleteDoc(fsMod.doc(fsDb, 'friendships', pid)); return { ok: true }; }
+  catch (e) { return { ok: false, error: 'Could not remove.' }; }
+}
+
+// Live view of the signed-in pilot's friendships, kept current with onSnapshot.
+let friendsUnsub = null;
+let friendsCache = []; // [{ pid, otherUid, otherName, status, incoming, outgoing }]
+const friendsListeners = [];
+function onFriendsChange(cb) { friendsListeners.push(cb); }
+function fireFriendsChange() { friendsListeners.forEach(function (cb) { try { cb(); } catch (e) {} }); }
+
+function subscribeFriends() {
+  if (friendsUnsub) { friendsUnsub(); friendsUnsub = null; }
+  friendsCache = [];
+  if (!currentUser || !fsMod || !fsDb) { fireFriendsChange(); return; }
+  const uid = currentUser.uid;
+  const q = fsMod.query(fsMod.collection(fsDb, 'friendships'),
+                        fsMod.where('members', 'array-contains', uid));
+  friendsUnsub = fsMod.onSnapshot(q, function (snap) {
+    const arr = [];
+    snap.forEach(function (docSnap) {
+      const d = docSnap.data();
+      const otherUid = (d.members || []).find(function (u) { return u !== uid; });
+      if (!otherUid) return;
+      arr.push({
+        pid: docSnap.id, otherUid: otherUid,
+        otherName: (d.usernames && d.usernames[otherUid]) || otherUid.slice(0, 6),
+        status: d.status,
+        incoming: d.status === 'pending' && d.requestedBy !== uid,
+        outgoing: d.status === 'pending' && d.requestedBy === uid,
+      });
+    });
+    // Accepted first, then incoming requests, then outgoing; alpha within each.
+    arr.sort(function (a, b) {
+      const rank = function (f) { return f.status === 'accepted' ? 0 : (f.incoming ? 1 : 2); };
+      return rank(a) - rank(b) || a.otherName.localeCompare(b.otherName);
+    });
+    friendsCache = arr;
+    fireFriendsChange();
+  }, function (err) { console.warn('[Friends] subscribe failed', err); });
+}
+onAccountChange(subscribeFriends);
+
 // Smoothly advance every mp entry toward its last-reported position (same lerp
 // approach used for real ADS-B traffic), rebuild `traffic[]` with fresh mp
 // entries every frame, and run a ground/runway collision check — the generic
@@ -10932,6 +11051,103 @@ function beginFlight(loc) {
   try { window.focus(); } catch (e) {} // capture keyboard for flight controls
 }
 
+// Pick a spot to spawn near a friend that doesn't overlap ANY currently-connected
+// player. Candidate offsets are expressed relative to the friend's heading
+// (metres back, metres right). Airborne friends get an echelon slot off the wing;
+// friends on the ground get a nearby ramp/taxi spot clear of the runway. Returns
+// { lat, lon, hdg, airborne, alt, speed }.
+function findSpawnNearFriend(fr) {
+  const cosLat = Math.cos(fr.lat * DEG);
+  const dLatPerM = 1 / M_PER_DEG_LAT, dLonPerM = 1 / (M_PER_DEG_LAT * cosLat);
+  const airborne = fr.phase !== 'ground';
+  const hdg = fr.heading || 90;
+  const clearM = airborne ? 180 : MP_GROUND_COLLIDE_M * 2.5; // min separation from every player
+  const specs = airborne
+    ? [[-140, 100], [-140, -100], [-240, 150], [-240, -150], [-360, 200], [-360, -200], [-520, 0], [-700, 240]]
+    : [[0, 50], [0, -50], [0, 80], [0, -80], [-70, 55], [-70, -55], [55, 70], [55, -70]];
+  const fN = Math.cos(hdg * DEG), fE = Math.sin(hdg * DEG);
+  const rN = Math.cos((hdg + 90) * DEG), rE = Math.sin((hdg + 90) * DEG);
+  function distToPlayersM(lat, lon) {
+    let min = Infinity;
+    for (const uid in mpEntries) {
+      const e = mpEntries[uid];
+      const dN = (lat - e.lat) * M_PER_DEG_LAT;
+      const dE = (lon - e.lon) * M_PER_DEG_LAT * cosLat;
+      const d = Math.hypot(dN, dE);
+      if (d < min) min = d;
+    }
+    return min;
+  }
+  for (let i = 0; i < specs.length; i++) {
+    const back = specs[i][0], right = specs[i][1];
+    const dN = back * fN + right * rN, dE = back * fE + right * rE;
+    const lat = fr.lat + dN * dLatPerM, lon = fr.lon + dE * dLonPerM;
+    if (distToPlayersM(lat, lon) >= clearM)
+      return { lat: lat, lon: lon, hdg: hdg, airborne: airborne, alt: fr.altitude || 0, speed: fr.speed || 0 };
+  }
+  // Nothing clear — fall back to well behind the friend.
+  const dN = -900 * fN, dE = -900 * fE;
+  return { lat: fr.lat + dN * dLatPerM, lon: fr.lon + dE * dLonPerM, hdg: hdg, airborne: airborne, alt: fr.altitude || 0, speed: fr.speed || 0 };
+}
+
+// Spawn a REAL, controllable flight right next to a friend (matching altitude/
+// speed when they're airborne, on the ground beside them otherwise). Unlike Live
+// Watch this is a normal flight — you fly your own aircraft, formation-style.
+function beginFlightNearFriend(fr) {
+  const sp = findSpawnNearFriend(fr);
+  const friendName = fr.callsign || fr.username || 'FRIEND';
+  START.lat = sp.lat; START.lon = sp.lon; START.hdg = sp.hdg;
+  START.alt = 100; START.spd = 0; START.thr = 0;
+  resetState();
+  startFlightStats({ lat: sp.lat, lon: sp.lon, name: 'Formation w/ ' + friendName });
+
+  const locLabel = document.getElementById('loc-label');
+  if (locLabel) locLabel.textContent = 'JOINING ' + friendName;
+  if (startMenu) startMenu.style.display = 'none';
+  if (minimapEl) minimapEl.style.display = 'block';
+  var fbEl = document.getElementById('flight-btns');
+  if (fbEl) fbEl.style.display = 'flex';
+  if (loadingEl) {
+    loadingEl.style.display = 'flex';
+    const s = loadingEl.querySelector('.l-sub');
+    if (s) { s.style.color = '#00FF41'; s.classList.add('pulsing'); s.textContent = 'JOINING FRIEND…'; }
+  }
+
+  state.lat = sp.lat; state.lon = sp.lon; state.heading = sp.hdg;
+  setGeoOrigin(sp.lat, sp.lon);
+  resetWorld();
+  if (THREEJS) THREEJS._menuPreview = false;
+
+  spawnResolved = false;
+  if (sp.airborne) {
+    state.altitude = Math.max(sp.alt, 100);
+    state.speed = Math.max(120, sp.speed || 0);
+    state.throttle = 62; state.thrustPct = 62;
+    state.gamma = 0; state.vs = 0;
+    state.onGround = false; state.gearDown = false;
+    state.engineState = 'running'; state.rpm = 100; state.pitch = 2.5;
+    spawnResolved = true;
+  } else {
+    sampleGroundFt(sp.lat, sp.lon, function (ft) {
+      START.alt = ft;
+      state.altitude = ft + 10; // ground ft + 10 ft, same as the normal ground spawn
+      state.speed = 0; state.throttle = 0; state.thrustPct = 0;
+      state.gamma = 0; state.vs = 0; state.onGround = true; state.pitch = 2.5;
+      state.engineState = 'off'; state.rpm = 0;
+      spawnResolved = true;
+    });
+  }
+
+  initTraffic();
+  chosen = true;
+  simReady = false;
+  startTime = performance.now();
+  realWeatherActive = true;
+  realWeatherTimer = 60;
+  fetchRealWeather(sp.lat, sp.lon, true);
+  try { window.focus(); } catch (e) {}
+}
+
 // Live Watch — jump straight into spectating a random currently-connected
 // live player (weighted away from autopilot-flown ones, see liveWatchAcquireRandom),
 // skipping the runway search since we're not actually spawning our own aircraft.
@@ -11485,6 +11701,130 @@ onAccountChange(updateAccountStatusLine);
   }
   if (goBtn) goBtn.addEventListener('click', go);
   if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+})();
+
+// ===================== Friends panel =====================
+(function () {
+  const panel = document.getElementById('friends-panel');
+  const openBtn = document.getElementById('sm-friends-btn');
+  const closeBtn = document.getElementById('friends-close');
+  const addInput = document.getElementById('friends-add-input');
+  const addBtn = document.getElementById('friends-add-btn');
+  const statusEl = document.getElementById('friends-status');
+  const listEl = document.getElementById('friends-list');
+  const emptyEl = document.getElementById('friends-empty');
+  const signedOutEl = document.getElementById('friends-signedout');
+  if (!panel) return;
+
+  let refreshTimer = null;
+
+  function setStatus(msg, kind) {
+    if (!statusEl) return;
+    statusEl.textContent = msg || '';
+    statusEl.className = kind ? 'sm-' + kind : '';
+  }
+
+  function actBtn(label, cls, onClick, disabled) {
+    const b = document.createElement('button');
+    b.className = 'friend-act' + (cls ? ' ' + cls : '');
+    b.textContent = label;
+    if (disabled) b.disabled = true;
+    else b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function render() {
+    if (!listEl) return;
+    const signedIn = !!currentUser && !!currentUsername;
+    if (signedOutEl) signedOutEl.style.display = signedIn ? 'none' : 'block';
+    if (addInput) addInput.disabled = !signedIn;
+    if (addBtn) addBtn.disabled = !signedIn;
+    listEl.innerHTML = '';
+    if (!signedIn) { if (emptyEl) emptyEl.style.display = 'none'; return; }
+    if (emptyEl) emptyEl.style.display = friendsCache.length ? 'none' : 'block';
+
+    friendsCache.forEach(function (f) {
+      const row = document.createElement('div');
+      row.className = 'friend-row';
+
+      const live = friendLiveEntry(f.otherUid);
+      const online = f.status === 'accepted' && !!live;
+
+      const dot = document.createElement('div');
+      dot.className = 'friend-dot' + (online ? ' online' : '');
+      row.appendChild(dot);
+
+      const nameWrap = document.createElement('div');
+      nameWrap.style.flex = '1';
+      nameWrap.style.overflow = 'hidden';
+      const name = document.createElement('div');
+      name.className = 'friend-name';
+      name.textContent = f.otherName;
+      nameWrap.appendChild(name);
+      const sub = document.createElement('div');
+      sub.className = 'friend-sub';
+      sub.textContent = f.incoming ? 'wants to be friends'
+        : f.outgoing ? 'request sent'
+        : online ? (live.phase === 'ground' ? 'on the ground' : 'flying now')
+        : 'offline';
+      nameWrap.appendChild(sub);
+      row.appendChild(nameWrap);
+
+      if (f.status === 'accepted') {
+        row.appendChild(actBtn('JOIN', 'join', function () {
+          const e = friendLiveEntry(f.otherUid);
+          if (!e) { setStatus(f.otherName + " isn't flying right now.", 'err'); return; }
+          panel.style.display = 'none';
+          beginFlightNearFriend(e);
+        }, !online));
+      } else if (f.incoming) {
+        row.appendChild(actBtn('ACCEPT', 'join', function () {
+          acceptFriendRequest(f.pid).then(function (r) { if (r && r.ok === false) setStatus(r.error, 'err'); });
+        }));
+      }
+      row.appendChild(actBtn('✕', 'danger', function () {
+        removeFriendship(f.pid).then(function (r) { if (r && r.ok === false) setStatus(r.error, 'err'); });
+      }));
+
+      listEl.appendChild(row);
+    });
+  }
+  onFriendsChange(render);
+
+  function add() {
+    if (!addInput) return;
+    const name = addInput.value;
+    if (!name.trim()) { setStatus('Enter a username.', 'err'); return; }
+    if (addBtn) addBtn.disabled = true;
+    setStatus('Sending…');
+    sendFriendRequest(name).then(function (r) {
+      if (addBtn) addBtn.disabled = false;
+      if (r && r.ok === false) { setStatus(r.error, 'err'); return; }
+      addInput.value = '';
+      setStatus(r && r.accepted ? ('You and ' + r.name + ' are now friends!') : ('Request sent to ' + (r.name || name.trim()) + '.'), 'ok');
+    });
+  }
+
+  function open() {
+    render();
+    setStatus('');
+    if (startMenu) startMenu.style.display = 'none';
+    panel.style.display = 'flex';
+    // Online status comes from live multiplayer presence, which changes outside
+    // of Firestore snapshots — repaint the dots periodically while open.
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(render, 4000);
+  }
+  function close() {
+    panel.style.display = 'none';
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    if (startMenu && !chosen) startMenu.style.display = 'flex';
+  }
+
+  if (openBtn) openBtn.addEventListener('click', open);
+  if (closeBtn) closeBtn.addEventListener('click', close);
+  if (addBtn) addBtn.addEventListener('click', add);
+  if (addInput) addInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } });
 })();
 
 // ===================== Stats panel =====================
