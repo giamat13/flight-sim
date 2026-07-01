@@ -192,8 +192,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sm-settings-btn:hover{background:rgba(0,255,65,0.12);color:#00FF41;border-color:rgba(0,255,65,0.5)}
 #sm-livewatch-btn{cursor:pointer;background:rgba(255,0,60,0.05);border:1px solid rgba(255,60,90,0.3);color:#ff5577;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
 #sm-livewatch-btn:hover{background:rgba(255,0,60,0.14);color:#ff8fa3;border-color:rgba(255,60,90,0.6)}
-#sm-watch-btn,#sm-stats-btn,#sm-account-btn{cursor:pointer;background:rgba(0,160,255,0.05);border:1px solid rgba(80,180,255,0.3);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
-#sm-watch-btn:hover,#sm-stats-btn:hover,#sm-account-btn:hover{background:rgba(0,160,255,0.14);color:#a8e0ff;border-color:rgba(80,180,255,0.6)}
+#sm-watch-btn,#sm-stats-btn,#sm-account-btn,#sm-replays-btn{cursor:pointer;background:rgba(0,160,255,0.05);border:1px solid rgba(80,180,255,0.3);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
+#sm-watch-btn:hover,#sm-stats-btn:hover,#sm-account-btn:hover,#sm-replays-btn:hover{background:rgba(0,160,255,0.14);color:#a8e0ff;border-color:rgba(80,180,255,0.6)}
+#replays-panel{position:fixed;inset:0;z-index:52;justify-content:center;padding:24px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#7fd0ff;font-family:'JetBrains Mono',monospace;overflow-y:auto}
+.rep-row{display:flex;align-items:center;gap:10px;justify-content:space-between;border:1px solid rgba(80,180,255,0.2);border-radius:5px;padding:9px 11px}
+.rep-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+.rep-title{font-size:11px;letter-spacing:1px;color:#a8e0ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rep-sub{font-size:9px;letter-spacing:1px;opacity:0.55}
+.rep-btn{cursor:pointer;background:rgba(0,160,255,0.1);border:1px solid rgba(80,180,255,0.4);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;padding:7px 12px;border-radius:4px;white-space:nowrap;transition:all .15s}
+.rep-btn:hover{background:rgba(0,160,255,0.2);border-color:#7fd0ff}
+.rep-btn:disabled{opacity:0.4;cursor:default}
 #sm-account-status{font-size:9px;letter-spacing:2px;opacity:0.5;text-align:center;margin-top:-4px}
 #settings-panel{position:fixed;inset:0;z-index:52;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:24px 16px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#00FF41;font-family:'JetBrains Mono',monospace;overflow-y:auto}
 #account-panel,#stats-panel{position:fixed;inset:0;z-index:52;justify-content:center;padding:24px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#7fd0ff;font-family:'JetBrains Mono',monospace;overflow-y:auto}
@@ -779,6 +787,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button id="sm-livewatch-btn">🔴 LIVE WATCH</button>
     <button id="sm-watch-btn">🔭 WATCH</button>
     <button id="sm-stats-btn">📊 STATS</button>
+    <button id="sm-replays-btn">🎞 REPLAYS</button>
     <button id="sm-account-btn">👤 ACCOUNT</button>
   </div>
   <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
@@ -974,6 +983,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="sm-title" style="font-size:18px;margin-bottom:2px">📊 FLIGHT STATS</div>
   <div id="stats-body" style="display:flex;flex-direction:column;gap:6px;width:min(360px,90%);font-size:11px;letter-spacing:1px"></div>
   <button id="stats-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
+</div>
+
+<div id="replays-panel" style="display:none;flex-direction:column;align-items:center;gap:10px">
+  <div class="sm-title" style="font-size:18px;margin-bottom:2px">🎞 MY REPLAYS</div>
+  <div id="replays-list" style="display:flex;flex-direction:column;gap:7px;width:min(440px,94%);max-height:60vh;overflow-y:auto"></div>
+  <div id="replays-empty" style="display:none;font-size:10px;opacity:0.5;letter-spacing:1px;text-align:center">No replays yet — fly a flight while signed in.</div>
+  <div id="replays-status" style="font-size:10px;letter-spacing:1px;min-height:14px;text-align:center;opacity:0.7"></div>
+  <button id="replays-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
 </div>
 
 <div id="pausemenu">
@@ -6080,6 +6097,7 @@ function updateMultiplayer(dt) {
 // at that point, but state.lat/lon/heading are already final.
 function broadcastOwnState(dt) {
   if (!mpReady || !mpDb || !mpUid || !chosen || !spawnResolved) return;
+  if (spectate.active) return; // watching/replaying — the chase camera isn't a real aircraft to broadcast
   mpWriteTimer += dt;
   if (mpWriteTimer < MP_WRITE_S) return;
   mpWriteTimer = 0;
@@ -7275,7 +7293,7 @@ function navUpdateHud() {
 // traffic aircraft, and rides along with it so you can study its downloaded 3D model.
 // Press F5 to return to normal flying.
 const spectate = { active: false, id: null, banner: null, playerOnly: false, random: false,
-  hudOverride: false, hudPitch: 0, hudBank: 0, hudAglFt: 0, _lastAltM: null };
+  replay: false, hudOverride: false, hudPitch: 0, hudBank: 0, hudAglFt: 0, _lastAltM: null };
 
 function followAcquireNearest() {
   let best = null, bestD = Infinity;
@@ -7377,6 +7395,19 @@ function spectatorFollow(dt) {
   }
   if (!tgt) { if (spectate.banner) spectate.banner.textContent = 'SPECTATE · waiting for traffic…  (F5 to exit)'; return; }
 
+  applySpectateTarget(tgt, dt);
+
+  if (spectate.banner) {
+    spectate.banner.textContent = 'SPECTATE ▸ ' + (tgt.callsign || tgt.icao) + '  ·  ' + (tgt.acType || '??') +
+      '  ·  ' + Math.round(tgt.altitude) + 'ft  ·  ' + Math.round(tgt.speed) + 'kt   (F5 to exit)';
+  }
+}
+
+// Chase-camera placement + HUD-gauge sync from a target object (a live mp entry,
+// ADS-B plane, or a synthetic replay target). state.pitch/bank/altitude are used
+// only to aim/place the camera; the real target attitude/gauges flow into the HUD
+// via spectate.hudOverride. Shared by spectatorFollow() and replayFollow().
+function applySpectateTarget(tgt, dt) {
   const len = (tgt.acDims && tgt.acDims.len) || 40;
   const D   = Math.max(70, len * 1.9);   // chase distance behind the plane (m)
   const upM = Math.max(10, len * 0.28);  // ride a little above it
@@ -7393,10 +7424,9 @@ function spectatorFollow(dt) {
   state.onGround = false; state.terrainHit = false;
   lookYawOff = 0; lookPitchOff = 0;
 
-  // Real telemetry for the on-screen gauges (only available for live multiplayer
-  // players, not for synthetic ADS-B traffic) — kept separate from state.pitch/bank
-  // above, which exist purely to aim the chase camera at the target, and from
-  // state.altitude above, which exists purely to place the camera behind/above it.
+  // Real telemetry for the on-screen gauges (available for live players and for
+  // replays — both set _isMp; synthetic ADS-B traffic does not). Kept separate
+  // from state.pitch/bank/altitude above, which exist purely to aim the camera.
   spectate.hudOverride = !!tgt._isMp;
   if (spectate.hudOverride) {
     spectate.hudPitch = tgt.pitch || 0;
@@ -7428,15 +7458,14 @@ function spectatorFollow(dt) {
     }
   }
   spectate._lastAltM = tgtAltM;
-
-  if (spectate.banner) {
-    spectate.banner.textContent = 'SPECTATE ▸ ' + (tgt.callsign || tgt.icao) + '  ·  ' + (tgt.acType || '??') +
-      '  ·  ' + Math.round(tgt.altitude) + 'ft  ·  ' + Math.round(tgt.speed) + 'kt   (F5 to exit)';
-  }
 }
 
 function update(dt) {
-  if (spectate.active) { spectatorFollow(Math.min(dt, 0.05)); return; }
+  if (spectate.active) {
+    if (spectate.replay) replayFollow(Math.min(dt, 0.05));
+    else spectatorFollow(Math.min(dt, 0.05));
+    return;
+  }
   if (state.terrainHit) {
     state.terrainTimer -= dt;
     if (state.terrainTimer <= 0) resetState();
@@ -10301,6 +10330,7 @@ function startFlightStats(loc) {
     _wasStall: false, _wasOverspeed: false,
     saved: false,
   };
+  startReplayRecording(loc);
 }
 
 function haversineNm(lat1, lon1, lat2, lon2) {
@@ -10322,6 +10352,7 @@ function tickFlightStats(dt) {
   const dNm = haversineNm(flightStats.lastLat, flightStats.lastLon, state.lat, state.lon);
   if (isFinite(dNm)) flightStats.distanceNm += dNm;
   flightStats.lastLat = state.lat; flightStats.lastLon = state.lon;
+  tickReplayRecording();
 }
 
 // Called on landing, crash, quit-to-menu, or restart. Always safe to call —
@@ -10365,6 +10396,327 @@ async function finalizeFlightStats(outcome) {
       }, { merge: true });
     });
   } catch (e) { console.warn('[Stats] failed to save flight', e); }
+  saveReplay(outcome, snap); // persist the recorded flight path (logged-in only)
+}
+
+// ===================== Flight Replay (record → save → play back → export video) =====================
+// A replay is just a time-stamped log of the exact same telemetry we broadcast
+// for multiplayer, sampled a few times a second during a flight. Playing it back
+// reuses the entire spectate/WATCH pipeline (applySpectateTarget) — the recorded
+// frames feed a synthetic target, so every gauge, warning and camera angle is
+// reproduced exactly as it was flown.
+const REPLAY_SAMPLE_MS  = 200;    // 5 Hz — smooth playback, small storage
+const REPLAY_MAX_FRAMES = 4000;   // ~13 min at 5 Hz; decimated (halved) beyond this
+const ENGINE_TO_INT = { off: 0, starting: 1, running: 2, fire: 3 };
+const INT_TO_ENGINE = ['off', 'starting', 'running', 'fire'];
+
+let replayRec = null;   // recording buffer for the current flight
+let replayPlay = null;  // active playback cursor
+
+function startReplayRecording(loc) {
+  replayRec = {
+    startedAt: Date.now(),
+    t0: performance.now(),
+    aircraft: selectedAircraftKey,
+    departureName: (loc && loc.name) || '',
+    interval: REPLAY_SAMPLE_MS,
+    lastSampleT: -1e9,
+    frames: [],
+  };
+}
+
+// One compact frame: [dtMs, lat, lon, altFt, hdg, pitch, bank, spd, vs, thr, rpm, aoa, flaps, fuelPct, eng, flags]
+function tickReplayRecording() {
+  if (!replayRec) return;
+  const nowT = performance.now();
+  if (nowT - replayRec.lastSampleT < replayRec.interval) return;
+  replayRec.lastSampleT = nowT;
+  const r1 = function (x) { return Math.round((x || 0) * 10) / 10; };
+  let flags = 0;
+  if (state.onGround)   flags |= 1;
+  if (state.gearDown)   flags |= 2;
+  if (ap.on)            flags |= 4;
+  if (state.stall)      flags |= 8;
+  if (state.overspeed)  flags |= 16;
+  if (state.wingBroken) flags |= 32;
+  if (state.gearBroken) flags |= 64;
+  replayRec.frames.push([
+    Math.round(nowT - replayRec.t0),
+    Math.round(state.lat * 1e5) / 1e5, Math.round(state.lon * 1e5) / 1e5,
+    Math.round(state.altitude), r1(state.heading), r1(state.pitch), r1(state.bank),
+    r1(state.speed), Math.round(state.vs || 0), Math.round(state.throttle || 0),
+    Math.round(state.rpm || 0), r1(state.aoa), state.flaps | 0,
+    Math.round(state.fuelMax > 0 ? (state.fuel / state.fuelMax) * 100 : 0),
+    ENGINE_TO_INT[state.engineState] || 0, flags,
+  ]);
+  // Keep memory + storage bounded: when the buffer fills, drop every other frame
+  // (timestamps are absolute, so playback timing stays correct) and halve the rate.
+  if (replayRec.frames.length >= REPLAY_MAX_FRAMES) {
+    replayRec.frames = replayRec.frames.filter(function (_, i) { return i % 2 === 0; });
+    replayRec.interval *= 2;
+  }
+}
+
+// Persist the just-finished recording. Requires a real account (guests can't save).
+// Metadata and the (large) frame log are stored separately so the replays list
+// stays cheap to load — the frames are only fetched when a replay is played.
+async function saveReplay(outcome, statsSnap) {
+  const rec = replayRec;
+  replayRec = null;
+  if (!rec || rec.frames.length < 10) return;         // too short to be worth keeping
+  if (!currentUser || !fsDb || !fsMod) return;        // replays require an account
+  const durationSec = Math.round(rec.frames[rec.frames.length - 1][0] / 1000);
+  try {
+    const metaRef = await fsMod.addDoc(fsMod.collection(fsDb, 'replays'), {
+      uid: currentUser.uid, username: currentUsername || null,
+      aircraft: rec.aircraft, departureName: rec.departureName, outcome: outcome,
+      durationSec: durationSec, frameCount: rec.frames.length,
+      distanceNm: statsSnap ? Math.round(statsSnap.distanceNm * 10) / 10 : 0,
+      startedAt: rec.startedAt, endedAt: Date.now(),
+    });
+    // Frames (nested arrays inside a JSON string — Firestore-safe) in a subdoc.
+    await fsMod.setDoc(fsMod.doc(fsDb, 'replays', metaRef.id, 'chunks', 'frames'), {
+      uid: currentUser.uid, framesJson: JSON.stringify(rec.frames),
+    });
+    console.log('[Replay] saved (' + rec.frames.length + ' frames, ' + durationSec + 's)');
+  } catch (e) { console.warn('[Replay] failed to save', e); }
+}
+
+// Fetch the frame log for a saved replay (id). Returns the framesJson string or null.
+async function loadReplayFramesJson(id) {
+  if (!fsDb || !fsMod) return null;
+  try {
+    const snap = await fsMod.getDoc(fsMod.doc(fsDb, 'replays', id, 'chunks', 'frames'));
+    return snap.exists() ? (snap.data().framesJson || null) : null;
+  } catch (e) { console.warn('[Replay] failed to load frames', e); return null; }
+}
+
+// Turn a compact frame array into the target object applySpectateTarget expects.
+function replayFrameToTarget(f, meta) {
+  const flags = f[15] | 0;
+  return {
+    _isMp: true, alive: true,
+    callsign: meta.callsign, icao: meta.callsign, acType: meta.aircraft,
+    acDims: meta.acDims,
+    lat: f[1], lon: f[2], altitude: f[3], heading: f[4], pitch: f[5], bank: f[6],
+    speed: f[7], vs: f[8], throttle: f[9], rpm: f[10], aoa: f[11], flaps: f[12] | 0,
+    fuelPct: f[13], engineState: INT_TO_ENGINE[f[14] | 0] || 'off',
+    gearDown: !!(flags & 2), stall: !!(flags & 8), overspeed: !!(flags & 16),
+    wingBroken: !!(flags & 32), gearBroken: !!(flags & 64),
+    phase: (flags & 1) ? 'ground' : 'cruise',
+  };
+}
+
+// Interpolate the replay to time tMs and return a ready-to-apply target.
+function replaySampleAt(tMs) {
+  const P = replayPlay, frames = P.frames;
+  // advance the cursor to the frame just before tMs
+  while (P.i < frames.length - 1 && frames[P.i + 1][0] <= tMs) P.i++;
+  const a = frames[P.i], b = frames[Math.min(P.i + 1, frames.length - 1)];
+  const ta = a[0], tb = b[0];
+  const u = tb > ta ? Math.max(0, Math.min(1, (tMs - ta) / (tb - ta))) : 0;
+  const lerp = function (x, y) { return x + (y - x) * u; };
+  const t = replayFrameToTarget(a, P.meta);       // discrete fields (gear/flags/engine) from frame a
+  t.lat = lerp(a[1], b[1]); t.lon = lerp(a[2], b[2]); t.altitude = lerp(a[3], b[3]);
+  t.heading = wrap360(a[4] + normDeg(b[4] - a[4]) * u);
+  t.pitch = lerp(a[5], b[5]); t.bank = lerp(a[6], b[6]);
+  t.speed = lerp(a[7], b[7]); t.vs = lerp(a[8], b[8]);
+  t.throttle = lerp(a[9], b[9]); t.rpm = lerp(a[10], b[10]); t.aoa = lerp(a[11], b[11]);
+  t.fuelPct = lerp(a[13], b[13]);
+  return t;
+}
+
+// Enter replay mode for a loaded replay document. Mirrors beginLiveWatchFor but
+// drives the target from recorded frames instead of a live feed. onEnd (optional)
+// fires once when the replay finishes (used by the video exporter).
+function beginReplay(doc, onEnd) {
+  let frames;
+  try { frames = JSON.parse(doc.framesJson); } catch (e) { frames = null; }
+  if (!frames || !frames.length) { console.warn('[Replay] empty/corrupt replay'); return false; }
+
+  const def = AIRCRAFT_DEFS[doc.aircraft] || {};
+  const meta = {
+    callsign: (doc.username || 'REPLAY').toUpperCase(),
+    aircraft: doc.aircraft,
+    acDims: def.playerModelDims || { span: 30, len: 35 },
+  };
+  replayPlay = { frames: frames, i: 0, t0: performance.now(), meta: meta,
+                 durationMs: frames[frames.length - 1][0], onEnd: onEnd || null, ended: false };
+
+  const f0 = frames[0];
+  START.lat = f0[1]; START.lon = f0[2]; START.hdg = f0[4];
+  START.alt = 100; START.spd = 0; START.thr = 0;
+  resetState();
+
+  const locLabel = document.getElementById('loc-label');
+  if (locLabel) locLabel.textContent = 'REPLAY · ' + meta.callsign;
+  if (startMenu) startMenu.style.display = 'none';
+  if (minimapEl) minimapEl.style.display = 'block';
+  var fbEl = document.getElementById('flight-btns');
+  if (fbEl) fbEl.style.display = 'flex';
+  if (loadingEl) {
+    loadingEl.style.display = 'flex';
+    const sub = loadingEl.querySelector('.l-sub');
+    if (sub) { sub.style.color = '#00FF41'; sub.classList.add('pulsing'); sub.textContent = 'LOADING REPLAY...'; }
+  }
+
+  state.lat = f0[1]; state.lon = f0[2]; state.heading = f0[4];
+  state.altitude = Math.max(0, f0[3]) + 50;
+  setGeoOrigin(f0[1], f0[2]);
+  resetWorld();
+  if (THREEJS) THREEJS._menuPreview = false;
+
+  initTraffic();
+  chosen = true;
+  spawnResolved = true;
+  simReady = false;
+  startTime = performance.now();
+  realWeatherActive = true;
+  realWeatherTimer = 60;
+  fetchRealWeather(f0[1], f0[2], true);
+
+  spectate.active = true;
+  spectate.replay = true;
+  spectate.id = null;
+  spectate.playerOnly = false;
+  spectate.random = false;
+  spectate._lastAltM = null;
+  cameraMode = 0;
+  if (!spectate.banner) {
+    const b = document.createElement('div');
+    b.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:60;pointer-events:none;color:#00ff41;font:12px JetBrains Mono,monospace;letter-spacing:1px;text-shadow:0 0 6px #000;text-align:center;white-space:nowrap';
+    document.body.appendChild(b);
+    spectate.banner = b;
+  }
+  try { window.focus(); } catch (e) {}
+  return true;
+}
+
+// Per-frame replay driver (the spectate.replay branch of update()).
+function replayFollow(dt) {
+  updateTraffic(dt);   // keep live ADS-B / other players moving in the background of the shot
+  updateMultiplayer(dt);
+  if (!replayPlay) return;
+  const P = replayPlay;
+  const tMs = (performance.now() - P.t0);
+  const clamped = Math.min(tMs, P.durationMs);
+  const tgt = replaySampleAt(clamped);
+  applySpectateTarget(tgt, dt);
+
+  const remain = Math.max(0, Math.round((P.durationMs - clamped) / 1000));
+  if (spectate.banner) {
+    spectate.banner.textContent = 'REPLAY ▸ ' + P.meta.callsign + '  ·  ' + (P.meta.aircraft || '??') +
+      '  ·  ' + Math.round(tgt.altitude) + 'ft  ·  ' + Math.round(tgt.speed) + 'kt  ·  -' + remain + 's   (Esc to exit)';
+  }
+
+  if (tMs >= P.durationMs && !P.ended) {
+    P.ended = true;
+    const cb = P.onEnd;
+    if (cb) cb();                 // video exporter stops + downloads here
+    else setTimeout(returnToMenu, 800); // plain playback: back to menu shortly after the end
+  }
+}
+
+// ===================== Video export (screen-record a replay to a file) =====================
+// MediaRecorder can only record a single canvas stream, but the sim renders the
+// world (WebGL) and the HUD (2D) into two separate canvases. So we composite both
+// into an offscreen canvas each frame — grabVideoFrame() is called from loop()
+// immediately after render(), while the WebGL back-buffer is still readable, and
+// captureStream() on that composite feeds the recorder. Output is .mp4 where the
+// browser supports it (Safari), otherwise .webm (Chrome/Firefox).
+let videoCap = null;
+
+function pickVideoMime() {
+  const mr = window.MediaRecorder;
+  if (!mr || !mr.isTypeSupported) return { mime: '', ext: 'webm' };
+  const prefs = [
+    { mime: 'video/mp4;codecs=h264', ext: 'mp4' },
+    { mime: 'video/mp4', ext: 'mp4' },
+    { mime: 'video/webm;codecs=vp9', ext: 'webm' },
+    { mime: 'video/webm;codecs=vp8', ext: 'webm' },
+    { mime: 'video/webm', ext: 'webm' },
+  ];
+  for (const p of prefs) { if (mr.isTypeSupported(p.mime)) return p; }
+  return { mime: '', ext: 'webm' };
+}
+
+function startVideoCapture(baseName) {
+  if (videoCap) return false;
+  if (!window.MediaRecorder || !THREEJS || !THREEJS.renderer) return false;
+  const gl = THREEJS.renderer.domElement;
+  const cap = document.createElement('canvas');
+  cap.width = gl.width; cap.height = gl.height;
+  const cctx = cap.getContext('2d');
+  let stream;
+  try { stream = cap.captureStream(30); } catch (e) { return false; }
+  const pick = pickVideoMime();
+  let rec;
+  try { rec = new MediaRecorder(stream, pick.mime ? { mimeType: pick.mime, videoBitsPerSecond: 8e6 } : { videoBitsPerSecond: 8e6 }); }
+  catch (e) { return false; }
+  const chunks = [];
+  rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = function () {
+    if (!videoCapAborted && chunks.length) {
+      const blob = new Blob(chunks, { type: pick.mime || 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = (baseName || 'flight-replay') + '.' + pick.ext;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    }
+    videoCap = null;
+  };
+  let videoCapAborted = false;
+  videoCap = {
+    cap: cap, cctx: cctx, gl: gl, rec: rec,
+    finishing: false, stopped: false,
+    abort: function () { videoCapAborted = true; },
+  };
+  rec.start();
+  return true;
+}
+
+// Called from loop() right after render(); composites WebGL + HUD into the
+// recorder's canvas. No-op unless a capture is running.
+function grabVideoFrame() {
+  if (!videoCap) return;
+  const c = videoCap;
+  try {
+    c.cctx.drawImage(c.gl, 0, 0, c.cap.width, c.cap.height);   // 3D world
+    c.cctx.drawImage(canvas, 0, 0, c.cap.width, c.cap.height); // 2D HUD overlay (sim-canvas)
+  } catch (e) { /* ignore a transient un-drawable frame */ }
+}
+
+// abort=true discards the recording (user bailed out); abort=false finalizes and
+// downloads. A clean finish "wins" — a later abort (e.g. returnToMenu after the
+// replay ended) won't cancel a download already in progress.
+function stopVideoCapture(abort) {
+  if (!videoCap) return;
+  if (!abort) videoCap.finishing = true;
+  else if (!videoCap.finishing) videoCap.abort();
+  if (videoCap.stopped) return;
+  videoCap.stopped = true;
+  try { videoCap.rec.stop(); } catch (e) { videoCap = null; }
+}
+
+// One-click: play a replay start-to-finish while recording, then download the file.
+function exportReplayVideo(doc, onDone) {
+  const name = 'flight-' + (doc.aircraft || 'replay') + '-' + new Date(doc.endedAt || Date.now()).toISOString().slice(0, 10);
+  const started = beginReplay(doc, function () {
+    stopVideoCapture(false);      // finished → finalize + download
+    setTimeout(function () { returnToMenu(); if (onDone) onDone(); }, 600);
+  });
+  if (!started) { if (onDone) onDone('Could not load replay.'); return; }
+  // Wait until terrain is ready so the recording doesn't capture the loading screen.
+  const waitReady = setInterval(function () {
+    if (!spectate.replay) { clearInterval(waitReady); return; } // bailed out
+    if (simReady) {
+      clearInterval(waitReady);
+      // restart the replay clock from now so we record from the very beginning
+      if (replayPlay) { replayPlay.t0 = performance.now(); replayPlay.i = 0; replayPlay.ended = false; }
+      if (!startVideoCapture(name) && onDone) onDone('Recording not supported in this browser.');
+    }
+  }, 200);
 }
 
 function beginFlight(loc) {
@@ -11078,6 +11430,100 @@ onAccountChange(updateAccountStatusLine);
   });
 })();
 
+// ===================== Replays panel =====================
+(function () {
+  const panel = document.getElementById('replays-panel');
+  const openBtn = document.getElementById('sm-replays-btn');
+  const closeBtn = document.getElementById('replays-close');
+  const listEl = document.getElementById('replays-list');
+  const emptyEl = document.getElementById('replays-empty');
+  const statusEl = document.getElementById('replays-status');
+  if (!panel) return;
+
+  function setStatus(msg) { if (statusEl) statusEl.textContent = msg || ''; }
+
+  function fmtDur(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  async function load() {
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    if (emptyEl) emptyEl.style.display = 'none';
+    setStatus('');
+    if (!currentUser) {
+      if (emptyEl) { emptyEl.textContent = 'Sign in (👤 ACCOUNT) to record and watch replays.'; emptyEl.style.display = 'block'; }
+      return;
+    }
+    setStatus('Loading…');
+    try {
+      // Filter by uid only (cheap, no composite index needed) and sort client-side.
+      const q = fsMod.query(
+        fsMod.collection(fsDb, 'replays'),
+        fsMod.where('uid', '==', currentUser.uid),
+        fsMod.limit(50));
+      const snap = await fsMod.getDocs(q);
+      setStatus('');
+      const docs = [];
+      snap.forEach(function (docSnap) { docs.push({ id: docSnap.id, d: docSnap.data() }); });
+      docs.sort(function (a, b) { return (b.d.endedAt || 0) - (a.d.endedAt || 0); });
+      if (!docs.length) { if (emptyEl) { emptyEl.textContent = 'No replays yet — fly a flight while signed in.'; emptyEl.style.display = 'block'; } return; }
+      docs.forEach(function (item) {
+        const d = item.d, id = item.id;
+        const when = new Date(d.endedAt || d.startedAt || Date.now());
+        const dateStr = when.toLocaleDateString() + ' ' + when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const outcome = (d.outcome || '').toUpperCase();
+        const row = document.createElement('div');
+        row.className = 'rep-row';
+        row.innerHTML =
+          '<div class="rep-meta">' +
+            '<span class="rep-title">' + (d.aircraft || '??') + ' · ' + (d.departureName || 'flight') + '</span>' +
+            '<span class="rep-sub">' + dateStr + ' · ' + fmtDur(d.durationSec || 0) +
+              ' · ' + Math.round(d.distanceNm || 0) + 'nm · ' + outcome + '</span>' +
+          '</div>';
+        const btns = document.createElement('div');
+        btns.style.cssText = 'display:flex;gap:6px;flex-shrink:0';
+        const playBtn = document.createElement('button');
+        playBtn.className = 'rep-btn'; playBtn.textContent = '▶ PLAY';
+        const vidBtn = document.createElement('button');
+        vidBtn.className = 'rep-btn'; vidBtn.textContent = '⬇ VIDEO';
+
+        async function withFrames(action) {
+          playBtn.disabled = true; vidBtn.disabled = true;
+          setStatus('Loading replay…');
+          const framesJson = await loadReplayFramesJson(id);
+          setStatus('');
+          playBtn.disabled = false; vidBtn.disabled = false;
+          if (!framesJson) { setStatus('Could not load that replay.'); return; }
+          panel.style.display = 'none';
+          action(Object.assign({}, d, { framesJson: framesJson }));
+        }
+        playBtn.addEventListener('click', function () { withFrames(function (full) { beginReplay(full); }); });
+        vidBtn.addEventListener('click', function () { withFrames(function (full) { exportReplayVideo(full, function (err) { if (err) alert(err); }); }); });
+
+        btns.appendChild(playBtn); btns.appendChild(vidBtn);
+        row.appendChild(btns);
+        listEl.appendChild(row);
+      });
+    } catch (e) {
+      console.warn('[Replay] list failed', e);
+      setStatus('Could not load replays.');
+    }
+  }
+
+  if (openBtn) openBtn.addEventListener('click', function () {
+    if (startMenu) startMenu.style.display = 'none';
+    panel.style.display = 'flex';
+    load();
+  });
+  if (closeBtn) closeBtn.addEventListener('click', function () {
+    panel.style.display = 'none';
+    if (startMenu && !chosen) startMenu.style.display = 'flex';
+  });
+})();
+
 // ---- Coordinate parser — shared by start menu and nav-map picker ----
 function _ll(lat, lon) { return (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) ? { lat, lon } : null; }
 function _dms(d1, m1, s1, ns, d2, m2, s2, ew) {
@@ -11255,11 +11701,13 @@ function setPaused(p) {
 function togglePause() { if (chosen && simReady) setPaused(!paused); }
 function returnToMenu() {
   setPaused(false);
-  finalizeFlightStats('quit');
+  stopVideoCapture(true); // abort any in-progress screen recording without downloading
+  if (spectate.replay) replayPlay = null; // leaving a replay — drop its cursor (no stats to finalize)
+  else finalizeFlightStats('quit');
   chosen = false; simReady = false; spawnResolved = false;
   realWeatherActive = false; realWeatherLat = null; realWeatherLon = null;
   spectate.active = false; spectate.id = null; spectate.playerOnly = false; spectate.random = false;
-  spectate.hudOverride = false; spectate._lastAltM = null;
+  spectate.replay = false; spectate.hudOverride = false; spectate._lastAltM = null;
   if (spectate.banner) spectate.banner.textContent = '';
   if (startMenu) startMenu.style.display = 'flex';
   if (minimapEl) minimapEl.style.display = 'none';
@@ -12261,6 +12709,7 @@ function loop() {
   if (chosen && simReady) pollApGamepad();
   if (simReady && !paused) update(dt);
   render();
+  grabVideoFrame(); // composite this freshly-rendered frame into an active screen recording (if any)
   requestAnimationFrame(loop);
 }
 
