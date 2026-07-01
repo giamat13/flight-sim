@@ -286,6 +286,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .stp-vol-val{font-size:10px;width:32px;text-align:right;opacity:0.65}
 .stp-close{cursor:pointer;background:transparent;border:1px solid rgba(0,255,65,0.25);color:rgba(0,255,65,0.5);font-family:inherit;font-size:11px;letter-spacing:2px;padding:8px 20px;border-radius:5px;margin-top:10px;transition:all .15s}
 .stp-close:hover{background:rgba(0,255,65,0.1);color:#00FF41}
+/* Keybinding reference list */
+.stp-key-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px 20px}
+.stp-key-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:10px;letter-spacing:1px;opacity:0.85}
+.stp-key-action{opacity:0.7}
+.stp-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 6px;background:rgba(0,255,65,0.08);border:1px solid rgba(0,255,65,0.35);border-radius:4px;font-size:9px;letter-spacing:0.5px;color:#00FF41;box-shadow:0 1px 0 rgba(0,255,65,0.25)}
 @media (max-width:640px){
   .stp-shell{flex-direction:column}
   #stp-tabs.stp-sidebar{flex-direction:row;width:100%;overflow-x:auto;border-right:none;border-bottom:1px solid rgba(0,255,65,0.15);padding:10px 12px;gap:6px}
@@ -902,6 +907,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
       <button class="stp-tab stp-tab-active" data-tab="world"><span class="stp-tab-icon">🌍</span><span>WORLD</span></button>
       <button class="stp-tab" data-tab="video"><span class="stp-tab-icon">🖼</span><span>DISPLAY</span></button>
       <button class="stp-tab" data-tab="perf"><span class="stp-tab-icon">⚙</span><span>PERFORMANCE</span></button>
+      <button class="stp-tab" data-tab="controls"><span class="stp-tab-icon">🕹</span><span>CONTROLS</span></button>
       <button class="stp-tab" data-tab="audio"><span class="stp-tab-icon">🔊</span><span>AUDIO</span></button>
     </div>
 
@@ -990,6 +996,42 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
             <button class="stp-btn" id="stp-fps-60"  data-fps="60">60</button>
             <button class="stp-btn" id="stp-fps-120" data-fps="120">120</button>
             <button class="stp-btn stp-active" id="stp-fps-unlim" data-fps="0">UNLIM</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== CONTROLS TAB ===== -->
+      <div class="stp-page" id="stp-page-controls">
+        <div class="stp-card">
+          <div class="stp-card-head"><span class="stp-card-icon">🎮</span><span class="stp-card-title">STICK RESPONSE</span></div>
+          <div class="stp-vol-row">
+            <span class="stp-vol-name">SENSITIVITY</span>
+            <input type="range" class="stp-vol-slider" id="stp-sens-slider" min="50" max="200" value="100" step="5">
+            <span class="stp-vol-val" id="stp-sens-val" style="width:40px">100%</span>
+          </div>
+          <div class="stp-toggle-row" style="max-width:340px">
+            <span class="stp-toggle-label">INVERT PITCH</span>
+            <label class="stp-toggle"><input type="checkbox" id="stp-invert-pitch"><span class="stp-toggle-track"></span></label>
+          </div>
+        </div>
+
+        <div class="stp-card">
+          <div class="stp-card-head"><span class="stp-card-icon">⌨</span><span class="stp-card-title">KEYBOARD REFERENCE</span></div>
+          <div class="stp-key-grid">
+            <div class="stp-key-row"><span class="stp-key-action">Pitch</span><span><span class="stp-kbd">↑</span> <span class="stp-kbd">↓</span></span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Roll</span><span><span class="stp-kbd">←</span> <span class="stp-kbd">→</span></span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Throttle</span><span><span class="stp-kbd">W</span> <span class="stp-kbd">S</span></span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Brake</span><span class="stp-kbd">SPACE</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Engine start/stop</span><span class="stp-kbd">E</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Flaps</span><span class="stp-kbd">F</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Gear</span><span class="stp-kbd">G</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Camera view</span><span class="stp-kbd">C</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Autopilot (hold=nav map)</span><span class="stp-kbd">A</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Pause</span><span class="stp-kbd">P</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Reset flight</span><span class="stp-kbd">R</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">AP heading ±5°</span><span><span class="stp-kbd">[</span> <span class="stp-kbd">]</span></span></div>
+            <div class="stp-key-row"><span class="stp-key-action">AP altitude ±500 ft</span><span><span class="stp-kbd">;</span> <span class="stp-kbd">'</span></span></div>
+            <div class="stp-key-row"><span class="stp-key-action">AP speed ±10 kt</span><span><span class="stp-kbd">,</span> <span class="stp-kbd">.</span></span></div>
           </div>
         </div>
       </div>
@@ -7724,6 +7766,9 @@ function update(dt) {
   pitchIn = Math.max(-1, Math.min(1, pitchIn));
   rollIn = Math.max(-1, Math.min(1, rollIn));
   thrIn = Math.max(-1, Math.min(1, thrIn));
+  // Settings-panel controls: sensitivity multiplier + optional pitch invert.
+  pitchIn *= (window._ctrlSensitivity || 1) * (window._ctrlInvertPitch ? -1 : 1);
+  rollIn  *= (window._ctrlSensitivity || 1);
 
   // First-flight tutorial watches the raw pilot inputs to advance its lessons.
   TUT.tick(dt, { pitchIn: pitchIn, rollIn: rollIn, thrIn: thrIn });
@@ -11481,6 +11526,29 @@ function applyVolSettings() {
     });
   });
 
+  // ── CONTROLS TAB — sensitivity & invert pitch ──────────────────────────────
+  window._ctrlSensitivity  = 1;
+  window._ctrlInvertPitch  = false;
+  (function () {
+    const slider = document.getElementById('stp-sens-slider');
+    const valEl  = document.getElementById('stp-sens-val');
+    const invCb  = document.getElementById('stp-invert-pitch');
+    if (slider) {
+      slider.addEventListener('input', function () {
+        const v = parseInt(slider.value, 10);
+        window._ctrlSensitivity = v / 100;
+        slider.style.setProperty('--fill', ((v - 50) / (200 - 50) * 100) + '%');
+        if (valEl) valEl.textContent = v + '%';
+        _saveSettings();
+      });
+      slider.style.setProperty('--fill', ((slider.value - 50) / (200 - 50) * 100) + '%');
+    }
+    if (invCb) invCb.addEventListener('change', function () {
+      window._ctrlInvertPitch = invCb.checked;
+      _saveSettings();
+    });
+  })();
+
   // ── SIMULATION TAB — VOLUME SLIDERS ───────────────────────────────────────
   function syncVolSliders() {
     ['master','engine','wind','alarms'].forEach(function (ch) {
@@ -11523,7 +11591,8 @@ function applyVolSettings() {
       const el = settingsPanel.querySelector(sel + '.stp-active');
       return el ? (el.dataset.fps || el.dataset.ratio || el.id) : null;
     };
-    const rdSlider = document.getElementById('stp-rd-slider');
+    const rdSlider   = document.getElementById('stp-rd-slider');
+    const sensSlider = document.getElementById('stp-sens-slider');
     return {
       scanlines:   get('stp-scanlines'),
       vignette:    get('stp-vignette'),
@@ -11533,6 +11602,8 @@ function applyVolSettings() {
       fpsCap:      getActive('[id^="stp-fps-"]'),
       resCap:      getActive('[id^="stp-res-"]'),
       rdRing:      rdSlider ? rdSlider.value : '8',
+      sensitivity: sensSlider ? sensSlider.value : '100',
+      invertPitch: get('stp-invert-pitch'),
       volMaster:   volSettings.master,
       volEngine:   volSettings.engine,
       volWind:     volSettings.wind,
@@ -11597,6 +11668,13 @@ function applyVolSettings() {
         slider.dispatchEvent(new Event('input'));
       }
     }
+
+    // Control sensitivity / invert pitch
+    if (s.sensitivity !== undefined) {
+      const slider = document.getElementById('stp-sens-slider');
+      if (slider) { slider.value = s.sensitivity; slider.dispatchEvent(new Event('input')); }
+    }
+    applyToggle('stp-invert-pitch', s.invertPitch, function(on){ window._ctrlInvertPitch = on; });
 
     // Volume
     if (s.volMaster !== undefined) volSettings.master = s.volMaster;
