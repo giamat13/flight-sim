@@ -5781,6 +5781,7 @@ const firebaseConfig = {
 const MP_ID_PREFIX        = 'mp_';
 const MP_WRITE_S          = 0.15;  // seconds between position broadcasts (~6-7 Hz)
 const MP_STALE_S          = 8;     // drop a player if we hear nothing for this long
+const MP_POLL_S           = 10;    // fallback re-check of the player list even without a push update
 const MP_GROUND_COLLIDE_M = 25;    // runway/ramp collision radius (m)
 const MP_RUNWAY_CLEAR_M   = 400;   // don't spawn on a runway with a live player this close
 
@@ -5812,7 +5813,7 @@ async function initMultiplayer() {
     console.log('[Multiplayer] signed in anonymously, uid=' + mpUid);
 
     let mpLastCount = -1;
-    dbMod.onValue(mpPlayersRef, function (snap) {
+    function applyPlayersSnapshot(snap) {
       const val = snap.val() || {};
       const seen = {};
       for (const uid in val) {
@@ -5835,6 +5836,11 @@ async function initMultiplayer() {
         e.phase = p.onGround ? 'ground' : 'cruise';
         e.acType = p.acKey;
         e.apOn = !!p.apOn; // used by Live Watch to de-prioritize autopilot-flown planes
+        // Gauges + warnings for spectate mode (see beginLiveWatch / spectatorFollow)
+        e.speed = p.speed || 0; e.vs = p.vs || 0; e.throttle = p.throttle || 0; e.rpm = p.rpm || 0; e.aoa = p.aoa || 0;
+        e.stall = !!p.stall; e.overspeed = !!p.overspeed; e.engineState = p.engineState || 'off';
+        e.wingBroken = !!p.wingBroken; e.gearBroken = !!p.gearBroken;
+        e.fuelPct = (typeof p.fuelPct === 'number') ? p.fuelPct : 100;
         e.modelUrl = def.playerModelUrl || null;
         e.acDims = def.playerModelDims || { span: 30, len: 35 };
         e.sizeScale = Math.max(2, (e.acDims.span || 30) / 6);
@@ -5848,7 +5854,16 @@ async function initMultiplayer() {
         console.log('[Multiplayer] ' + count + ' other player(s) connected' +
           (count ? ': ' + Object.keys(mpEntries).map(function (uid) { return mpEntries[uid].callsign || uid.slice(0, 6); }).join(', ') : ''));
       }
-    });
+    }
+    dbMod.onValue(mpPlayersRef, applyPlayersSnapshot);
+
+    // Realtime push should surface a newly-joined player immediately, but as a
+    // safety net (dropped connection, missed event) also poll on an interval so
+    // someone who joins mid-flight still shows up within a few seconds either way.
+    setInterval(function () {
+      if (!mpReady) return;
+      dbMod.get(mpPlayersRef).then(applyPlayersSnapshot).catch(function () {});
+    }, MP_POLL_S * 1000);
 
     mpReady = true;
   } catch (e) {
@@ -5907,6 +5922,12 @@ function broadcastOwnState(dt) {
     heading: state.heading, bank: state.bank, pitch: state.pitch,
     flaps: state.flaps, onGround: state.onGround, gearDown: state.gearDown,
     apOn: !!ap.on,
+    // Gauges + warnings, so Live Watch / spectate can mirror this pilot's real
+    // instruments instead of showing whatever the spectator's own state was.
+    speed: state.speed, vs: state.vs, throttle: state.throttle, rpm: state.rpm, aoa: state.aoa,
+    stall: !!state.stall, overspeed: !!state.overspeed, engineState: state.engineState,
+    wingBroken: !!state.wingBroken, gearBroken: !!state.gearBroken,
+    fuelPct: state.fuelMax > 0 ? (state.fuel / state.fuelMax) * 100 : 0,
     t: Date.now(),
   }).catch(function () {});
 }
@@ -7082,7 +7103,8 @@ function navUpdateHud() {
 // (until you refresh), looks forward from an eye point just behind the nearest real
 // traffic aircraft, and rides along with it so you can study its downloaded 3D model.
 // Press F5 to return to normal flying.
-const spectate = { active: false, id: null, banner: null, playerOnly: false, random: false };
+const spectate = { active: false, id: null, banner: null, playerOnly: false, random: false,
+  hudOverride: false, hudPitch: 0, hudBank: 0, hudAglFt: 0, _lastAltM: null };
 
 function followAcquireNearest() {
   let best = null, bestD = Infinity;
@@ -7180,6 +7202,7 @@ function spectatorFollow(dt) {
     // spectate should never silently jump to a random real ADS-B airliner.
     tgt = spectate.random ? liveWatchAcquireRandom() : (spectate.playerOnly ? followAcquirePlayer() : followAcquireNearest());
     spectate.id = tgt ? tgt.id : null;
+    spectate._lastAltM = null; // new target — don't diff its altitude against the old one's
   }
   if (!tgt) { if (spectate.banner) spectate.banner.textContent = 'SPECTATE · waiting for traffic…  (F5 to exit)'; return; }
 
@@ -7194,11 +7217,46 @@ function spectatorFollow(dt) {
   state.lon = tgt.lon - (Math.sin(hr) * D) / (M_PER_DEG_LAT * cosLat);
   state.altitude = (tgtAltM + upM) / FT_TO_M;
   state.heading = tgt.heading;
-  state.pitch = -(Math.atan2(upM, D) / DEG);   // tilt down so the plane stays centred
+  state.pitch = -(Math.atan2(upM, D) / DEG);   // tilt down so the plane stays centred — camera only
   state.bank = 0;
-  state.speed = Math.max(40, tgt.speed || 0);
-  state.onGround = false; state.stall = false; state.terrainHit = false;
+  state.onGround = false; state.terrainHit = false;
   lookYawOff = 0; lookPitchOff = 0;
+
+  // Real telemetry for the on-screen gauges (only available for live multiplayer
+  // players, not for synthetic ADS-B traffic) — kept separate from state.pitch/bank
+  // above, which exist purely to aim the chase camera at the target, and from
+  // state.altitude above, which exists purely to place the camera behind/above it.
+  spectate.hudOverride = !!tgt._isMp;
+  if (spectate.hudOverride) {
+    spectate.hudPitch = tgt.pitch || 0;
+    spectate.hudBank = tgt.bank || 0;
+    state.flaps = tgt.flaps || 0;
+    state.gearDown = tgt.gearDown !== false;
+    state.speed = Math.max(0, tgt.speed || 0);
+    state.vs = tgt.vs || 0;
+    state.throttle = tgt.throttle || 0;
+    state.rpm = tgt.rpm || 0;
+    state.aoa = tgt.aoa || 0;
+    state.stall = !!tgt.stall;
+    state.overspeed = !!tgt.overspeed;
+    state.engineState = tgt.engineState || 'off';
+    state.wingBroken = !!tgt.wingBroken;
+    state.gearBroken = !!tgt.gearBroken;
+    state.fuelMax = 100; state.fuel = (typeof tgt.fuelPct === 'number') ? tgt.fuelPct : 100;
+    // The target's own AGL (its altitude over ITS ground, not over the chase
+    // camera's slightly-offset, slightly-higher position) — see drawHud's alt readout.
+    spectate.hudAglFt = (tgt.phase === 'ground') ? 0 :
+      Math.max(0, Math.round((tgtAltM - terrainHeightAtM(tgt.lat, tgt.lon)) / FT_TO_M));
+  } else {
+    state.speed = Math.max(40, tgt.speed || 0);
+    state.stall = false;
+    // Vertical speed from the target's own altitude trend (ADS-B traffic doesn't
+    // broadcast a real vs, so estimate it from how its reported altitude moves).
+    if (spectate._lastAltM != null && dt > 0) {
+      state.vs = ((tgtAltM - spectate._lastAltM) / dt) * 196.85; // m/s -> ft/min
+    }
+  }
+  spectate._lastAltM = tgtAltM;
 
   if (spectate.banner) {
     spectate.banner.textContent = 'SPECTATE ▸ ' + (tgt.callsign || tgt.icao) + '  ·  ' + (tgt.acType || '??') +
@@ -8579,10 +8637,15 @@ function drawAHI() {
   ahiCtx.arc(cx, cy, r, 0, Math.PI * 2);
   ahiCtx.clip();
 
-  ahiCtx.translate(cx, cy);
-  ahiCtx.rotate(-state.bank * Math.PI / 180);
+  // While spectating a live player, show THEIR real attitude, not the chase
+  // camera's own aim angle (state.pitch/bank are hijacked for that purpose).
+  const ahiBank = (spectate.active && spectate.hudOverride) ? spectate.hudBank : state.bank;
+  const ahiPitch = (spectate.active && spectate.hudOverride) ? spectate.hudPitch : state.pitch;
 
-  const pitchOffset = state.pitch * 1.2;
+  ahiCtx.translate(cx, cy);
+  ahiCtx.rotate(-ahiBank * Math.PI / 180);
+
+  const pitchOffset = ahiPitch * 1.2;
 
   // Sky
   ahiCtx.fillStyle = '#1a3060';
@@ -8655,7 +8718,7 @@ function drawAHI() {
   });
 
   // Current bank pointer
-  const bRad = (-state.bank - 90) * Math.PI / 180;
+  const bRad = (-ahiBank - 90) * Math.PI / 180;
   const pInner = r - 14;
   const pTip = r - 5;
   ahiCtx.fillStyle = '#00FF41';
@@ -9414,7 +9477,8 @@ function render() {
 
   // Update HUD
   const GROUND_OFFSET_FT = 3 / FT_TO_M; // 3m offset the sim keeps aircraft above terrain
-  const aglFt = state.onGround ? 0 : Math.max(0, Math.round(state.altitude - (state.terrainHeightFt || 0) - GROUND_OFFSET_FT));
+  const aglFt = (spectate.active && spectate.hudOverride) ? spectate.hudAglFt :
+    (state.onGround ? 0 : Math.max(0, Math.round(state.altitude - (state.terrainHeightFt || 0) - GROUND_OFFSET_FT)));
   hudAlt.textContent = aglFt;
   hudSpd.textContent = Math.round(state.speed);
   const hdgDisplay = Math.round(state.heading) % 360;
@@ -10739,6 +10803,7 @@ function returnToMenu() {
   chosen = false; simReady = false; spawnResolved = false;
   realWeatherActive = false; realWeatherLat = null; realWeatherLon = null;
   spectate.active = false; spectate.id = null; spectate.playerOnly = false; spectate.random = false;
+  spectate.hudOverride = false; spectate._lastAltM = null;
   if (spectate.banner) spectate.banner.textContent = '';
   if (startMenu) startMenu.style.display = 'flex';
   if (minimapEl) minimapEl.style.display = 'none';
