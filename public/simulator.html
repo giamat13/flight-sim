@@ -192,7 +192,19 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sm-settings-btn:hover{background:rgba(0,255,65,0.12);color:#00FF41;border-color:rgba(0,255,65,0.5)}
 #sm-livewatch-btn{cursor:pointer;background:rgba(255,0,60,0.05);border:1px solid rgba(255,60,90,0.3);color:#ff5577;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
 #sm-livewatch-btn:hover{background:rgba(255,0,60,0.14);color:#ff8fa3;border-color:rgba(255,60,90,0.6)}
+#sm-watch-btn,#sm-stats-btn,#sm-account-btn{cursor:pointer;background:rgba(0,160,255,0.05);border:1px solid rgba(80,180,255,0.3);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:5px 14px;border-radius:4px;margin-top:-8px;transition:all .15s}
+#sm-watch-btn:hover,#sm-stats-btn:hover,#sm-account-btn:hover{background:rgba(0,160,255,0.14);color:#a8e0ff;border-color:rgba(80,180,255,0.6)}
+#sm-account-status{font-size:9px;letter-spacing:2px;opacity:0.5;text-align:center;margin-top:-4px}
 #settings-panel{position:fixed;inset:0;z-index:52;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:24px 16px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#00FF41;font-family:'JetBrains Mono',monospace;overflow-y:auto}
+#account-panel,#stats-panel{position:fixed;inset:0;z-index:52;justify-content:center;padding:24px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#7fd0ff;font-family:'JetBrains Mono',monospace;overflow-y:auto}
+.acct-input{background:rgba(0,0,0,0.4);border:1px solid rgba(80,180,255,0.35);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:1px;padding:9px 12px;border-radius:4px;width:100%;box-sizing:border-box}
+.acct-btn{cursor:pointer;background:rgba(0,160,255,0.1);border:1px solid rgba(80,180,255,0.4);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:10px 14px;border-radius:4px;transition:all .15s}
+.acct-btn:hover{background:rgba(0,160,255,0.2);border-color:#7fd0ff;color:#a8e0ff}
+#acct-status.sm-err,#stats-body .stat-err{color:#ff6060}
+#acct-status.sm-ok{color:#7fff9f}
+.stat-row{display:flex;justify-content:space-between;border-bottom:1px solid rgba(80,180,255,0.15);padding:5px 0}
+.stat-key{opacity:0.55}
+.stat-val{color:#a8e0ff;font-weight:700}
 #stp-tabs{display:flex;gap:0;border:1px solid rgba(0,255,65,0.3);border-radius:6px;overflow:hidden;margin-bottom:20px}
 .stp-tab{cursor:pointer;background:transparent;border:none;color:rgba(0,255,65,0.5);font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2px;padding:9px 22px;transition:all .15s;-webkit-user-select:none;user-select:none}
 .stp-tab:not(:last-child){border-right:1px solid rgba(0,255,65,0.3)}
@@ -761,11 +773,27 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <button id="sm-download-map-btn" style="cursor:pointer;pointer-events:auto;background:rgba(255,200,0,0.08);border:1px solid rgba(255,200,0,0.35);color:#ffe066;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:2px;padding:10px 28px;border-radius:5px;transition:all .15s">⬇ DOWNLOAD MAP</button>
     <button id="sm-manage-downloads-btn" style="cursor:pointer;pointer-events:auto;background:rgba(255,200,0,0.04);border:1px solid rgba(255,200,0,0.2);color:rgba(255,200,0,0.6);font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:2px;padding:10px 16px;border-radius:5px;transition:all .15s">📂 MY MAPS</button>
   </div>
-  <div style="display:flex;gap:8px;justify-content:center">
+  <div id="sm-account-status">GUEST — no account</div>
+  <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
     <button id="sm-settings-btn">⚙ SETTINGS</button>
     <button id="sm-livewatch-btn">🔴 LIVE WATCH</button>
+    <button id="sm-watch-btn">🔭 WATCH</button>
+    <button id="sm-stats-btn">📊 STATS</button>
+    <button id="sm-account-btn">👤 ACCOUNT</button>
   </div>
   <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
+
+  <!-- WATCH-by-username modal -->
+  <div id="sm-watch-modal" style="display:none;flex-direction:column;gap:10px;width:min(340px,90%);background:rgba(0,0,0,0.5);border:1px solid rgba(255,60,90,0.35);border-radius:6px;padding:14px;margin-top:4px">
+    <div style="font-size:11px;letter-spacing:3px;color:#ff8fa3;text-align:center">WATCH A PILOT</div>
+    <input id="sm-watch-input" type="text" autocomplete="off" spellcheck="false" placeholder="Username…"
+           style="background:rgba(0,0,0,0.4);border:1px solid rgba(255,60,90,0.35);color:#ff8fa3;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:1px;padding:9px 12px;border-radius:4px;text-align:center" />
+    <div id="sm-watch-status" style="font-size:10px;letter-spacing:1px;min-height:14px;text-align:center;color:rgba(255,143,163,0.7)"></div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button id="sm-watch-go" style="cursor:pointer;background:rgba(255,0,60,0.1);border:1px solid rgba(255,60,90,0.4);color:#ff8fa3;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:8px 18px;border-radius:4px">WATCH</button>
+      <button id="sm-watch-close" style="cursor:pointer;background:rgba(255,60,90,0.04);border:1px solid rgba(255,60,90,0.2);color:rgba(255,143,163,0.6);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:8px 18px;border-radius:4px">CLOSE</button>
+    </div>
+  </div>
 
   <!-- My Maps modal — shown inline inside the start menu -->
   <div id="sm-my-maps" style="display:none;flex-direction:column;gap:10px;width:min(360px,90%);background:rgba(0,0,0,0.5);border:1px solid rgba(255,200,0,0.3);border-radius:6px;padding:14px;margin-top:4px">
@@ -911,6 +939,41 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   </div>
 
   <button id="stp-close" class="stp-close" style="margin-top:16px">✕ CLOSE</button>
+</div>
+
+<div id="account-panel" style="display:none;flex-direction:column;align-items:center;gap:10px">
+  <div class="sm-title" style="font-size:18px;margin-bottom:2px">👤 ACCOUNT</div>
+
+  <!-- Logged-out: email/password + Google -->
+  <div id="acct-logged-out" style="display:flex;flex-direction:column;align-items:center;gap:8px;width:min(320px,90%)">
+    <input id="acct-email" type="email" autocomplete="email" placeholder="Email" class="acct-input" />
+    <input id="acct-password" type="password" autocomplete="current-password" placeholder="Password" class="acct-input" />
+    <div style="display:flex;gap:8px;width:100%">
+      <button id="acct-login-btn" class="acct-btn" style="flex:1">LOGIN</button>
+      <button id="acct-register-btn" class="acct-btn" style="flex:1">REGISTER</button>
+    </div>
+    <div style="font-size:9px;opacity:0.4;letter-spacing:2px">— OR —</div>
+    <button id="acct-google-btn" class="acct-btn" style="width:100%">🔵 SIGN IN WITH GOOGLE</button>
+  </div>
+
+  <!-- Logged-in: profile + username claim -->
+  <div id="acct-logged-in" style="display:none;flex-direction:column;align-items:center;gap:8px;width:min(320px,90%)">
+    <div id="acct-email-label" style="font-size:11px;letter-spacing:1px;opacity:0.7"></div>
+    <div style="display:flex;gap:8px;width:100%">
+      <input id="acct-username" type="text" autocomplete="off" spellcheck="false" placeholder="Choose a username…" class="acct-input" style="flex:1" />
+      <button id="acct-username-save" class="acct-btn">SAVE</button>
+    </div>
+    <button id="acct-logout-btn" class="acct-btn" style="width:100%;margin-top:6px">LOG OUT</button>
+  </div>
+
+  <div id="acct-status" style="font-size:10px;letter-spacing:1px;min-height:14px;text-align:center"></div>
+  <button id="acct-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
+</div>
+
+<div id="stats-panel" style="display:none;flex-direction:column;align-items:center;gap:10px">
+  <div class="sm-title" style="font-size:18px;margin-bottom:2px">📊 FLIGHT STATS</div>
+  <div id="stats-body" style="display:flex;flex-direction:column;gap:6px;width:min(360px,90%);font-size:11px;letter-spacing:1px"></div>
+  <button id="stats-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
 </div>
 
 <div id="pausemenu">
@@ -5790,27 +5853,35 @@ let mpReady = false;
 let mpWriteTimer = 0;
 const mpEntries = {}; // uid -> traffic-shaped object (persists across frames for smooth lerp)
 
+// ===== Account system (Firebase Auth + Firestore) =====
+// Everyone gets a working multiplayer identity even without an account (an
+// anonymous "guest" uid, same as before). Registering / signing in just
+// upgrades that identity to a real, persistent one — same /players/{uid}
+// presence node, just keyed by the real uid and broadcasting a real username.
+let fsDb = null, fsMod = null, authMod = null, authInst = null;
+let currentUser = null;      // Firebase User for a REAL (non-anonymous) account, else null
+let currentUsername = null;  // claimed display name for that account, else null
+let accountReady = false;    // true once the first auth state has resolved (guest or real)
+const accountListeners = [];
+function onAccountChange(cb) { accountListeners.push(cb); }
+function fireAccountChange() { accountListeners.forEach(function (cb) { try { cb(); } catch (e) {} }); }
+
 async function initMultiplayer() {
   try {
-    const [{ initializeApp }, authMod, dbMod] = await Promise.all([
+    const [{ initializeApp }, authModule, dbMod, fsModule] = await Promise.all([
       import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
       import('https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js'),
       import('https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js'),
+      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js'),
     ]);
     const app = initializeApp(firebaseConfig);
-    const auth = authMod.getAuth(app);
-    // Use per-tab session persistence, not the default localStorage persistence —
-    // otherwise every tab of the same browser (e.g. two tabs testing multiplayer
-    // locally) shares the exact same anonymous uid and each tab's writes look like
-    // its own, so neither ever sees the other.
-    await authMod.setPersistence(auth, authMod.browserSessionPersistence);
-    const cred = await authMod.signInAnonymously(auth);
-    mpUid = cred.user.uid;
+    const auth = authModule.getAuth(app);
+    authMod = authModule; authInst = auth;
     mpDb = dbMod.getDatabase(app);
     mpDbMod = dbMod;
     mpPlayersRef = dbMod.ref(mpDb, 'players');
-    dbMod.onDisconnect(dbMod.ref(mpDb, 'players/' + mpUid)).remove();
-    console.log('[Multiplayer] signed in anonymously, uid=' + mpUid);
+    fsDb = fsModule.getFirestore(app);
+    fsMod = fsModule;
 
     let mpLastCount = -1;
     function applyPlayersSnapshot(snap) {
@@ -5836,6 +5907,7 @@ async function initMultiplayer() {
         e.phase = p.onGround ? 'ground' : 'cruise';
         e.acType = p.acKey;
         e.apOn = !!p.apOn; // used by Live Watch to de-prioritize autopilot-flown planes
+        e.username = p.username || null; // real claimed username, if any — used by the WATCH button
         // Gauges + warnings for spectate mode (see beginLiveWatch / spectatorFollow)
         e.speed = p.speed || 0; e.vs = p.vs || 0; e.throttle = p.throttle || 0; e.rpm = p.rpm || 0; e.aoa = p.aoa || 0;
         e.stall = !!p.stall; e.overspeed = !!p.overspeed; e.engineState = p.engineState || 'off';
@@ -5865,12 +5937,108 @@ async function initMultiplayer() {
       dbMod.get(mpPlayersRef).then(applyPlayersSnapshot).catch(function () {});
     }, MP_POLL_S * 1000);
 
-    mpReady = true;
+    // Single source of truth for "who are we" — fires once at startup and again
+    // on every login/logout, so multiplayer presence and the account UI both
+    // stay correct if the pilot signs in or out mid-flight.
+    let lastUid = null;
+    authModule.onAuthStateChanged(auth, async function (user) {
+      if (!user) {
+        // Nothing signed in (fresh load, or just logged out) — fly as a guest.
+        try {
+          await authModule.setPersistence(auth, authModule.browserSessionPersistence);
+          await authModule.signInAnonymously(auth);
+        } catch (e) { console.warn('[Account] guest sign-in failed', e); }
+        return; // this handler fires again once the anonymous user lands
+      }
+      if (lastUid && lastUid !== user.uid) {
+        // Identity changed mid-session — drop the old presence node so we don't
+        // leave a ghost aircraft parked wherever we last were under the old uid.
+        dbMod.set(dbMod.ref(mpDb, 'players/' + lastUid), null).catch(function () {});
+      }
+      lastUid = user.uid;
+      mpUid = user.uid;
+      dbMod.onDisconnect(dbMod.ref(mpDb, 'players/' + mpUid)).remove();
+      currentUser = user.isAnonymous ? null : user;
+      currentUsername = null;
+      if (currentUser) {
+        try {
+          const snap = await fsModule.getDoc(fsModule.doc(fsDb, 'users', user.uid));
+          currentUsername = snap.exists() ? (snap.data().username || null) : null;
+        } catch (e) { console.warn('[Account] failed to load profile', e); }
+      }
+      accountReady = true;
+      mpReady = true;
+      fireAccountChange();
+      console.log('[Account] signed in as ' + (currentUsername || (user.isAnonymous ? 'guest ' + user.uid.slice(0, 6) : user.email)));
+    });
   } catch (e) {
     console.warn('[Multiplayer] init failed', e);
   }
 }
 initMultiplayer(); // fire-and-forget — starts signing in during the loading screen
+
+// ===== Account actions — called from the account panel UI =====
+function friendlyAuthError(e) {
+  const code = (e && e.code) || '';
+  if (code.indexOf('wrong-password') >= 0 || code.indexOf('invalid-credential') >= 0) return 'Wrong email or password.';
+  if (code.indexOf('user-not-found') >= 0) return 'No account with that email.';
+  if (code.indexOf('email-already-in-use') >= 0) return 'That email is already registered — try logging in instead.';
+  if (code.indexOf('weak-password') >= 0) return 'Password must be at least 6 characters.';
+  if (code.indexOf('invalid-email') >= 0) return "That doesn't look like a valid email.";
+  if (code.indexOf('popup-closed-by-user') >= 0) return 'Sign-in cancelled.';
+  return 'Something went wrong — try again.';
+}
+async function accountLoginEmail(email, password) {
+  if (!authMod || !authInst) return { ok: false, error: 'Not ready yet — try again in a second.' };
+  try {
+    await authMod.setPersistence(authInst, authMod.browserLocalPersistence);
+    await authMod.signInWithEmailAndPassword(authInst, email, password);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: friendlyAuthError(e) }; }
+}
+async function accountRegisterEmail(email, password) {
+  if (!authMod || !authInst) return { ok: false, error: 'Not ready yet — try again in a second.' };
+  try {
+    await authMod.setPersistence(authInst, authMod.browserLocalPersistence);
+    await authMod.createUserWithEmailAndPassword(authInst, email, password);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: friendlyAuthError(e) }; }
+}
+async function accountLoginGoogle() {
+  if (!authMod || !authInst) return { ok: false, error: 'Not ready yet — try again in a second.' };
+  try {
+    await authMod.setPersistence(authInst, authMod.browserLocalPersistence);
+    const provider = new authMod.GoogleAuthProvider();
+    await authMod.signInWithPopup(authInst, provider);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: friendlyAuthError(e) }; }
+}
+function accountLogout() {
+  if (!authMod || !authInst) return;
+  authMod.signOut(authInst).catch(function () {});
+}
+const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
+async function claimUsername(rawName) {
+  const name = (rawName || '').trim();
+  if (!USERNAME_RE.test(name)) return { ok: false, error: '3-16 letters, numbers or underscore.' };
+  if (!currentUser) return { ok: false, error: 'Sign in first.' };
+  if (currentUsername && currentUsername.toLowerCase() === name.toLowerCase()) return { ok: true };
+  const key = name.toLowerCase();
+  try {
+    await fsMod.runTransaction(fsDb, async function (tx) {
+      const uref = fsMod.doc(fsDb, 'usernames', key);
+      const snap = await tx.get(uref);
+      if (snap.exists() && snap.data().uid !== currentUser.uid) throw new Error('taken');
+      tx.set(uref, { uid: currentUser.uid, displayName: name });
+      tx.set(fsMod.doc(fsDb, 'users', currentUser.uid), { username: name }, { merge: true });
+    });
+    currentUsername = name;
+    fireAccountChange();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message === 'taken' ? 'That username is taken.' : 'Could not claim that username.' };
+  }
+}
 
 // Smoothly advance every mp entry toward its last-reported position (same lerp
 // approach used for real ADS-B traffic), rebuild `traffic[]` with fresh mp
@@ -5916,7 +6084,10 @@ function broadcastOwnState(dt) {
   if (mpWriteTimer < MP_WRITE_S) return;
   mpWriteTimer = 0;
   mpDbMod.set(mpDbMod.ref(mpDb, 'players/' + mpUid), {
-    name: 'PILOT-' + mpUid.slice(0, 4).toUpperCase(),
+    // Registered pilots show their real username above their aircraft; guests
+    // (and anyone who hasn't claimed a name yet) get a random guest tag instead.
+    name: currentUsername || ('PILOT-' + mpUid.slice(0, 4).toUpperCase()),
+    username: currentUsername || null, // used by the WATCH button to find a specific pilot
     acKey: selectedAircraftKey,
     lat: state.lat, lon: state.lon, altitude: state.altitude,
     heading: state.heading, bank: state.bank, pitch: state.pitch,
@@ -7279,6 +7450,7 @@ function update(dt) {
   updateMultiplayer(dt);
   tickRealWeather(dt);
   checkTerrainBeep(dt);
+  tickFlightStats(dt);
 
   // ---- Pilot inputs (elevator / aileron / throttle) ----
   // Control authority scales with airspeed (sluggish when slow, like a real wing).
@@ -7660,12 +7832,14 @@ function update(dt) {
       gamma = 0;
       climbRate = 0;
       groundSpeed = Math.sqrt(groundVec.n * groundVec.n + groundVec.e * groundVec.e);
+      finalizeFlightStats('landed');
     } else {
       // ---- CRASH (bad approach OR water ditching) ----
       newAltM = groundM + 3;
       state.terrainHit = true;
       state.terrainTimer = 2.2;
       terrainWarn.style.display = 'block';
+      finalizeFlightStats('crashed');
     }
   }
 
@@ -10110,6 +10284,89 @@ function findLandingRunway(airportLat, airportLon, approachBrg, cb) {
     .catch(function () { clearTimeout(tid); cb(null); });
 }
 
+// ===================== Per-flight stats (saved to Firestore for logged-in pilots) =====================
+// Tracked for every real flight (not Live Watch/spectate — beginLiveWatchFor
+// never calls startFlightStats, so tickFlightStats/finalizeFlightStats are
+// no-ops the whole time you're just watching someone else).
+let flightStats = null;
+
+function startFlightStats(loc) {
+  flightStats = {
+    startedAt: Date.now(),
+    aircraft: selectedAircraftKey,
+    departureName: (loc && loc.name) || '',
+    lastLat: state.lat, lastLon: state.lon,
+    maxAltFt: 0, maxSpeedKts: 0, distanceNm: 0, apSec: 0,
+    stallEvents: 0, overspeedEvents: 0,
+    _wasStall: false, _wasOverspeed: false,
+    saved: false,
+  };
+}
+
+function haversineNm(lat1, lon1, lat2, lon2) {
+  const R_NM = 3440.065;
+  const dLat = (lat2 - lat1) * DEG, dLon = (lon2 - lon1) * DEG;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * DEG) * Math.cos(lat2 * DEG) * Math.sin(dLon / 2) ** 2;
+  return 2 * R_NM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function tickFlightStats(dt) {
+  if (!flightStats) return;
+  flightStats.maxAltFt = Math.max(flightStats.maxAltFt, state.altitude);
+  flightStats.maxSpeedKts = Math.max(flightStats.maxSpeedKts, state.speed);
+  if (ap.on) flightStats.apSec += dt;
+  if (state.stall && !flightStats._wasStall) flightStats.stallEvents++;
+  flightStats._wasStall = !!state.stall;
+  if (state.overspeed && !flightStats._wasOverspeed) flightStats.overspeedEvents++;
+  flightStats._wasOverspeed = !!state.overspeed;
+  const dNm = haversineNm(flightStats.lastLat, flightStats.lastLon, state.lat, state.lon);
+  if (isFinite(dNm)) flightStats.distanceNm += dNm;
+  flightStats.lastLat = state.lat; flightStats.lastLon = state.lon;
+}
+
+// Called on landing, crash, quit-to-menu, or restart. Always safe to call —
+// no-ops if no flight is in progress or this one was already saved.
+async function finalizeFlightStats(outcome) {
+  if (!flightStats || flightStats.saved) { flightStats = null; return; }
+  flightStats.saved = true;
+  const snap = flightStats;
+  flightStats = null;
+  const durationSec = Math.round((Date.now() - snap.startedAt) / 1000);
+  if (!currentUser || !fsDb || !fsMod) return; // stats require a real account
+  const distanceNm = Math.round(snap.distanceNm * 10) / 10;
+  const maxAltFt = Math.round(snap.maxAltFt);
+  const maxSpeedKts = Math.round(snap.maxSpeedKts);
+  const apSec = Math.round(snap.apSec);
+  try {
+    await fsMod.addDoc(fsMod.collection(fsDb, 'flights'), {
+      uid: currentUser.uid, username: currentUsername || null,
+      aircraft: snap.aircraft, departureName: snap.departureName, outcome: outcome,
+      durationSec: durationSec, distanceNm: distanceNm, maxAltFt: maxAltFt, maxSpeedKts: maxSpeedKts,
+      apSec: apSec, stallEvents: snap.stallEvents, overspeedEvents: snap.overspeedEvents,
+      startedAt: snap.startedAt, endedAt: Date.now(),
+    });
+    const uref = fsMod.doc(fsDb, 'users', currentUser.uid);
+    await fsMod.runTransaction(fsDb, async function (tx) {
+      const usnap = await tx.get(uref);
+      const cur = usnap.exists() ? usnap.data() : {};
+      tx.set(uref, {
+        username: currentUsername || null,
+        totalFlights: (cur.totalFlights || 0) + 1,
+        totalDurationSec: (cur.totalDurationSec || 0) + durationSec,
+        totalDistanceNm: Math.round(((cur.totalDistanceNm || 0) + distanceNm) * 10) / 10,
+        totalLandings: (cur.totalLandings || 0) + (outcome === 'landed' ? 1 : 0),
+        totalCrashes: (cur.totalCrashes || 0) + (outcome === 'crashed' ? 1 : 0),
+        totalStalls: (cur.totalStalls || 0) + snap.stallEvents,
+        totalOverspeeds: (cur.totalOverspeeds || 0) + snap.overspeedEvents,
+        totalApSec: Math.round((cur.totalApSec || 0) + apSec),
+        bestAltFt: Math.max(cur.bestAltFt || 0, maxAltFt),
+        bestSpeedKts: Math.max(cur.bestSpeedKts || 0, maxSpeedKts),
+        lastFlightAt: Date.now(),
+      }, { merge: true });
+    });
+  } catch (e) { console.warn('[Stats] failed to save flight', e); }
+}
+
 function beginFlight(loc) {
   START.lat = loc.lat;
   START.lon = loc.lon;
@@ -10118,6 +10375,7 @@ function beginFlight(loc) {
   START.spd = 0;
   START.thr = 0;
   resetState();
+  startFlightStats(loc);
 
   const locLabel = document.getElementById('loc-label');
   if (locLabel) locLabel.textContent = loc.name || '';
@@ -10220,7 +10478,24 @@ function beginLiveWatch() {
     if (st) { st.textContent = 'No live pilots online right now — try again in a bit.'; st.className = 'sm-err'; }
     return;
   }
+  beginLiveWatchFor(tgt);
+}
 
+// Case-insensitive lookup of a currently-connected player by their claimed
+// username (guest random tags don't count — only real registered names).
+function findMpEntryByUsername(name) {
+  const key = (name || '').trim().toLowerCase();
+  if (!key) return null;
+  for (const uid in mpEntries) {
+    if ((mpEntries[uid].username || '').toLowerCase() === key) return mpEntries[uid];
+  }
+  return null;
+}
+
+// Shared by beginLiveWatch() (random target) and the WATCH-by-username modal
+// (specific target) — everything below is identical regardless of how the
+// target was picked.
+function beginLiveWatchFor(tgt) {
   START.lat = tgt.lat; START.lon = tgt.lon; START.hdg = tgt.heading || 90;
   START.alt = 100; START.spd = 0; START.thr = 0;
   resetState();
@@ -10623,6 +10898,186 @@ function applyVolSettings() {
   window._openSettings = openSettings;
 })();
 
+// ===================== Account panel (login / register / Google / username) =====================
+(function () {
+  const panel = document.getElementById('account-panel');
+  const openBtn = document.getElementById('sm-account-btn');
+  const closeBtn = document.getElementById('acct-close');
+  if (!panel) return;
+
+  const loggedOutEl = document.getElementById('acct-logged-out');
+  const loggedInEl = document.getElementById('acct-logged-in');
+  const emailEl = document.getElementById('acct-email');
+  const passwordEl = document.getElementById('acct-password');
+  const emailLabelEl = document.getElementById('acct-email-label');
+  const usernameEl = document.getElementById('acct-username');
+  const statusEl = document.getElementById('acct-status');
+
+  function setStatus(msg, kind) {
+    if (!statusEl) return;
+    statusEl.textContent = msg || '';
+    statusEl.className = kind ? 'sm-' + kind : '';
+  }
+
+  function refresh() {
+    const loggedIn = !!currentUser;
+    if (loggedOutEl) loggedOutEl.style.display = loggedIn ? 'none' : 'flex';
+    if (loggedInEl) loggedInEl.style.display = loggedIn ? 'flex' : 'none';
+    if (loggedIn) {
+      if (emailLabelEl) emailLabelEl.textContent = currentUser.email || '';
+      if (usernameEl && document.activeElement !== usernameEl) usernameEl.value = currentUsername || '';
+    }
+    updateAccountStatusLine();
+  }
+  onAccountChange(refresh);
+
+  function open() {
+    refresh();
+    setStatus('');
+    if (startMenu) startMenu.style.display = 'none';
+    panel.style.display = 'flex';
+  }
+  function close() {
+    panel.style.display = 'none';
+    if (startMenu && !chosen) startMenu.style.display = 'flex';
+  }
+  if (openBtn) openBtn.addEventListener('click', open);
+  if (closeBtn) closeBtn.addEventListener('click', close);
+
+  const loginBtn = document.getElementById('acct-login-btn');
+  const registerBtn = document.getElementById('acct-register-btn');
+  const googleBtn = document.getElementById('acct-google-btn');
+  const logoutBtn = document.getElementById('acct-logout-btn');
+  const usernameSaveBtn = document.getElementById('acct-username-save');
+
+  async function runAction(btn, fn) {
+    if (btn) btn.disabled = true;
+    setStatus('Working…');
+    const res = await fn();
+    if (btn) btn.disabled = false;
+    if (res && res.ok === false) { setStatus(res.error, 'err'); return; }
+    setStatus('');
+  }
+
+  if (loginBtn) loginBtn.addEventListener('click', function () {
+    runAction(loginBtn, function () { return accountLoginEmail(emailEl.value, passwordEl.value); });
+  });
+  if (registerBtn) registerBtn.addEventListener('click', function () {
+    runAction(registerBtn, function () { return accountRegisterEmail(emailEl.value, passwordEl.value); });
+  });
+  if (googleBtn) googleBtn.addEventListener('click', function () {
+    runAction(googleBtn, accountLoginGoogle);
+  });
+  if (logoutBtn) logoutBtn.addEventListener('click', function () {
+    accountLogout();
+    setStatus('');
+  });
+  if (usernameSaveBtn) usernameSaveBtn.addEventListener('click', function () {
+    runAction(usernameSaveBtn, function () { return claimUsername(usernameEl.value); }).then(function () {
+      if (currentUsername) setStatus('Username set to ' + currentUsername, 'ok');
+    });
+  });
+
+  refresh();
+})();
+
+function updateAccountStatusLine() {
+  const el = document.getElementById('sm-account-status');
+  if (!el) return;
+  el.textContent = currentUser
+    ? ('SIGNED IN' + (currentUsername ? ' AS ' + currentUsername.toUpperCase() : ' — CHOOSE A USERNAME IN ACCOUNT'))
+    : 'GUEST — no account';
+}
+onAccountChange(updateAccountStatusLine);
+
+// ===================== WATCH-by-username modal =====================
+(function () {
+  const modal = document.getElementById('sm-watch-modal');
+  const openBtn = document.getElementById('sm-watch-btn');
+  const closeBtn = document.getElementById('sm-watch-close');
+  const goBtn = document.getElementById('sm-watch-go');
+  const input = document.getElementById('sm-watch-input');
+  const statusEl = document.getElementById('sm-watch-status');
+  if (!modal) return;
+
+  function setStatus(msg, isErr) {
+    if (!statusEl) return;
+    statusEl.textContent = msg || '';
+    statusEl.style.color = isErr ? '#ff6060' : 'rgba(255,143,163,0.7)';
+  }
+  if (openBtn) openBtn.addEventListener('click', function () {
+    setStatus('');
+    modal.style.display = 'flex';
+    if (input) input.focus();
+  });
+  if (closeBtn) closeBtn.addEventListener('click', function () { modal.style.display = 'none'; });
+  function go() {
+    const name = input ? input.value : '';
+    if (!name.trim()) { setStatus('Enter a username.', true); return; }
+    const tgt = findMpEntryByUsername(name);
+    if (!tgt) { setStatus('No pilot named "' + name.trim() + '" is flying right now.', true); return; }
+    modal.style.display = 'none';
+    beginLiveWatchFor(tgt);
+  }
+  if (goBtn) goBtn.addEventListener('click', go);
+  if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+})();
+
+// ===================== Stats panel =====================
+(function () {
+  const panel = document.getElementById('stats-panel');
+  const openBtn = document.getElementById('sm-stats-btn');
+  const closeBtn = document.getElementById('stats-close');
+  const bodyEl = document.getElementById('stats-body');
+  if (!panel) return;
+
+  function fmtHms(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+    return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
+  }
+  function row(key, val) {
+    return '<div class="stat-row"><span class="stat-key">' + key + '</span><span class="stat-val">' + val + '</span></div>';
+  }
+
+  async function load() {
+    if (!bodyEl) return;
+    if (!currentUser) {
+      bodyEl.innerHTML = '<div class="stat-err" style="text-align:center">Sign in (👤 ACCOUNT) to track and see your stats.</div>';
+      return;
+    }
+    bodyEl.innerHTML = '<div style="text-align:center;opacity:0.5">Loading…</div>';
+    try {
+      const snap = await fsMod.getDoc(fsMod.doc(fsDb, 'users', currentUser.uid));
+      const d = snap.exists() ? snap.data() : {};
+      bodyEl.innerHTML =
+        row('Pilot', currentUsername || currentUser.email) +
+        row('Flights', d.totalFlights || 0) +
+        row('Landings', d.totalLandings || 0) +
+        row('Crashes', d.totalCrashes || 0) +
+        row('Total flight time', fmtHms(d.totalDurationSec || 0)) +
+        row('Total distance', Math.round(d.totalDistanceNm || 0) + ' nm') +
+        row('Best altitude', Math.round(d.bestAltFt || 0) + ' ft') +
+        row('Best speed', Math.round(d.bestSpeedKts || 0) + ' kt') +
+        row('Autopilot time', fmtHms(d.totalApSec || 0)) +
+        row('Stalls', d.totalStalls || 0) +
+        row('Overspeeds', d.totalOverspeeds || 0);
+    } catch (e) {
+      bodyEl.innerHTML = '<div class="stat-err" style="text-align:center">Could not load stats.</div>';
+    }
+  }
+
+  if (openBtn) openBtn.addEventListener('click', function () {
+    load();
+    if (startMenu) startMenu.style.display = 'none';
+    panel.style.display = 'flex';
+  });
+  if (closeBtn) closeBtn.addEventListener('click', function () {
+    panel.style.display = 'none';
+    if (startMenu && !chosen) startMenu.style.display = 'flex';
+  });
+})();
+
 // ---- Coordinate parser — shared by start menu and nav-map picker ----
 function _ll(lat, lon) { return (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) ? { lat, lon } : null; }
 function _dms(d1, m1, s1, ns, d2, m2, s2, ew) {
@@ -10800,6 +11255,7 @@ function setPaused(p) {
 function togglePause() { if (chosen && simReady) setPaused(!paused); }
 function returnToMenu() {
   setPaused(false);
+  finalizeFlightStats('quit');
   chosen = false; simReady = false; spawnResolved = false;
   realWeatherActive = false; realWeatherLat = null; realWeatherLon = null;
   spectate.active = false; spectate.id = null; spectate.playerOnly = false; spectate.random = false;
@@ -10814,7 +11270,12 @@ function returnToMenu() {
 
 if (pauseMenu) {
   const r  = document.getElementById('pm-resume');   if (r)  r.addEventListener('click', function () { setPaused(false); });
-  const rs = document.getElementById('pm-restart');  if (rs) rs.addEventListener('click', function () { setPaused(false); resetState(); });
+  const rs = document.getElementById('pm-restart');  if (rs) rs.addEventListener('click', function () {
+    setPaused(false);
+    finalizeFlightStats('restarted');
+    resetState();
+    startFlightStats({ name: document.getElementById('loc-label') ? document.getElementById('loc-label').textContent : '' });
+  });
   const ps = document.getElementById('pm-settings'); if (ps) ps.addEventListener('click', function () { if (window._openSettings) window._openSettings(true); });
   const mp = document.getElementById('pm-maps');     if (mp) mp.addEventListener('click', openGoogleMaps);
   const mn = document.getElementById('pm-menu');     if (mn) mn.addEventListener('click', returnToMenu);
