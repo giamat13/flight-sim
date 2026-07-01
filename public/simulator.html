@@ -252,6 +252,25 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .wp-status{font-size:10px;letter-spacing:1px;min-height:14px;text-align:center;color:rgba(255,143,163,0.7)}
 .wp-close{cursor:pointer;background:transparent;border:1px solid rgba(255,60,90,0.2);color:rgba(255,143,163,0.55);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:8px 16px;border-radius:5px;transition:all .15s;align-self:center}
 .wp-close:hover{background:rgba(255,60,90,0.1);color:#ff8fa3;border-color:rgba(255,60,90,0.4)}
+/* ===== Offline Maps panel — amber accent, card language ===== */
+#sm-my-maps.om-panel{position:relative;display:none;flex-direction:column;gap:14px;width:min(380px,92%);background:rgba(24,16,2,0.5);border:1px solid rgba(255,176,32,0.28);border-radius:8px;margin:0 26px 20px;padding:18px 20px;box-shadow:0 0 0 1px rgba(255,176,32,0.04) inset,0 0 30px rgba(255,176,32,0.05)}
+.om-head{display:flex;flex-direction:column;align-items:center;gap:3px}
+.om-title{font-size:13px;letter-spacing:4px;color:#ffe066;text-shadow:0 0 10px rgba(255,176,32,0.35)}
+.om-sub{font-size:9px;letter-spacing:1px;opacity:0.5;color:#ffe066;text-align:center}
+.om-btn-primary{cursor:pointer;width:100%;background:rgba(255,176,32,0.1);border:1px solid rgba(255,176,32,0.4);color:#ffe066;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:2px;padding:11px 14px;border-radius:5px;transition:all .15s}
+.om-btn-primary:hover{background:rgba(255,176,32,0.22);border-color:#ffe066;box-shadow:0 0 12px rgba(255,176,32,0.25)}
+.om-list{display:flex;flex-direction:column;gap:7px;max-height:220px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,176,32,0.3) transparent}
+.om-list::-webkit-scrollbar{width:6px}.om-list::-webkit-scrollbar-thumb{background:rgba(255,176,32,0.25)}
+.om-row{display:flex;align-items:center;gap:8px;justify-content:space-between;background:rgba(255,176,32,0.04);border:1px solid rgba(255,176,32,0.18);border-radius:5px;padding:8px 10px}
+.om-info{flex:1;min-width:0}
+.om-name{font-size:11px;letter-spacing:1px;color:#ffe066;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.om-detail{font-size:9px;color:rgba(255,200,0,0.45);letter-spacing:1px;margin-top:2px}
+.om-del{cursor:pointer;background:rgba(255,60,60,0.06);border:1px solid rgba(255,80,80,0.4);color:rgba(255,120,120,0.85);font-family:'JetBrains Mono',monospace;font-size:11px;width:26px;height:26px;border-radius:4px;flex-shrink:0;transition:all .15s}
+.om-del:hover{background:rgba(255,60,60,0.18);border-color:rgba(255,120,120,0.8)}
+.om-del:disabled{opacity:0.4;cursor:default}
+.om-empty{font-size:10px;color:rgba(255,176,32,0.4);text-align:center;letter-spacing:1px}
+.om-close{cursor:pointer;background:transparent;border:1px solid rgba(255,176,32,0.22);color:rgba(255,224,102,0.6);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:8px 16px;border-radius:5px;transition:all .15s;align-self:center}
+.om-close:hover{background:rgba(255,176,32,0.1);color:#ffe066;border-color:rgba(255,176,32,0.4)}
 #acct-status.sm-err,#stats-body .stat-err{color:#ff6060}
 #acct-status.sm-ok{color:#7fff9f}
 .stat-row{display:flex;justify-content:space-between;border-bottom:1px solid rgba(0,255,65,0.15);padding:5px 0}
@@ -904,12 +923,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   </div>
 
   <!-- Offline Maps modal — download + manage saved areas, shown inline inside the start menu -->
-  <div id="sm-my-maps" style="display:none;flex-direction:column;gap:10px;width:min(360px,92%);background:rgba(255,176,32,0.04);border:1px solid rgba(255,176,32,0.28);margin:0 26px 20px;padding:14px">
-    <div style="font-size:11px;letter-spacing:3px;color:rgba(255,176,32,0.75);text-align:center">OFFLINE MAPS</div>
-    <button id="sm-download-map-btn" style="cursor:pointer;background:rgba(255,176,32,0.1);border:1px solid rgba(255,176,32,0.4);color:#ffe066;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:2px;padding:9px 14px">⬇ DOWNLOAD NEW MAP</button>
-    <div id="sm-saved-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto"></div>
-    <div id="sm-saved-empty" style="font-size:10px;color:rgba(255,176,32,0.4);text-align:center;letter-spacing:1px">No saved maps yet</div>
-    <button id="sm-my-maps-close" style="align-self:center;cursor:pointer;background:rgba(255,176,32,0.06);border:1px solid rgba(255,176,32,0.25);color:rgba(255,176,32,0.65);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:5px 16px">CLOSE</button>
+  <div id="sm-my-maps" class="om-panel">
+    <div class="om-head">
+      <div class="om-title">🗺 OFFLINE MAPS</div>
+      <div class="om-sub">Download an area to fly it without a connection</div>
+    </div>
+    <button id="sm-download-map-btn" class="om-btn-primary">⬇ DOWNLOAD NEW MAP</button>
+    <div id="sm-saved-list" class="om-list"></div>
+    <div id="sm-saved-empty" class="om-empty">No saved maps yet</div>
+    <button id="sm-my-maps-close" class="om-close">CLOSE</button>
   </div>
 
  </div>
@@ -1521,20 +1543,20 @@ function renderSmSavedAreas() {
   if (_smSavedEmpty) _smSavedEmpty.style.display = areas.length ? 'none' : 'block';
   areas.forEach(function(area) {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,200,0,0.1)';
+    row.className = 'om-row';
     const info = document.createElement('div');
-    info.style.cssText = 'flex:1;min-width:0';
+    info.className = 'om-info';
     const name = document.createElement('div');
-    name.style.cssText = 'font-size:11px;letter-spacing:1px;color:#ffe066;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    name.className = 'om-name';
     name.textContent = area.name || 'Unnamed';
     const detail = document.createElement('div');
-    detail.style.cssText = 'font-size:9px;color:rgba(255,200,0,0.4);letter-spacing:1px;margin-top:2px';
+    detail.className = 'om-detail';
     const sizeStr = area.estBytes ? ' · ~' + formatBytes(area.estBytes) : '';
     detail.textContent = (area.tileCount || '?') + ' tiles' + sizeStr + ' · ' + new Date(area.savedAt).toLocaleDateString();
     info.appendChild(name); info.appendChild(detail);
     const del = document.createElement('button');
+    del.className = 'om-del';
     del.textContent = '✕';
-    del.style.cssText = 'background:none;border:1px solid rgba(255,80,80,0.4);color:rgba(255,80,80,0.7);font-family:monospace;font-size:12px;width:24px;height:24px;border-radius:3px;cursor:pointer;flex-shrink:0';
     del.addEventListener('click', function() {
       del.disabled = true; del.textContent = '…';
       const urls = urlsForSavedArea(area);
