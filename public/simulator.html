@@ -177,70 +177,68 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .flashing{animation:flash 0.4s infinite}
 @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
 .pulsing{animation:pulse 1.2s infinite}
-/* ===== Start menu (departure selection) — glass avionics dashboard ===== */
-#startmenu{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:radial-gradient(ellipse at 50% -10%,rgba(255,176,32,0.10),transparent 55%),radial-gradient(ellipse at 50% 110%,rgba(77,217,255,0.08),transparent 55%),linear-gradient(rgba(6,9,15,0.94),rgba(4,6,10,0.94));backdrop-filter:blur(3px);color:#eaf2ff;font-family:'JetBrains Mono',monospace;cursor:auto}
-#startmenu::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:0.35;background:repeating-linear-gradient(0deg,transparent 0 38px,rgba(77,217,255,0.05) 38px 39px),repeating-linear-gradient(90deg,transparent 0 38px,rgba(77,217,255,0.05) 38px 39px)}
-.sm-panel{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;width:min(560px,94vw);max-height:94vh;overflow-y:auto;overflow-x:hidden;padding:28px 26px 20px;background:rgba(12,16,26,0.72);border:1px solid rgba(77,217,255,0.22);border-radius:16px;box-shadow:0 0 0 1px rgba(255,255,255,0.03) inset,0 0 60px rgba(0,0,0,0.5),0 0 40px rgba(77,217,255,0.06);scrollbar-width:thin;scrollbar-color:rgba(77,217,255,0.3) transparent}
-.sm-panel::-webkit-scrollbar{width:6px}.sm-panel::-webkit-scrollbar-thumb{background:rgba(77,217,255,0.25);border-radius:3px}
-.sm-header{display:flex;flex-direction:column;align-items:center;gap:2px}
-.sm-logo{font-size:22px;color:#ffb020;text-shadow:0 0 16px rgba(255,176,32,0.6);margin-bottom:2px}
-#startmenu .sm-title{font-size:28px;letter-spacing:9px;color:#f4f8ff;text-shadow:0 0 18px rgba(255,176,32,0.35)}
-.sm-tagline{font-size:9px;letter-spacing:3px;opacity:0.4;color:#4dd9ff;margin-top:4px}
-#startmenu .sm-sub{font-size:10px;letter-spacing:3px;opacity:0.55;color:#4dd9ff;align-self:flex-start}
-.sm-block{display:flex;flex-direction:column;gap:8px;width:100%;align-items:center}
-.sm-aircraft-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center}
-.sm-aircraft-btn{cursor:pointer;pointer-events:auto;background:rgba(255,176,32,0.08);border:1px solid rgba(255,176,32,0.45);color:#ffb020;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:2px;padding:10px 22px;border-radius:8px;transition:all .15s;display:flex;align-items:center;gap:8px}
-.sm-aircraft-btn:hover{background:rgba(255,176,32,0.18);box-shadow:0 0 16px rgba(255,176,32,0.25)}
-.sm-ac-current{font-size:9px;letter-spacing:2px;opacity:0.75;color:#4dd9ff;background:rgba(77,217,255,0.06);border:1px solid rgba(77,217,255,0.25);padding:6px 12px;border-radius:6px}
-#sm-grid{display:grid;grid-template-columns:repeat(3,minmax(118px,1fr));gap:9px;width:100%}
-.sm-btn{cursor:pointer;pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(255,255,255,0.03);border:1px solid rgba(77,217,255,0.18);color:#eaf2ff;font-family:inherit;font-size:11px;letter-spacing:1px;padding:14px 8px;border-radius:8px;transition:all .15s;text-align:center;text-transform:uppercase}
-.sm-btn:hover{background:rgba(77,217,255,0.10);border-color:#4dd9ff;box-shadow:0 0 14px rgba(77,217,255,0.2);transform:translateY(-2px)}
-.sm-btn-ico{font-size:18px;line-height:1}
-.sm-btn .sm-sub2{display:block;font-size:8px;opacity:0.5;letter-spacing:1px;text-transform:none}
-.sm-btn-geo{grid-column:1 / -1;flex-direction:row;justify-content:center;background:rgba(255,176,32,0.06);border-color:rgba(255,176,32,0.4);color:#ffb020}
-.sm-btn-geo:hover{background:rgba(255,176,32,0.16);border-color:#ffb020;box-shadow:0 0 14px rgba(255,176,32,0.25)}
-#startmenu .sm-hint{font-size:9px;opacity:0.4;letter-spacing:2px;margin-top:4px;text-align:center;color:rgba(234,242,255,0.5)}
-.sm-util-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
-.sm-util-btn{cursor:pointer;pointer-events:auto;background:rgba(255,176,32,0.08);border:1px solid rgba(255,176,32,0.35);color:#ffe066;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:2px;padding:9px 20px;border-radius:6px;transition:all .15s}
-.sm-util-btn:hover{background:rgba(255,176,32,0.18)}
-.sm-util-btn-ghost{background:rgba(255,176,32,0.03);border-color:rgba(255,176,32,0.18);color:rgba(255,224,102,0.65);padding:9px 14px}
-.sm-util-btn-ghost:hover{background:rgba(255,176,32,0.1)}
-#sm-account-status{font-size:9px;letter-spacing:2px;opacity:0.85;text-align:center;color:rgba(234,242,255,0.55);background:rgba(255,255,255,0.03);border:1px solid rgba(77,217,255,0.15);padding:5px 14px;border-radius:20px}
-.sm-dock{display:flex;gap:4px;justify-content:center;flex-wrap:wrap;background:rgba(255,255,255,0.02);border:1px solid rgba(77,217,255,0.14);border-radius:10px;padding:6px}
-.sm-dock-btn{cursor:pointer;pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:3px;background:transparent;border:1px solid transparent;color:rgba(234,242,255,0.6);font-family:'JetBrains Mono',monospace;font-size:14px;padding:7px 12px;border-radius:6px;transition:all .15s}
-.sm-dock-btn span{font-size:8px;letter-spacing:1.5px}
-.sm-dock-btn:hover{background:rgba(77,217,255,0.1);border-color:rgba(77,217,255,0.35);color:#4dd9ff}
-.sm-dock-btn-live{color:rgba(255,90,120,0.75)}
-.sm-dock-btn-live:hover{background:rgba(255,60,90,0.12);border-color:rgba(255,90,120,0.4);color:#ff5577}
-#replays-panel{position:fixed;inset:0;z-index:52;justify-content:center;padding:24px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#7fd0ff;font-family:'JetBrains Mono',monospace;overflow-y:auto}
-.rep-row{display:flex;align-items:center;gap:10px;justify-content:space-between;border:1px solid rgba(80,180,255,0.2);border-radius:5px;padding:9px 11px}
+/* ===== Start menu (departure selection) — green monochrome CRT/HUD, matching in-flight look ===== */
+#startmenu{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(8,10,14,0.86);backdrop-filter:blur(3px);font-family:'JetBrains Mono',monospace;color:#00FF41;cursor:auto}
+.fm-shell{position:relative;display:flex;flex-direction:column;width:min(820px,96vw);max-height:96vh;overflow-y:auto;overflow-x:hidden;background:rgba(0,10,4,0.55);border:1px solid rgba(0,255,65,0.3);box-shadow:0 0 0 1px rgba(0,255,65,0.05) inset,0 0 40px rgba(0,255,65,0.06);scrollbar-width:thin;scrollbar-color:rgba(0,255,65,0.3) transparent}
+.fm-shell::-webkit-scrollbar{width:6px}.fm-shell::-webkit-scrollbar-thumb{background:rgba(0,255,65,0.25)}
+.fm-hero{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;padding:28px 24px 18px;border-bottom:1px solid rgba(0,255,65,0.2);background:linear-gradient(180deg,rgba(0,255,65,0.05),transparent)}
+.fm-hero-mark{font-size:20px;color:#00FF41;text-shadow:0 0 14px rgba(0,255,65,0.6);transform:rotate(45deg);margin-bottom:2px}
+.fm-hero-title{font-size:26px;font-weight:700;letter-spacing:10px;color:#00FF41;text-shadow:0 0 16px rgba(0,255,65,0.5)}
+.fm-hero-tag{font-size:9px;letter-spacing:3px;opacity:0.45}
+.fm-hero-account{margin-top:10px;font-size:9px;letter-spacing:2px;color:rgba(0,255,65,0.55);background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.2);padding:5px 14px;border-radius:4px}
+.fm-body{display:grid;grid-template-columns:1fr 210px}
+.fm-main{display:flex;flex-direction:column;gap:16px;padding:22px 26px;border-right:1px solid rgba(0,255,65,0.15);min-width:0}
+.fm-side{display:flex;flex-direction:column;gap:8px;padding:22px 16px;background:rgba(80,180,255,0.03)}
+.fm-section-label{font-size:9px;letter-spacing:3px;opacity:0.5;color:rgba(0,255,65,0.7)}
+.fm-aircraft{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(0,255,65,0.03);border:1px solid rgba(0,255,65,0.2);padding:10px 14px;border-radius:4px}
+.fm-aircraft-info{display:flex;flex-direction:column;gap:3px}
+.fm-aircraft-label{font-size:8px;letter-spacing:2px;opacity:0.45}
+.fm-aircraft-name{font-size:12px;font-weight:700;letter-spacing:1px;color:#00FF41}
+.fm-aircraft-change{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.07);border:1px solid rgba(0,255,65,0.4);color:#00FF41;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:2px;padding:8px 16px;border-radius:4px;transition:all .15s}
+.fm-aircraft-change:hover{background:rgba(0,255,65,0.18);box-shadow:0 0 14px rgba(0,255,65,0.25)}
+#sm-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%;margin-top:6px}
+.sm-btn{cursor:pointer;pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:inherit;font-size:10px;letter-spacing:1px;padding:12px 6px;border-radius:5px;transition:all .15s;text-align:center;text-transform:uppercase}
+.sm-btn:hover{background:rgba(0,255,65,0.16);border-color:#00FF41;box-shadow:0 0 14px rgba(0,255,65,0.25)}
+.sm-btn .sm-sub2{display:block;font-size:8px;opacity:0.5;letter-spacing:1px;text-transform:none;margin-top:1px}
+.fm-dest-geo{grid-column:1 / -1;flex-direction:row;justify-content:center;gap:8px;background:rgba(80,180,255,0.06);border-color:rgba(80,180,255,0.45);color:#7fd0ff}
+.fm-dest-geo:hover{background:rgba(80,180,255,0.18);border-color:#7fd0ff;box-shadow:0 0 14px rgba(80,180,255,0.3)}
+#startmenu .fm-footer{font-size:9px;opacity:0.4;letter-spacing:1px;text-align:center;padding:12px 20px;border-top:1px solid rgba(0,255,65,0.15);color:rgba(0,255,65,0.5)}
+.fm-nav{display:flex;flex-direction:column;gap:3px;margin-top:4px}
+.fm-nav-item{cursor:pointer;pointer-events:auto;display:flex;align-items:center;gap:10px;width:100%;background:transparent;border:1px solid transparent;border-left:2px solid transparent;color:rgba(127,208,255,0.65);font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:1px;padding:8px 10px;text-align:left;border-radius:3px;transition:all .15s}
+.fm-nav-item span{font-size:10px;letter-spacing:1.5px}
+.fm-nav-item:hover{background:rgba(80,180,255,0.1);border-left-color:#7fd0ff;color:#a8e0ff}
+@media (max-width:640px){.fm-body{grid-template-columns:1fr}.fm-main{border-right:none;border-bottom:1px solid rgba(0,255,65,0.15)}.fm-side{background:transparent}}
+/* ===== "More" screens (Settings/Account/Friends/Stats/Replays) — same card language as the main menu ===== */
+.sm-title{font-size:20px;letter-spacing:6px;color:#00FF41;text-shadow:0 0 14px rgba(0,255,65,0.4)}
+#settings-panel,#account-panel,#stats-panel,#friends-panel,#replays-panel{position:fixed;inset:0;z-index:52;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(8,10,14,0.86);backdrop-filter:blur(3px);color:#00FF41;font-family:'JetBrains Mono',monospace}
+.fm-modal{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;width:min(560px,94vw);max-height:88vh;overflow-y:auto;overflow-x:hidden;background:rgba(0,10,4,0.6);border:1px solid rgba(0,255,65,0.3);padding:26px 24px 20px;box-shadow:0 0 0 1px rgba(0,255,65,0.05) inset,0 0 40px rgba(0,255,65,0.06);scrollbar-width:thin;scrollbar-color:rgba(0,255,65,0.3) transparent}
+.fm-modal::-webkit-scrollbar{width:6px}.fm-modal::-webkit-scrollbar-thumb{background:rgba(0,255,65,0.25)}
+.rep-row{display:flex;align-items:center;gap:10px;justify-content:space-between;border:1px solid rgba(0,255,65,0.2);border-radius:5px;padding:9px 11px}
 .rep-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
-.rep-title{font-size:11px;letter-spacing:1px;color:#a8e0ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rep-title{font-size:11px;letter-spacing:1px;color:#00FF41;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rep-sub{font-size:9px;letter-spacing:1px;opacity:0.55}
-.rep-btn{cursor:pointer;background:rgba(0,160,255,0.1);border:1px solid rgba(80,180,255,0.4);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;padding:7px 12px;border-radius:4px;white-space:nowrap;transition:all .15s}
-.rep-btn:hover{background:rgba(0,160,255,0.2);border-color:#7fd0ff}
+.rep-btn{cursor:pointer;background:rgba(0,255,65,0.08);border:1px solid rgba(0,255,65,0.4);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;padding:7px 12px;border-radius:4px;white-space:nowrap;transition:all .15s}
+.rep-btn:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
 .rep-btn:disabled{opacity:0.4;cursor:default}
-#settings-panel{position:fixed;inset:0;z-index:52;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:24px 16px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#00FF41;font-family:'JetBrains Mono',monospace;overflow-y:auto}
-#account-panel,#stats-panel,#friends-panel{position:fixed;inset:0;z-index:52;justify-content:center;padding:24px 16px;background:rgba(8,10,14,0.96);backdrop-filter:blur(6px);color:#7fd0ff;font-family:'JetBrains Mono',monospace;overflow-y:auto}
-.friend-row{display:flex;align-items:center;gap:8px;width:100%;background:rgba(0,0,0,0.35);border:1px solid rgba(80,180,255,0.22);border-radius:5px;padding:8px 10px;box-sizing:border-box}
+.friend-row{display:flex;align-items:center;gap:8px;width:100%;background:rgba(0,255,65,0.03);border:1px solid rgba(0,255,65,0.2);border-radius:5px;padding:8px 10px;box-sizing:border-box}
 .friend-name{flex:1;font-size:12px;letter-spacing:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .friend-dot{width:8px;height:8px;border-radius:50%;flex:none;background:#3a4658}
 .friend-dot.online{background:#00FF41;box-shadow:0 0 6px #00FF41}
 .friend-sub{font-size:8px;letter-spacing:1px;opacity:0.45}
-.friend-act{cursor:pointer;background:rgba(0,160,255,0.08);border:1px solid rgba(80,180,255,0.4);color:#a8e0ff;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;padding:5px 10px;border-radius:4px;transition:all .15s}
-.friend-act:hover{background:rgba(0,160,255,0.2)}
-.friend-act.join{border-color:rgba(0,255,65,0.5);color:#00FF41;background:rgba(0,255,65,0.08)}
-.friend-act.join:hover{background:rgba(0,255,65,0.2)}
+.friend-act{cursor:pointer;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.35);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;padding:5px 10px;border-radius:4px;transition:all .15s}
+.friend-act:hover{background:rgba(0,255,65,0.18)}
+.friend-act.join{border-color:rgba(0,255,65,0.5);color:#00FF41;background:rgba(0,255,65,0.1)}
+.friend-act.join:hover{background:rgba(0,255,65,0.22)}
 .friend-act.danger{border-color:rgba(255,90,90,0.4);color:#ff8f8f;background:rgba(255,60,60,0.06)}
 .friend-act:disabled{opacity:0.35;cursor:default}
-.acct-input{background:rgba(0,0,0,0.4);border:1px solid rgba(80,180,255,0.35);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:1px;padding:9px 12px;border-radius:4px;width:100%;box-sizing:border-box}
-.acct-btn{cursor:pointer;background:rgba(0,160,255,0.1);border:1px solid rgba(80,180,255,0.4);color:#7fd0ff;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:10px 14px;border-radius:4px;transition:all .15s}
-.acct-btn:hover{background:rgba(0,160,255,0.2);border-color:#7fd0ff;color:#a8e0ff}
+.acct-input{background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:1px;padding:9px 12px;border-radius:4px;width:100%;box-sizing:border-box}
+.acct-btn{cursor:pointer;background:rgba(0,255,65,0.08);border:1px solid rgba(0,255,65,0.4);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:10px 14px;border-radius:4px;transition:all .15s}
+.acct-btn:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
 #acct-status.sm-err,#stats-body .stat-err{color:#ff6060}
 #acct-status.sm-ok{color:#7fff9f}
-.stat-row{display:flex;justify-content:space-between;border-bottom:1px solid rgba(80,180,255,0.15);padding:5px 0}
+.stat-row{display:flex;justify-content:space-between;border-bottom:1px solid rgba(0,255,65,0.15);padding:5px 0}
 .stat-key{opacity:0.55}
-.stat-val{color:#a8e0ff;font-weight:700}
+.stat-val{color:#00FF41;font-weight:700}
 #stp-tabs{display:flex;gap:0;border:1px solid rgba(0,255,65,0.3);border-radius:6px;overflow:hidden;margin-bottom:20px}
 .stp-tab{cursor:pointer;background:transparent;border:none;color:rgba(0,255,65,0.5);font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2px;padding:9px 22px;transition:all .15s;-webkit-user-select:none;user-select:none}
 .stp-tab:not(:last-child){border-right:1px solid rgba(0,255,65,0.3)}
@@ -278,20 +276,20 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .fb-btn{width:40px;height:40px;font-size:18px;cursor:pointer;color:#00FF41;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.3);border-radius:6px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s}
 .fb-btn:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
 /* Pause overlay */
-#pausemenu{position:fixed;inset:0;z-index:55;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:radial-gradient(ellipse at 50% -10%,rgba(255,176,32,0.10),transparent 55%),linear-gradient(rgba(6,9,15,0.94),rgba(4,6,10,0.94));backdrop-filter:blur(3px);color:#eaf2ff;font-family:'JetBrains Mono',monospace}
-#pausemenu .sm-title{font-size:26px;letter-spacing:8px;color:#ffb020;text-shadow:0 0 18px rgba(255,176,32,0.4)}
-#pausemenu .sm-hint{font-size:9px;opacity:0.4;letter-spacing:2px;margin-top:8px;color:rgba(234,242,255,0.5)}
-#pause-grid{display:flex;flex-direction:column;gap:9px;width:300px;max-width:86%;background:rgba(12,16,26,0.6);border:1px solid rgba(255,176,32,0.2);border-radius:14px;padding:16px}
+#pausemenu{position:fixed;inset:0;z-index:55;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:rgba(8,10,14,0.86);backdrop-filter:blur(3px);color:#00FF41;font-family:'JetBrains Mono',monospace}
+#pausemenu .sm-title{font-size:26px;letter-spacing:8px;color:#00FF41;text-shadow:0 0 14px rgba(0,255,65,0.5)}
+#pausemenu .sm-hint{font-size:9px;opacity:0.4;letter-spacing:2px;margin-top:8px;color:rgba(0,255,65,0.5)}
+#pause-grid{display:flex;flex-direction:column;gap:8px;width:300px;max-width:86%;background:rgba(0,10,4,0.5);border:1px solid rgba(0,255,65,0.25);border-radius:6px;padding:14px}
 #pause-grid .sm-btn{flex-direction:row;justify-content:center;font-size:13px;padding:13px 10px;text-transform:none;letter-spacing:1px}
 #sm-custom{display:flex;gap:8px;width:100%}
-#sm-input{flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(77,217,255,0.25);color:#eaf2ff;font-family:'JetBrains Mono',monospace;font-size:12px;padding:11px 12px;border-radius:8px;outline:none}
-#sm-input::placeholder{color:rgba(234,242,255,0.3)}
-#sm-input:focus{border-color:#4dd9ff;box-shadow:0 0 12px rgba(77,217,255,0.2)}
-#sm-go{cursor:pointer;pointer-events:auto;background:rgba(255,176,32,0.16);border:1px solid #ffb020;color:#ffb020;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:1px;padding:11px 18px;border-radius:8px;transition:all .15s}
-#sm-go:hover{background:rgba(255,176,32,0.28);box-shadow:0 0 14px rgba(255,176,32,0.3)}
-#sm-status{font-size:10px;letter-spacing:1px;min-height:14px;color:rgba(77,217,255,0.7);text-align:center}
-#sm-status.sm-err{color:#ff6868}
-#startmenu .sm-section{font-size:9px;letter-spacing:3px;opacity:0.5;margin-top:4px}
+#sm-input{flex:1;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:12px;padding:11px 12px;border-radius:5px;outline:none}
+#sm-input::placeholder{color:rgba(0,255,65,0.35)}
+#sm-input:focus{border-color:#00FF41;box-shadow:0 0 12px rgba(0,255,65,0.2)}
+#sm-go{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.12);border:1px solid rgba(0,255,65,0.4);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:1px;padding:11px 18px;border-radius:5px;transition:all .15s}
+#sm-go:hover{background:rgba(0,255,65,0.22);box-shadow:0 0 12px rgba(0,255,65,0.25)}
+#sm-status{font-size:10px;letter-spacing:1px;min-height:14px;color:rgba(0,255,65,0.6);text-align:center}
+#sm-status.sm-err{color:#ff6060}
+#wx-status{font-size:9px;letter-spacing:2px;color:rgba(0,255,65,0.45);min-height:14px;text-align:center}
 /* ===== Aircraft selector ===== */
 #ac-selector{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:460px;width:92%}
 .ac-btn{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;padding:11px 14px;border-radius:5px;transition:all .15s;text-align:center;text-transform:uppercase;min-width:110px}
@@ -784,82 +782,92 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 </div>
 
 <div id="startmenu" style="display:none">
- <div class="sm-panel">
-  <div class="sm-header">
-    <div class="sm-logo">✈</div>
-    <div class="sm-title">FLIGHT SIM</div>
-    <div class="sm-tagline">REAL-WORLD TERRAIN · LIVE FLIGHT DECK</div>
+ <div class="fm-shell">
+
+  <div class="fm-hero">
+    <div class="fm-hero-mark">✈</div>
+    <h1 class="fm-hero-title" style="margin:0">FLIGHT SIM</h1>
+    <div class="fm-hero-tag">FLY ANYWHERE ON EARTH · REAL-WORLD TERRAIN</div>
+    <div id="sm-account-status" class="fm-hero-account">GUEST — no account</div>
   </div>
 
-  <div id="ac-selector" style="display:none"><!-- aircraft selector kept for applyAircraftType compat --></div>
-  <div class="sm-aircraft-row">
-    <button id="sm-aircraft-btn" class="sm-aircraft-btn">✈ <span>SELECT AIRCRAFT</span></button>
-    <div id="sm-ac-current" class="sm-ac-current">CLASSIC JET</div>
-  </div>
+  <div class="fm-body">
+   <div class="fm-main">
 
-  <div class="sm-block">
-    <div class="sm-sub">SELECT DEPARTURE POINT</div>
-    <div id="sm-grid">
-      <button class="sm-btn" data-name="GRAND CANYON, AZ" data-lat="36.1069" data-lon="-112.1129" data-alt="1500" data-hdg="90"><span class="sm-btn-ico">🏜️</span><span class="sm-btn-name">Grand Canyon</span><span class="sm-sub2">USA</span></button>
-      <button class="sm-btn" data-name="SWISS ALPS" data-lat="45.9763" data-lon="7.6586" data-alt="2500" data-hdg="210"><span class="sm-btn-ico">🏔️</span><span class="sm-btn-name">Swiss Alps</span><span class="sm-sub2">Matterhorn</span></button>
-      <button class="sm-btn" data-name="MOUNT EVEREST" data-lat="27.9881" data-lon="86.9250" data-alt="3000" data-hdg="320"><span class="sm-btn-ico">🗻</span><span class="sm-btn-name">Mt Everest</span><span class="sm-sub2">Himalaya</span></button>
-      <button class="sm-btn" data-name="DUBAI, UAE" data-lat="25.1972" data-lon="55.2744" data-alt="2000" data-hdg="200"><span class="sm-btn-ico">🏙️</span><span class="sm-btn-name">Dubai</span><span class="sm-sub2">Burj Khalifa</span></button>
-      <button class="sm-btn" data-name="JERUSALEM" data-lat="31.7767" data-lon="35.2345" data-alt="2500" data-hdg="270"><span class="sm-btn-ico">🕍</span><span class="sm-btn-name">Jerusalem</span><span class="sm-sub2">Israel</span></button>
-      <button class="sm-btn" data-name="TEL AVIV" data-lat="32.0809" data-lon="34.7806" data-alt="2000" data-hdg="0"><span class="sm-btn-ico">🌊</span><span class="sm-btn-name">Tel Aviv</span><span class="sm-sub2">Coast</span></button>
-      <button class="sm-btn sm-btn-geo" id="sm-geo"><span class="sm-btn-ico">📍</span><span class="sm-btn-name">My Location</span></button>
+    <div id="ac-selector" style="display:none"><!-- aircraft selector kept for applyAircraftType compat --></div>
+    <div class="fm-aircraft">
+      <div class="fm-aircraft-info">
+        <span class="fm-aircraft-label">AIRCRAFT</span>
+        <span id="sm-ac-current" class="fm-aircraft-name">CLASSIC JET</span>
+      </div>
+      <button id="sm-aircraft-btn" class="fm-aircraft-change">CHANGE</button>
     </div>
+
+    <div>
+      <div class="fm-section-label">DEPARTURE POINT</div>
+      <div id="sm-grid">
+        <button class="sm-btn" data-name="GRAND CANYON, AZ" data-lat="36.1069" data-lon="-112.1129" data-alt="1500" data-hdg="90">🏜️ Grand Canyon<span class="sm-sub2">USA</span></button>
+        <button class="sm-btn" data-name="SWISS ALPS" data-lat="45.9763" data-lon="7.6586" data-alt="2500" data-hdg="210">🏔️ Swiss Alps<span class="sm-sub2">Matterhorn</span></button>
+        <button class="sm-btn" data-name="MOUNT EVEREST" data-lat="27.9881" data-lon="86.9250" data-alt="3000" data-hdg="320">🗻 Mt Everest<span class="sm-sub2">Himalaya</span></button>
+        <button class="sm-btn" data-name="DUBAI, UAE" data-lat="25.1972" data-lon="55.2744" data-alt="2000" data-hdg="200">🏙️ Dubai<span class="sm-sub2">Burj Khalifa</span></button>
+        <button class="sm-btn" data-name="JERUSALEM" data-lat="31.7767" data-lon="35.2345" data-alt="2500" data-hdg="270">🕍 Jerusalem<span class="sm-sub2">Israel</span></button>
+        <button class="sm-btn" data-name="TEL AVIV" data-lat="32.0809" data-lon="34.7806" data-alt="2000" data-hdg="0">🌊 Tel Aviv<span class="sm-sub2">Coast</span></button>
+        <button class="sm-btn fm-dest-geo" id="sm-geo">📍 My Location</button>
+      </div>
+    </div>
+
+    <div id="sm-custom">
+      <input id="sm-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="City name · lat,lon · or Google Maps link…" />
+      <button id="sm-go">GO ✈</button>
+    </div>
+    <div id="sm-status"></div>
+    <div id="wx-status"></div>
+
+   </div>
+   <div class="fm-side">
+    <div class="fm-section-label">MORE</div>
+    <nav class="fm-nav">
+      <button id="sm-settings-btn" class="fm-nav-item">⚙<span>Settings</span></button>
+      <button id="sm-watch-btn" class="fm-nav-item">🔭<span>Watch a Pilot</span></button>
+      <button id="sm-stats-btn" class="fm-nav-item">📊<span>Flight Stats</span></button>
+      <button id="sm-replays-btn" class="fm-nav-item">🎞<span>Replays</span></button>
+      <button id="sm-friends-btn" class="fm-nav-item">🤝<span>Friends</span></button>
+      <button id="sm-account-btn" class="fm-nav-item">👤<span>Account</span></button>
+      <button id="sm-manage-downloads-btn" class="fm-nav-item">🗺️<span>Offline Maps</span></button>
+    </nav>
+   </div>
   </div>
 
-  <div id="sm-custom">
-    <input id="sm-input" type="text" autocomplete="off" spellcheck="false"
-           placeholder="City name · lat,lon · or Google Maps link…" />
-    <button id="sm-go">GO ✈</button>
-  </div>
-  <div id="sm-status"></div>
-  <div id="wx-status" style="font-size:9px;letter-spacing:2px;color:rgba(77,217,255,0.6);min-height:14px;text-align:center"></div>
-
-  <div class="sm-util-row">
-    <button id="sm-download-map-btn" class="sm-util-btn">⬇ DOWNLOAD MAP</button>
-    <button id="sm-manage-downloads-btn" class="sm-util-btn sm-util-btn-ghost">📂 MY MAPS</button>
-  </div>
-
-  <div id="sm-account-status">GUEST — no account</div>
-
-  <div class="sm-dock">
-    <button id="sm-settings-btn" class="sm-dock-btn">⚙<span>SETTINGS</span></button>
-    <button id="sm-livewatch-btn" class="sm-dock-btn sm-dock-btn-live">🔴<span>LIVE</span></button>
-    <button id="sm-watch-btn" class="sm-dock-btn">🔭<span>WATCH</span></button>
-    <button id="sm-stats-btn" class="sm-dock-btn">📊<span>STATS</span></button>
-    <button id="sm-replays-btn" class="sm-dock-btn">🎞<span>REPLAYS</span></button>
-    <button id="sm-friends-btn" class="sm-dock-btn">🤝<span>FRIENDS</span></button>
-    <button id="sm-account-btn" class="sm-dock-btn">👤<span>ACCOUNT</span></button>
-  </div>
-
-  <div class="sm-hint">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
+  <div class="fm-footer">E engine &nbsp;·&nbsp; F flaps &nbsp;·&nbsp; G gear &nbsp;·&nbsp; ↓↑ pitch &nbsp;·&nbsp; ←→ bank &nbsp;·&nbsp; W/S throttle &nbsp;·&nbsp; C cam &nbsp;·&nbsp; P pause &nbsp;·&nbsp; 🎮 gamepad</div>
 
   <!-- WATCH-by-username modal -->
-  <div id="sm-watch-modal" style="display:none;flex-direction:column;gap:10px;width:min(340px,90%);background:rgba(255,255,255,0.03);border:1px solid rgba(255,60,90,0.35);border-radius:10px;padding:14px;margin-top:4px">
+  <div id="sm-watch-modal" style="display:none;flex-direction:column;gap:10px;width:min(340px,92%);background:rgba(255,60,90,0.04);border:1px solid rgba(255,60,90,0.3);margin:0 26px 20px;padding:14px">
     <div style="font-size:11px;letter-spacing:3px;color:#ff8fa3;text-align:center">WATCH A PILOT</div>
     <input id="sm-watch-input" type="text" autocomplete="off" spellcheck="false" placeholder="Username…"
-           style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,60,90,0.35);color:#ff8fa3;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:1px;padding:9px 12px;border-radius:6px;text-align:center" />
+           style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,60,90,0.35);color:#ff8fa3;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:1px;padding:9px 12px;text-align:center" />
     <div id="sm-watch-status" style="font-size:10px;letter-spacing:1px;min-height:14px;text-align:center;color:rgba(255,143,163,0.7)"></div>
-    <div style="display:flex;gap:8px;justify-content:center">
-      <button id="sm-watch-go" style="cursor:pointer;background:rgba(255,0,60,0.1);border:1px solid rgba(255,60,90,0.4);color:#ff8fa3;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:8px 18px;border-radius:6px">WATCH</button>
-      <button id="sm-watch-close" style="cursor:pointer;background:rgba(255,60,90,0.04);border:1px solid rgba(255,60,90,0.2);color:rgba(255,143,163,0.6);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:8px 18px;border-radius:6px">CLOSE</button>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button id="sm-watch-go" style="cursor:pointer;background:rgba(255,0,60,0.1);border:1px solid rgba(255,60,90,0.4);color:#ff8fa3;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:8px 18px">WATCH</button>
+      <button id="sm-watch-random" style="cursor:pointer;background:rgba(255,0,60,0.1);border:1px solid rgba(255,60,90,0.4);color:#ff8fa3;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:8px 18px">🎲 RANDOM</button>
+      <button id="sm-watch-close" style="cursor:pointer;background:rgba(255,60,90,0.04);border:1px solid rgba(255,60,90,0.2);color:rgba(255,143,163,0.6);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:8px 18px">CLOSE</button>
     </div>
   </div>
 
-  <!-- My Maps modal — shown inline inside the start menu -->
-  <div id="sm-my-maps" style="display:none;flex-direction:column;gap:10px;width:min(360px,90%);background:rgba(255,255,255,0.03);border:1px solid rgba(255,176,32,0.3);border-radius:10px;padding:14px;margin-top:4px">
-    <div style="font-size:11px;letter-spacing:3px;color:rgba(255,176,32,0.75);text-align:center">MY SAVED MAPS</div>
+  <!-- Offline Maps modal — download + manage saved areas, shown inline inside the start menu -->
+  <div id="sm-my-maps" style="display:none;flex-direction:column;gap:10px;width:min(360px,92%);background:rgba(255,176,32,0.04);border:1px solid rgba(255,176,32,0.28);margin:0 26px 20px;padding:14px">
+    <div style="font-size:11px;letter-spacing:3px;color:rgba(255,176,32,0.75);text-align:center">OFFLINE MAPS</div>
+    <button id="sm-download-map-btn" style="cursor:pointer;background:rgba(255,176,32,0.1);border:1px solid rgba(255,176,32,0.4);color:#ffe066;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:2px;padding:9px 14px">⬇ DOWNLOAD NEW MAP</button>
     <div id="sm-saved-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto"></div>
     <div id="sm-saved-empty" style="font-size:10px;color:rgba(255,176,32,0.4);text-align:center;letter-spacing:1px">No saved maps yet</div>
-    <button id="sm-my-maps-close" style="align-self:center;cursor:pointer;background:rgba(255,176,32,0.06);border:1px solid rgba(255,176,32,0.25);color:rgba(255,176,32,0.65);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:5px 16px;border-radius:6px">CLOSE</button>
+    <button id="sm-my-maps-close" style="align-self:center;cursor:pointer;background:rgba(255,176,32,0.06);border:1px solid rgba(255,176,32,0.25);color:rgba(255,176,32,0.65);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;padding:5px 16px">CLOSE</button>
   </div>
+
  </div>
 </div>
 
 <div id="settings-panel" style="display:none">
+ <div class="fm-modal">
   <div class="sm-title" style="font-size:18px;margin-bottom:14px">⚙ SETTINGS</div>
 
   <!-- Tab bar -->
@@ -994,9 +1002,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   </div>
 
   <button id="stp-close" class="stp-close" style="margin-top:16px">✕ CLOSE</button>
+ </div>
 </div>
 
-<div id="account-panel" style="display:none;flex-direction:column;align-items:center;gap:10px">
+<div id="account-panel" style="display:none">
+ <div class="fm-modal">
   <div class="sm-title" style="font-size:18px;margin-bottom:2px">👤 ACCOUNT</div>
 
   <!-- Logged-out: email/password + Google -->
@@ -1023,9 +1033,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 
   <div id="acct-status" style="font-size:10px;letter-spacing:1px;min-height:14px;text-align:center"></div>
   <button id="acct-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
+ </div>
 </div>
 
-<div id="friends-panel" style="display:none;flex-direction:column;align-items:center;gap:10px">
+<div id="friends-panel" style="display:none">
+ <div class="fm-modal">
   <div class="sm-title" style="font-size:18px;margin-bottom:2px">🤝 FRIENDS</div>
   <div style="display:flex;gap:8px;width:min(360px,92%)">
     <input id="friends-add-input" type="text" autocomplete="off" spellcheck="false" placeholder="Add by username…" class="acct-input" style="flex:1" />
@@ -1036,20 +1048,25 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div id="friends-empty" style="display:none;font-size:10px;opacity:0.5;letter-spacing:1px;text-align:center">No friends yet — add one by username above.</div>
   <div id="friends-signedout" style="display:none;font-size:10px;opacity:0.6;letter-spacing:1px;text-align:center">Sign in and choose a username (👤 ACCOUNT) to use friends.</div>
   <button id="friends-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
+ </div>
 </div>
 
-<div id="stats-panel" style="display:none;flex-direction:column;align-items:center;gap:10px">
+<div id="stats-panel" style="display:none">
+ <div class="fm-modal">
   <div class="sm-title" style="font-size:18px;margin-bottom:2px">📊 FLIGHT STATS</div>
   <div id="stats-body" style="display:flex;flex-direction:column;gap:6px;width:min(360px,90%);font-size:11px;letter-spacing:1px"></div>
   <button id="stats-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
+ </div>
 </div>
 
-<div id="replays-panel" style="display:none;flex-direction:column;align-items:center;gap:10px">
+<div id="replays-panel" style="display:none">
+ <div class="fm-modal">
   <div class="sm-title" style="font-size:18px;margin-bottom:2px">🎞 MY REPLAYS</div>
   <div id="replays-list" style="display:flex;flex-direction:column;gap:7px;width:min(440px,94%);max-height:60vh;overflow-y:auto"></div>
   <div id="replays-empty" style="display:none;font-size:10px;opacity:0.5;letter-spacing:1px;text-align:center">No replays yet — fly a flight while signed in.</div>
   <div id="replays-status" style="font-size:10px;letter-spacing:1px;min-height:14px;text-align:center;opacity:0.7"></div>
   <button id="replays-close" class="stp-close" style="margin-top:6px">✕ CLOSE</button>
+ </div>
 </div>
 
 <div id="pausemenu">
@@ -5993,9 +6010,9 @@ async function initMultiplayer() {
         e.flaps = p.flaps || 0; e.gearDown = p.gearDown !== false;
         e.phase = p.onGround ? 'ground' : 'cruise';
         e.acType = p.acKey;
-        e.apOn = !!p.apOn; // used by Live Watch to de-prioritize autopilot-flown planes
+        e.apOn = !!p.apOn; // used by Watch a Pilot's Random button to de-prioritize autopilot-flown planes
         e.username = p.username || null; // real claimed username, if any — used by the WATCH button
-        // Gauges + warnings for spectate mode (see beginLiveWatch / spectatorFollow)
+        // Gauges + warnings for spectate mode (see beginLiveWatchFor / spectatorFollow)
         e.speed = p.speed || 0; e.vs = p.vs || 0; e.throttle = p.throttle || 0; e.rpm = p.rpm || 0; e.aoa = p.aoa || 0;
         e.stall = !!p.stall; e.overspeed = !!p.overspeed; e.engineState = p.engineState || 'off';
         e.wingBroken = !!p.wingBroken; e.gearBroken = !!p.gearBroken;
@@ -11182,19 +11199,6 @@ function beginFlightNearFriend(fr) {
   try { window.focus(); } catch (e) {}
 }
 
-// Live Watch — jump straight into spectating a random currently-connected
-// live player (weighted away from autopilot-flown ones, see liveWatchAcquireRandom),
-// skipping the runway search since we're not actually spawning our own aircraft.
-function beginLiveWatch() {
-  const tgt = liveWatchAcquireRandom();
-  if (!tgt) {
-    const st = document.getElementById('sm-status');
-    if (st) { st.textContent = 'No live pilots online right now — try again in a bit.'; st.className = 'sm-err'; }
-    return;
-  }
-  beginLiveWatchFor(tgt);
-}
-
 // Case-insensitive lookup of a currently-connected player by their claimed
 // username (guest random tags don't count — only real registered names).
 function findMpEntryByUsername(name) {
@@ -11206,9 +11210,8 @@ function findMpEntryByUsername(name) {
   return null;
 }
 
-// Shared by beginLiveWatch() (random target) and the WATCH-by-username modal
-// (specific target) — everything below is identical regardless of how the
-// target was picked.
+// Shared by the WATCH-a-pilot modal's Random and username-search buttons —
+// everything below is identical regardless of how the target was picked.
 function beginLiveWatchFor(tgt) {
   START.lat = tgt.lat; START.lon = tgt.lon; START.hdg = tgt.heading || 90;
   START.alt = 100; START.spd = 0; START.thr = 0;
@@ -11710,6 +11713,7 @@ onAccountChange(updateAccountStatusLine);
   const openBtn = document.getElementById('sm-watch-btn');
   const closeBtn = document.getElementById('sm-watch-close');
   const goBtn = document.getElementById('sm-watch-go');
+  const randomBtn = document.getElementById('sm-watch-random');
   const input = document.getElementById('sm-watch-input');
   const statusEl = document.getElementById('sm-watch-status');
   if (!modal) return;
@@ -11735,6 +11739,12 @@ onAccountChange(updateAccountStatusLine);
   }
   if (goBtn) goBtn.addEventListener('click', go);
   if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+  if (randomBtn) randomBtn.addEventListener('click', function () {
+    const tgt = liveWatchAcquireRandom();
+    if (!tgt) { setStatus('No live pilots online right now — try again in a bit.', true); return; }
+    modal.style.display = 'none';
+    beginLiveWatchFor(tgt);
+  });
 })();
 
 // ===================== Friends panel =====================
@@ -12094,8 +12104,6 @@ if (startMenu) {
       });
     });
   });
-  const liveWatchBtn = document.getElementById('sm-livewatch-btn');
-  if (liveWatchBtn) liveWatchBtn.addEventListener('click', beginLiveWatch);
   const geoBtn = document.getElementById('sm-geo');
   if (geoBtn) {
     geoBtn.addEventListener('click', function () {
