@@ -4108,6 +4108,84 @@ const AIRCRAFT_DEFS = {
     radarNm: 100,       // RBE2-AA AESA radar — 100+ NM range vs fighter
   },
 
+  f15: {
+    label: 'MCDONNELL DOUGLAS F-15C EAGLE',
+    desc: 'Twin-engine air superiority fighter',
+    strengths: 'Undefeated in air combat — brute twin-engine thrust and a 4:1 thrust-to-weight ratio that out-climbs almost anything',
+    difficulty: 8,
+    m: 20200,           // kg — typical combat weight (empty 12,700 kg, MTOW 30,845 kg)
+    S: 56.5,            // m² — wing area
+    CL_a: 5.0,
+    CL_max: 1.9,
+    aStall: 24,         // deg — FBW-assisted high-AoA
+    Cd0: 0.021,
+    k: 0.062,           // 1/(π × 0.75 × AR); AR = 13.05²/56.5 = 3.01
+    incidence: 1,
+    Tmax: 210000,       // N — 2× Pratt & Whitney F100-PW-220 at 105 kN each (afterburner)
+    Vne: 610,           // m/s — Mach ~2.5 at altitude
+    fuelFlowIdle: 0.15,
+    fuelFlowMax: 3.4,
+    fuelMax: 6100,
+    rotationKts: 160,
+    cruiseKts: 480,
+    playerModelUrl: 'https://huggingface.co/spaces/cutechicken/3D-Airforce-Simulator/resolve/main/models/f-35.glb', // placeholder — no free CORS-hosted F-15 model found
+    playerModelDims: { span: 13.05, len: 19.43 },
+    modelYOffset: 1.2,
+    radarNm: 100,       // AN/APG-63/70 radar
+  },
+
+  f22: {
+    label: 'LOCKHEED MARTIN F-22 RAPTOR',
+    desc: 'Stealth air superiority fighter',
+    strengths: 'Supercruise, thrust vectoring and near-invisibility to radar — the benchmark every 5th-gen fighter is measured against',
+    difficulty: 9,
+    m: 29000,           // kg — typical combat weight (empty 19,700 kg, MTOW 38,000 kg)
+    S: 78.04,           // m² — wing area
+    CL_a: 4.8,
+    CL_max: 1.8,
+    aStall: 30,         // deg — FBW + thrust vectoring envelope protection
+    Cd0: 0.018,         // low-observable shaping
+    k: 0.037,           // 1/(π × 0.75 × AR); AR = 13.56²/78.04 = 2.36
+    incidence: 0,
+    Tmax: 312000,       // N — 2× Pratt & Whitney F119-PW-100 at 156 kN each (afterburner)
+    Vne: 560,           // m/s — supercruise Mach 1.8, max Mach 2.25
+    fuelFlowIdle: 0.16,
+    fuelFlowMax: 3.6,
+    fuelMax: 8200,
+    rotationKts: 155,
+    cruiseKts: 460,
+    playerModelUrl: 'https://huggingface.co/spaces/cutechicken/3D-Airforce-Simulator/resolve/main/models/f-35.glb', // placeholder — no free CORS-hosted F-22 model found
+    playerModelDims: { span: 13.56, len: 18.92 },
+    modelYOffset: 1.2,
+    radarNm: 60,        // AN/APG-77 AESA radar — output range de-rated to reflect LO radar cross-section, not sensor limits
+  },
+
+  x32: {
+    label: 'BOEING X-32',
+    desc: 'Single-engine JSF technology demonstrator',
+    strengths: 'The one-piece delta-wing JSF contender — direct-lift STOVL without a shaft-driven fan, lost to the F-35 but a unique ride',
+    difficulty: 7,
+    m: 19500,           // kg — approximate combat weight (prototype, never mass-produced)
+    S: 55.0,            // m² — large one-piece delta wing (est.)
+    CL_a: 3.4,          // low-AR delta
+    CL_max: 1.6,
+    aStall: 26,
+    Cd0: 0.022,
+    k: 0.15,            // 1/(π × 0.75 × AR); AR = 11.0²/55.0 = 2.2
+    incidence: 0,
+    Tmax: 178000,       // N — 1× Pratt & Whitney F119-derived turbofan (afterburner)
+    Vne: 460,           // m/s — Mach ~1.6 est.
+    fuelFlowIdle: 0.11,
+    fuelFlowMax: 2.4,
+    fuelMax: 5500,      // kg — est.
+    rotationKts: 150,
+    cruiseKts: 420,
+    playerModelUrl: 'https://huggingface.co/spaces/cutechicken/3D-Airforce-Simulator/resolve/main/models/f-35.glb', // placeholder — no free CORS-hosted X-32 model found
+    playerModelDims: { span: 11.0, len: 13.7 },
+    modelYOffset: 1.2,
+    radarNm: 70,
+  },
+
   c130: {
     label: 'LOCKHEED C-130J HERCULES',
     desc: 'Tactical airlifter',
