@@ -5482,6 +5482,7 @@ function updateTraffic(dt) {
   for (let i = 0; i < traffic.length; i++) {
     const t = traffic[i];
     if (!t.alive) continue;
+    if (t._isMp) continue; // multiplayer players are smoothed separately in updateMultiplayer()
 
     // Lerp toward the reported position (smooth out the coarse API steps)
     const lr = Math.min(1, dt * 0.25);
@@ -5746,6 +5747,158 @@ function updateTrafficModels() {
   for (const id in trafficModelNodes) {
     if (!active[id]) { THREEJS.scene.remove(trafficModelNodes[id].group); delete trafficModelNodes[id]; }
   }
+}
+
+// ===================== Multiplayer (Firebase Realtime Database) =====================
+// Every connected player writes their own live position/attitude to
+// /players/{uid} in Firebase Realtime Database (~6-7 times/sec) and listens for
+// everyone else's. Other players are merged into the existing `traffic[]` array
+// every frame, so they get 3D models, 2D labels, mid-air collision and spectate
+// for free through the exact same code path as real ADS-B traffic.
+//
+// Firebase console setup required — see chat instructions for the security
+// rules to paste in. `databaseURL` below MUST be replaced with the URL shown
+// at the top of the Realtime Database console page (looks like
+// https://<project-id>-default-rtdb.<region>.firebasedatabase.app).
+const firebaseConfig = {
+  apiKey: "AIzaSyAX5IOZavOmxtl-UoruF1Ojhil7GSkLBv0",
+  authDomain: "flight-sim-by-mg.firebaseapp.com",
+  databaseURL: "https://flight-sim-by-mg-default-rtdb.firebaseio.com", // TODO: confirm exact URL in Firebase console
+  projectId: "flight-sim-by-mg",
+  storageBucket: "flight-sim-by-mg.firebasestorage.app",
+  messagingSenderId: "758814539402",
+  appId: "1:758814539402:web:ed1640268bcc7ac44c3773",
+};
+
+const MP_ID_PREFIX        = 'mp_';
+const MP_WRITE_S          = 0.15;  // seconds between position broadcasts (~6-7 Hz)
+const MP_STALE_S          = 8;     // drop a player if we hear nothing for this long
+const MP_GROUND_COLLIDE_M = 25;    // runway/ramp collision radius (m)
+const MP_RUNWAY_CLEAR_M   = 400;   // don't spawn on a runway with a live player this close
+
+let mpDb = null, mpDbMod = null, mpUid = null, mpPlayersRef = null;
+let mpReady = false;
+let mpWriteTimer = 0;
+const mpEntries = {}; // uid -> traffic-shaped object (persists across frames for smooth lerp)
+
+async function initMultiplayer() {
+  try {
+    const [{ initializeApp }, authMod, dbMod] = await Promise.all([
+      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js'),
+      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js'),
+    ]);
+    const app = initializeApp(firebaseConfig);
+    const auth = authMod.getAuth(app);
+    // Use per-tab session persistence, not the default localStorage persistence —
+    // otherwise every tab of the same browser (e.g. two tabs testing multiplayer
+    // locally) shares the exact same anonymous uid and each tab's writes look like
+    // its own, so neither ever sees the other.
+    await authMod.setPersistence(auth, authMod.browserSessionPersistence);
+    const cred = await authMod.signInAnonymously(auth);
+    mpUid = cred.user.uid;
+    mpDb = dbMod.getDatabase(app);
+    mpDbMod = dbMod;
+    mpPlayersRef = dbMod.ref(mpDb, 'players');
+    dbMod.onDisconnect(dbMod.ref(mpDb, 'players/' + mpUid)).remove();
+    console.log('[Multiplayer] signed in anonymously, uid=' + mpUid);
+
+    let mpLastCount = -1;
+    dbMod.onValue(mpPlayersRef, function (snap) {
+      const val = snap.val() || {};
+      const seen = {};
+      for (const uid in val) {
+        if (uid === mpUid) continue;
+        const p = val[uid];
+        if (typeof p.lat !== 'number' || typeof p.lon !== 'number') continue;
+        seen[uid] = true;
+        const def = AIRCRAFT_DEFS[p.acKey] || {};
+        let e = mpEntries[uid];
+        if (!e) {
+          e = mpEntries[uid] = {
+            id: MP_ID_PREFIX + uid, icao: uid, callsign: (p.name || uid.slice(0, 6)).toUpperCase(),
+            lat: p.lat, lon: p.lon, altitude: p.altitude || 0, heading: p.heading || 0,
+            bank: 0, pitch: 0, flaps: 0, gearDown: true, alive: true, trail: null,
+          };
+        }
+        e.targetLat = p.lat; e.targetLon = p.lon; e.targetAlt = p.altitude || 0;
+        e.targetHdg = p.heading || 0; e.targetBank = p.bank || 0; e.targetPitch = p.pitch || 0;
+        e.flaps = p.flaps || 0; e.gearDown = p.gearDown !== false;
+        e.phase = p.onGround ? 'ground' : 'cruise';
+        e.acType = p.acKey;
+        e.modelUrl = def.playerModelUrl || null;
+        e.acDims = def.playerModelDims || { span: 30, len: 35 };
+        e.sizeScale = Math.max(2, (e.acDims.span || 30) / 6);
+        e._lastMsg = performance.now() / 1000;
+      }
+      for (const uid in mpEntries) { if (!seen[uid]) delete mpEntries[uid]; }
+
+      const count = Object.keys(mpEntries).length;
+      if (count !== mpLastCount) {
+        mpLastCount = count;
+        console.log('[Multiplayer] ' + count + ' other player(s) connected' +
+          (count ? ': ' + Object.keys(mpEntries).map(function (uid) { return mpEntries[uid].callsign || uid.slice(0, 6); }).join(', ') : ''));
+      }
+    });
+
+    mpReady = true;
+  } catch (e) {
+    console.warn('[Multiplayer] init failed', e);
+  }
+}
+initMultiplayer(); // fire-and-forget — starts signing in during the loading screen
+
+// Smoothly advance every mp entry toward its last-reported position (same lerp
+// approach used for real ADS-B traffic), rebuild `traffic[]` with fresh mp
+// entries every frame, and run a ground/runway collision check — the generic
+// mid-air check in updateTraffic() intentionally skips ground-phase traffic,
+// but for other live players we DO want a runway collision to end the flight.
+function updateMultiplayer(dt) {
+  traffic = traffic.filter(function (t) { return !t._isMp; });
+  if (!mpReady) return;
+  const nowSec = performance.now() / 1000;
+  for (const uid in mpEntries) {
+    const e = mpEntries[uid];
+    if (nowSec - e._lastMsg > MP_STALE_S) { delete mpEntries[uid]; continue; }
+    const lr = Math.min(1, dt * 4);
+    e.lat += (e.targetLat - e.lat) * lr;
+    e.lon += (e.targetLon - e.lon) * lr;
+    e.altitude += (e.targetAlt - e.altitude) * lr;
+    e.bank += (e.targetBank - e.bank) * lr;
+    e.pitch += (e.targetPitch - e.pitch) * lr;
+    const hdgErr = normDeg(e.targetHdg - e.heading);
+    e.heading = wrap360(e.heading + hdgErr * Math.min(1, dt * 4));
+    e._isMp = true;
+    traffic.push(e);
+
+    if (state.onGround && e.phase === 'ground' && !state.terrainHit) {
+      const horizM = distFromPlayerM(e.lat, e.lon);
+      if (horizM < MP_GROUND_COLLIDE_M) {
+        state.terrainHit = true;
+        state.terrainTimer = 2.2;
+        terrainWarn.style.display = 'block';
+      }
+    }
+  }
+}
+
+// Broadcast our own position/attitude at MP_WRITE_S intervals. Fires as soon as
+// spawnResolved (not simReady) so another pilot's runway-occupancy check can see
+// us the moment we're placed on the ground — terrain/imagery are still loading
+// at that point, but state.lat/lon/heading are already final.
+function broadcastOwnState(dt) {
+  if (!mpReady || !mpDb || !mpUid || !chosen || !spawnResolved) return;
+  mpWriteTimer += dt;
+  if (mpWriteTimer < MP_WRITE_S) return;
+  mpWriteTimer = 0;
+  mpDbMod.set(mpDbMod.ref(mpDb, 'players/' + mpUid), {
+    name: 'PILOT-' + mpUid.slice(0, 4).toUpperCase(),
+    acKey: selectedAircraftKey,
+    lat: state.lat, lon: state.lon, altitude: state.altitude,
+    heading: state.heading, bank: state.bank, pitch: state.pitch,
+    flaps: state.flaps, onGround: state.onGround, gearDown: state.gearDown,
+    t: Date.now(),
+  }).catch(function () {});
 }
 
 // ---- STUBS that the old AI-traffic FSM used (kept so call-sites compile) ----
@@ -6919,7 +7072,7 @@ function navUpdateHud() {
 // (until you refresh), looks forward from an eye point just behind the nearest real
 // traffic aircraft, and rides along with it so you can study its downloaded 3D model.
 // Press F5 to return to normal flying.
-const spectate = { active: false, id: null, banner: null };
+const spectate = { active: false, id: null, banner: null, playerOnly: false };
 
 function followAcquireNearest() {
   let best = null, bestD = Infinity;
@@ -6937,6 +7090,7 @@ function followNearest() {
   if (!tgt) { console.warn('[Spectate] No live traffic in range yet — wait a few seconds for a fetch, then try again.'); return 'no traffic in range'; }
   spectate.active = true;
   spectate.id = tgt.id;
+  spectate.playerOnly = false;
   cameraMode = 0;   // cockpit eye point: our own model is hidden, camera looks forward
   if (!spectate.banner) {
     const b = document.createElement('div');
@@ -6950,12 +7104,56 @@ function followNearest() {
 window.followNearest = followNearest;
 try { window.parent.followNearest = followNearest; } catch(e) {}
 
+// DEBUG — call followPlayer() from the F12 console to spawn/lock the camera
+// behind the nearest OTHER live multiplayer pilot (real ADS-B traffic is
+// ignored). Press F5 to return to normal flying, same as followNearest().
+function followAcquirePlayer() {
+  console.log('[Multiplayer] followPlayer: mpReady=' + mpReady + ', ' + Object.keys(mpEntries).length + ' player(s) in mpEntries, ' +
+    traffic.filter(function (t) { return t._isMp; }).length + ' currently merged into traffic[]');
+  let best = null, bestD = Infinity;
+  for (let i = 0; i < traffic.length; i++) {
+    const t = traffic[i];
+    if (!t.alive || !t._isMp) continue;
+    const d = distFromPlayerM(t.lat, t.lon);
+    console.log('[Multiplayer]   candidate ' + (t.callsign || t.icao) + ' — ' + Math.round(d) + 'm away, phase=' + t.phase);
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  return best;
+}
+
+function followPlayer() {
+  const tgt = followAcquirePlayer();
+  if (!tgt) { console.warn('[Spectate] No other live player nearby yet — wait for one to connect, then try again.'); return 'no player in range'; }
+  spectate.active = true;
+  spectate.id = tgt.id;
+  spectate.playerOnly = true;
+  cameraMode = 0;   // cockpit eye point: our own model is hidden, camera looks forward
+  if (!spectate.banner) {
+    const b = document.createElement('div');
+    b.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:60;pointer-events:none;color:#00ff41;font:12px JetBrains Mono,monospace;letter-spacing:1px;text-shadow:0 0 6px #000;text-align:center;white-space:nowrap';
+    document.body.appendChild(b);
+    spectate.banner = b;
+  }
+  console.log('%c[Spectate] Following player ' + (tgt.callsign || tgt.icao) + ' (' + (tgt.acType || '??') + '), ' + Math.round(distFromPlayerM(tgt.lat, tgt.lon)) + 'm away. Controls locked — press F5 to exit.', 'color:#00ff41');
+  return 'following ' + (tgt.callsign || tgt.icao);
+}
+window.followPlayer = followPlayer;
+try { window.parent.followPlayer = followPlayer; } catch(e) {}
+
 // Per-frame: sit just behind and above the target, aimed forward along its track.
 function spectatorFollow(dt) {
-  updateTraffic(dt);   // keep live planes moving / dead-reckoned (and re-fetching) while we watch
+  updateTraffic(dt);       // keep live ADS-B planes moving / dead-reckoned (and re-fetching) while we watch
+  updateMultiplayer(dt);   // keep other players' positions merged into traffic[] while we watch —
+                            // otherwise the periodic real-traffic refetch (which replaces traffic[]
+                            // wholesale) silently drops them and we never see them again
   let tgt = null;
   for (let i = 0; i < traffic.length; i++) { if (traffic[i].id === spectate.id && traffic[i].alive) { tgt = traffic[i]; break; } }
-  if (!tgt) { tgt = followAcquireNearest(); spectate.id = tgt ? tgt.id : null; }
+  if (!tgt) {
+    // Re-acquire within the same category we were locked onto — a player-locked
+    // spectate should never silently jump to a random real ADS-B airliner.
+    tgt = spectate.playerOnly ? followAcquirePlayer() : followAcquireNearest();
+    spectate.id = tgt ? tgt.id : null;
+  }
   if (!tgt) { if (spectate.banner) spectate.banner.textContent = 'SPECTATE · waiting for traffic…  (F5 to exit)'; return; }
 
   const len = (tgt.acDims && tgt.acDims.len) || 40;
@@ -6993,6 +7191,7 @@ function update(dt) {
 
   updateWind(dt);
   updateTraffic(dt);
+  updateMultiplayer(dt);
   tickRealWeather(dt);
   checkTerrainBeep(dt);
 
@@ -9705,6 +9904,13 @@ function findNearestRunway(lat, lon, cb) {
       }
       candidates.sort(function (a, b) { return a.dist - b.dist; });
 
+      const mpUidsNow = Object.keys(mpEntries);
+      console.log('[Multiplayer] findNearestRunway: ' + mpUidsNow.length + ' other player(s) connected' +
+        (mpUidsNow.length ? ' — ' + mpUidsNow.map(function (uid) {
+          const e = mpEntries[uid];
+          return (e.callsign || uid.slice(0, 6)) + '@' + e.lat.toFixed(4) + ',' + e.lon.toFixed(4) + (e.phase === 'ground' ? ' (ground)' : ' (air)');
+        }).join(', ') : '') + '  ·  ' + candidates.length + ' runway threshold(s) found');
+
       // Check each candidate: skip if a real aircraft is on final approach to that runway.
       // "On final" = descending, low (<3000 ft AGL), within 15 km, aligned within 25° of
       // the reciprocal runway heading (i.e. heading toward the threshold).
@@ -9722,17 +9928,32 @@ function findNearestRunway(lat, lon, cb) {
           // Landing heading ≈ reciprocal of rwy.hdg (runway faces away from landing dir)
           const landingHdg = (rwy.hdg + 180) % 360;
           const angleDiff = Math.abs(((t.heading - landingHdg + 540) % 360) - 180);
-          if (angleDiff < 35) return true;           // aligned — runway is active
+          if (angleDiff < 35) {
+            console.log('[Multiplayer] runway ' + rwy.lat.toFixed(4) + ',' + rwy.lon.toFixed(4) + ' blocked — ' + (t.callsign || t.icao) + ' on final approach');
+            return true;           // aligned — runway is active
+          }
+        }
+        // Never spawn on a runway another live multiplayer pilot is currently on.
+        for (const uid in mpEntries) {
+          const e = mpEntries[uid];
+          const edN = (e.lat - rwy.lat) * M_PER_DEG_LAT;
+          const edE = (e.lon - rwy.lon) * (M_PER_DEG_LAT * cosLat);
+          const edist = Math.sqrt(edN * edN + edE * edE);
+          if (edist < MP_RUNWAY_CLEAR_M) {
+            console.log('[Multiplayer] runway ' + rwy.lat.toFixed(4) + ',' + rwy.lon.toFixed(4) + ' blocked — player ' +
+              (e.callsign || uid.slice(0, 6)) + ' is ' + Math.round(edist) + 'm from threshold (< ' + MP_RUNWAY_CLEAR_M + 'm)');
+            return true;
+          }
         }
         return false;
       }
 
       let best = null;
       for (let c = 0; c < candidates.length; c++) {
-        if (!runwayBlocked(candidates[c])) { best = candidates[c]; break; }
+        if (!runwayBlocked(candidates[c])) { best = candidates[c]; console.log('[Multiplayer] picked runway ' + best.lat.toFixed(4) + ',' + best.lon.toFixed(4) + ' (candidate #' + c + ' of ' + candidates.length + ', clear)'); break; }
       }
       // If every runway is blocked, fall back to the closest one anyway
-      if (!best && candidates.length) best = candidates[0];
+      if (!best && candidates.length) { best = candidates[0]; console.log('[Multiplayer] all ' + candidates.length + ' runway(s) blocked — falling back to closest anyway: ' + best.lat.toFixed(4) + ',' + best.lon.toFixed(4)); }
       cb(best);
     })
     .catch(function () { clearTimeout(tid); cb(null); });
@@ -11355,6 +11576,11 @@ function loop() {
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
   frameDt = dt;
+
+  // Broadcast our own position as soon as we're spawned, independent of
+  // simReady — so other pilots' runway-occupancy check sees us right away
+  // instead of only after terrain/imagery finish loading.
+  broadcastOwnState(dt);
 
   if (navPickerOpen) { pollNavPickerGamepad(); drawNavMap(); render(); requestAnimationFrame(loop); return; }
 

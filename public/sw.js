@@ -20,7 +20,7 @@ self.addEventListener('fetch', event => {
       cache.match(event.request).then(cached => {
         if (cached) return cached;
         return fetch(event.request).then(response => {
-          if (response.ok) cache.put(event.request, response.clone());
+          if (response.ok) cache.put(event.request, response.clone()).catch(() => {});
           return response;
         }).catch(() => Response.error());
       })
@@ -60,7 +60,7 @@ self.addEventListener('message', event => {
           const hit = await cache.match(url);
           if (!hit) {
             const r = await fetchWithTimeout(url, TILE_TIMEOUT);
-            if (r) cache.put(url, r);
+            if (r) await cache.put(url, r).catch(() => {});
           }
           done++;
           event.source && event.source.postMessage({ type: 'PRECACHE_PROGRESS', done, total });
