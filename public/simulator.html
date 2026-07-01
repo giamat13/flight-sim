@@ -2227,9 +2227,18 @@ window.addEventListener('keydown', e => {
   // Don't hijack typing in text inputs (custom location field, etc.)
   const tag = e.target && e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
-  // Spectator mode locks all pilot controls; Escape exits back to the main menu.
+  // Spectator/replay mode: most pilot controls are locked, but the camera and
+  // (for replays) the playback transport stay live.
   if (spectate.active) {
-    if (e.key === 'Escape') { returnToMenu(); e.preventDefault(); }
+    if (e.key === 'Escape') { returnToMenu(); e.preventDefault(); return; }
+    if (e.code === 'KeyC') { cameraMode = (cameraMode + 1) % 2; e.preventDefault(); return; }
+    if (spectate.replay && replayPlay) {
+      if (e.code === 'Space')      { replayTogglePause(); e.preventDefault(); return; }
+      if (e.code === 'ArrowLeft')  { replaySeek(-5000);   e.preventDefault(); return; }
+      if (e.code === 'ArrowRight') { replaySeek(5000);    e.preventDefault(); return; }
+      if (e.code === 'ArrowDown')  { replayCycleSpeed(-1);e.preventDefault(); return; }
+      if (e.code === 'ArrowUp')    { replayCycleSpeed(1); e.preventDefault(); return; }
+    }
     return;
   }
   // Advanced AP destination picker: arrows pan, +/- zoom, Enter fly, Esc cancel.
@@ -5034,8 +5043,10 @@ function updateCamera() {
   } else {
     // Chase: a stable third-person rig behind the aircraft. The left stick visibly
     // banks/pitches the (real, lit) model; the right stick orbits the camera, which
-    // springs back behind the tail when released.
-    THREEJS.aircraft.visible = true;
+    // springs back behind the tail when released. While spectating/replaying, our
+    // OWN model is never shown — the subject is the watched/replayed plane, which
+    // renders via the traffic-model path — so hide THREEJS.aircraft.
+    THREEJS.aircraft.visible = !spectate.active;
     if (camFollowHeading === null) camFollowHeading = state.heading;
     const dh = normDeg(state.heading - camFollowHeading);
     camFollowHeading = normDeg(camFollowHeading + dh * Math.min(1, (frameDt || 0.016) * 2.5));
@@ -10412,6 +10423,7 @@ const INT_TO_ENGINE = ['off', 'starting', 'running', 'fire'];
 
 let replayRec = null;   // recording buffer for the current flight
 let replayPlay = null;  // active playback cursor
+let replayBar = null;   // { root, play, scrub, time, spd } control-bar DOM (built lazily)
 
 function startReplayRecording(loc) {
   replayRec = {
@@ -10495,9 +10507,9 @@ async function loadReplayFramesJson(id) {
 function replayFrameToTarget(f, meta) {
   const flags = f[15] | 0;
   return {
-    _isMp: true, alive: true,
+    _isMp: true, alive: true, id: 'replay_target',
     callsign: meta.callsign, icao: meta.callsign, acType: meta.aircraft,
-    acDims: meta.acDims,
+    acDims: meta.acDims, modelUrl: meta.modelUrl, sizeScale: meta.sizeScale,
     lat: f[1], lon: f[2], altitude: f[3], heading: f[4], pitch: f[5], bank: f[6],
     speed: f[7], vs: f[8], throttle: f[9], rpm: f[10], aoa: f[11], flaps: f[12] | 0,
     fuelPct: f[13], engineState: INT_TO_ENGINE[f[14] | 0] || 'off',
@@ -10510,6 +10522,9 @@ function replayFrameToTarget(f, meta) {
 // Interpolate the replay to time tMs and return a ready-to-apply target.
 function replaySampleAt(tMs) {
   const P = replayPlay, frames = P.frames;
+  // Support seeking in both directions: reset the cursor if we've moved backwards.
+  if (P.i >= frames.length) P.i = frames.length - 1;
+  if (frames[P.i][0] > tMs) P.i = 0;
   // advance the cursor to the frame just before tMs
   while (P.i < frames.length - 1 && frames[P.i + 1][0] <= tMs) P.i++;
   const a = frames[P.i], b = frames[Math.min(P.i + 1, frames.length - 1)];
@@ -10535,13 +10550,17 @@ function beginReplay(doc, onEnd) {
   if (!frames || !frames.length) { console.warn('[Replay] empty/corrupt replay'); return false; }
 
   const def = AIRCRAFT_DEFS[doc.aircraft] || {};
+  const acDims = def.playerModelDims || { span: 30, len: 35 };
   const meta = {
     callsign: (doc.username || 'REPLAY').toUpperCase(),
     aircraft: doc.aircraft,
-    acDims: def.playerModelDims || { span: 30, len: 35 },
+    acDims: acDims,
+    modelUrl: def.playerModelUrl || null,
+    sizeScale: Math.max(2, (acDims.span || 30) / 6),
   };
-  replayPlay = { frames: frames, i: 0, t0: performance.now(), meta: meta,
-                 durationMs: frames[frames.length - 1][0], onEnd: onEnd || null, ended: false };
+  replayPlay = { frames: frames, i: 0, meta: meta,
+                 durationMs: frames[frames.length - 1][0], onEnd: onEnd || null, ended: false,
+                 playheadMs: 0, speed: 1, paused: false, exporting: !!onEnd };
 
   const f0 = frames[0];
   START.lat = f0[1]; START.lon = f0[2]; START.hdg = f0[4];
@@ -10592,38 +10611,129 @@ function beginReplay(doc, onEnd) {
   return true;
 }
 
-// Per-frame replay driver (the spectate.replay branch of update()).
+// Per-frame replay driver (the spectate.replay branch of update()). Advances an
+// internal playhead by dt·speed (so pause / speed / seek all work), samples the
+// recorded frames at that time, drives the camera + HUD, and renders the replayed
+// aircraft as a real 3D model so its nose/bank attitude is visible.
 function replayFollow(dt) {
   updateTraffic(dt);   // keep live ADS-B / other players moving in the background of the shot
   updateMultiplayer(dt);
   if (!replayPlay) return;
   const P = replayPlay;
-  const tMs = (performance.now() - P.t0);
-  const clamped = Math.min(tMs, P.durationMs);
-  const tgt = replaySampleAt(clamped);
-  applySpectateTarget(tgt, dt);
 
-  const remain = Math.max(0, Math.round((P.durationMs - clamped) / 1000));
+  if (!P.paused) P.playheadMs += dt * 1000 * P.speed;
+  if (P.playheadMs < 0) P.playheadMs = 0;
+  const atEnd = P.playheadMs >= P.durationMs;
+  if (atEnd) P.playheadMs = P.durationMs;
+
+  const tgt = replaySampleAt(P.playheadMs);
+  applySpectateTarget(tgt, dt);
+  // Make the replayed plane a real scene object (same path live traffic uses), so
+  // updateTrafficModels() orients it with the recorded pitch/bank — you see the
+  // nose rise and fall and the wings bank, from cockpit-chase or (C) chase view.
+  tgt.alive = true;
+  traffic.push(tgt);
+
+  updateReplayBar();
   if (spectate.banner) {
-    spectate.banner.textContent = 'REPLAY ▸ ' + P.meta.callsign + '  ·  ' + (P.meta.aircraft || '??') +
-      '  ·  ' + Math.round(tgt.altitude) + 'ft  ·  ' + Math.round(tgt.speed) + 'kt  ·  -' + remain + 's   (Esc to exit)';
+    // Keep the recording clean — hide the on-screen banner while exporting a video.
+    spectate.banner.style.display = P.exporting ? 'none' : 'block';
+    if (!P.exporting) {
+      const remain = Math.max(0, Math.round((P.durationMs - P.playheadMs) / 1000));
+      spectate.banner.textContent = 'REPLAY ▸ ' + P.meta.callsign + '  ·  ' + (P.meta.aircraft || '??') +
+        '  ·  ' + Math.round(tgt.altitude) + 'ft  ·  ' + Math.round(tgt.speed) + 'kt  ·  -' + remain + 's  ·  ' +
+        P.speed + '×' + (P.paused ? ' (paused)' : '') + '   (C cam · Esc exit)';
+    }
   }
 
-  if (tMs >= P.durationMs && !P.ended) {
-    P.ended = true;
-    const cb = P.onEnd;
-    if (cb) cb();                 // video exporter stops + downloads here
-    else setTimeout(returnToMenu, 800); // plain playback: back to menu shortly after the end
+  if (atEnd) {
+    if (!P.ended) {
+      P.ended = true;
+      if (P.onEnd) P.onEnd();  // video exporter stops + downloads here
+      else P.paused = true;    // plain playback: freeze on the last frame; Esc to exit
+    }
+  } else {
+    P.ended = false; // scrubbed/rewound away from the end — allow the end to fire again
   }
 }
 
+// ---- Replay control bar (speed / seek / pause / scrub) ----
+function replaySeek(deltaMs) {
+  if (!replayPlay) return;
+  replayPlay.playheadMs = Math.max(0, Math.min(replayPlay.durationMs, replayPlay.playheadMs + deltaMs));
+  replayPlay.ended = false;
+}
+function replayTogglePause() { if (replayPlay) replayPlay.paused = !replayPlay.paused; }
+const REPLAY_SPEEDS = [0.25, 0.5, 1, 2, 4];
+function replayCycleSpeed(dir) {
+  if (!replayPlay) return;
+  let i = REPLAY_SPEEDS.indexOf(replayPlay.speed);
+  if (i < 0) i = 2;
+  i = Math.max(0, Math.min(REPLAY_SPEEDS.length - 1, i + dir));
+  replayPlay.speed = REPLAY_SPEEDS[i];
+}
+function ensureReplayBar() {
+  if (replayBar) return replayBar;
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:61;display:flex;align-items:center;gap:8px;' +
+    'background:rgba(0,10,4,0.82);border:1px solid rgba(0,255,65,0.4);border-radius:8px;padding:8px 12px;' +
+    'font:11px JetBrains Mono,monospace;color:#00ff41;pointer-events:auto;backdrop-filter:blur(3px);user-select:none';
+  const mkBtn = function (txt, title, fn) {
+    const b = document.createElement('button');
+    b.textContent = txt; b.title = title || '';
+    b.style.cssText = 'cursor:pointer;background:rgba(0,255,65,0.08);border:1px solid rgba(0,255,65,0.35);color:#00ff41;' +
+      'font:12px JetBrains Mono,monospace;padding:5px 9px;border-radius:4px';
+    b.addEventListener('click', function (e) { e.stopPropagation(); fn(); });
+    return b;
+  };
+  const slower = mkBtn('«', 'Slower', function () { replayCycleSpeed(-1); });
+  const back = mkBtn('⏪', 'Back 10s', function () { replaySeek(-10000); });
+  const play = mkBtn('⏸', 'Play / Pause', function () { replayTogglePause(); });
+  const fwd = mkBtn('⏩', 'Forward 10s', function () { replaySeek(10000); });
+  const faster = mkBtn('»', 'Faster', function () { replayCycleSpeed(1); });
+  const scrub = document.createElement('input');
+  scrub.type = 'range'; scrub.min = '0'; scrub.max = '1000'; scrub.value = '0';
+  scrub.style.cssText = 'width:170px;accent-color:#00ff41;cursor:pointer';
+  scrub.addEventListener('input', function () {
+    if (!replayPlay) return;
+    replayPlay.playheadMs = (parseFloat(scrub.value) / 1000) * replayPlay.durationMs;
+    replayPlay.ended = false;
+  });
+  const time = document.createElement('span'); time.style.cssText = 'min-width:82px;text-align:center;opacity:0.85';
+  const spd = document.createElement('span'); spd.style.cssText = 'min-width:34px;text-align:center;opacity:0.85';
+  const exit = mkBtn('✕', 'Exit (Esc)', function () { returnToMenu(); });
+  bar.appendChild(slower); bar.appendChild(back); bar.appendChild(play); bar.appendChild(fwd); bar.appendChild(faster);
+  bar.appendChild(scrub); bar.appendChild(time); bar.appendChild(spd); bar.appendChild(exit);
+  document.body.appendChild(bar);
+  replayBar = { root: bar, play: play, scrub: scrub, time: time, spd: spd };
+  return replayBar;
+}
+function fmtClock(ms) {
+  const s = Math.max(0, Math.round(ms / 1000)), m = Math.floor(s / 60), r = s % 60;
+  return m + ':' + (r < 10 ? '0' : '') + r;
+}
+function updateReplayBar() {
+  const P = replayPlay;
+  if (!P) return;
+  // Hidden while exporting a video (the export records the tab, controls would show).
+  if (P.exporting) { if (replayBar) replayBar.root.style.display = 'none'; return; }
+  const b = ensureReplayBar();
+  b.root.style.display = 'flex';
+  b.play.textContent = P.paused ? '▶' : '⏸';
+  b.spd.textContent = P.speed + '×';
+  b.time.textContent = fmtClock(P.playheadMs) + ' / ' + fmtClock(P.durationMs);
+  if (document.activeElement !== b.scrub) {
+    b.scrub.value = String(Math.round((P.playheadMs / Math.max(1, P.durationMs)) * 1000));
+  }
+}
+function hideReplayBar() { if (replayBar) replayBar.root.style.display = 'none'; }
+
 // ===================== Video export (screen-record a replay to a file) =====================
-// MediaRecorder can only record a single canvas stream, but the sim renders the
-// world (WebGL) and the HUD (2D) into two separate canvases. So we composite both
-// into an offscreen canvas each frame — grabVideoFrame() is called from loop()
-// immediately after render(), while the WebGL back-buffer is still readable, and
-// captureStream() on that composite feeds the recorder. Output is .mp4 where the
-// browser supports it (Safari), otherwise .webm (Chrome/Firefox).
+// We record the whole tab with the Screen Capture API (getDisplayMedia) rather than
+// compositing canvases — that way EVERY gauge is captured, including the ones that
+// are HTML/DOM (altitude, speed, heading, V/S, systems panel, warnings, throttle &
+// fuel bars) and the separate AHI/compass canvases, not just the WebGL world + the
+// sim-canvas overlay. Output is .mp4 where supported (Safari), else .webm.
 let videoCap = null;
 
 function pickVideoMime() {
@@ -10640,23 +10750,20 @@ function pickVideoMime() {
   return { mime: '', ext: 'webm' };
 }
 
-function startVideoCapture(baseName) {
+// Start recording an already-granted display stream. Returns true on success.
+function startVideoRecorder(stream, baseName) {
   if (videoCap) return false;
-  if (!window.MediaRecorder || !THREEJS || !THREEJS.renderer) return false;
-  const gl = THREEJS.renderer.domElement;
-  const cap = document.createElement('canvas');
-  cap.width = gl.width; cap.height = gl.height;
-  const cctx = cap.getContext('2d');
-  let stream;
-  try { stream = cap.captureStream(30); } catch (e) { return false; }
+  if (!window.MediaRecorder) { stream.getTracks().forEach(function (t) { t.stop(); }); return false; }
   const pick = pickVideoMime();
   let rec;
-  try { rec = new MediaRecorder(stream, pick.mime ? { mimeType: pick.mime, videoBitsPerSecond: 8e6 } : { videoBitsPerSecond: 8e6 }); }
-  catch (e) { return false; }
+  try { rec = new MediaRecorder(stream, pick.mime ? { mimeType: pick.mime, videoBitsPerSecond: 12e6 } : { videoBitsPerSecond: 12e6 }); }
+  catch (e) { stream.getTracks().forEach(function (t) { t.stop(); }); return false; }
   const chunks = [];
+  let aborted = false;
   rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
   rec.onstop = function () {
-    if (!videoCapAborted && chunks.length) {
+    stream.getTracks().forEach(function (t) { t.stop(); }); // stop the "sharing this tab" state
+    if (!aborted && chunks.length) {
       const blob = new Blob(chunks, { type: pick.mime || 'video/webm' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -10666,25 +10773,11 @@ function startVideoCapture(baseName) {
     }
     videoCap = null;
   };
-  let videoCapAborted = false;
-  videoCap = {
-    cap: cap, cctx: cctx, gl: gl, rec: rec,
-    finishing: false, stopped: false,
-    abort: function () { videoCapAborted = true; },
-  };
+  // If the user ends the share from the browser's own UI, finalize cleanly.
+  stream.getVideoTracks().forEach(function (tr) { tr.addEventListener('ended', function () { stopVideoCapture(false); }); });
+  videoCap = { rec: rec, stream: stream, finishing: false, stopped: false, abort: function () { aborted = true; } };
   rec.start();
   return true;
-}
-
-// Called from loop() right after render(); composites WebGL + HUD into the
-// recorder's canvas. No-op unless a capture is running.
-function grabVideoFrame() {
-  if (!videoCap) return;
-  const c = videoCap;
-  try {
-    c.cctx.drawImage(c.gl, 0, 0, c.cap.width, c.cap.height);   // 3D world
-    c.cctx.drawImage(canvas, 0, 0, c.cap.width, c.cap.height); // 2D HUD overlay (sim-canvas)
-  } catch (e) { /* ignore a transient un-drawable frame */ }
 }
 
 // abort=true discards the recording (user bailed out); abort=false finalizes and
@@ -10699,22 +10792,41 @@ function stopVideoCapture(abort) {
   try { videoCap.rec.stop(); } catch (e) { videoCap = null; }
 }
 
-// One-click: play a replay start-to-finish while recording, then download the file.
-function exportReplayVideo(doc, onDone) {
+// One-click video export. MUST be called directly from a click handler so the
+// getDisplayMedia permission prompt is tied to the user gesture. `id` is the
+// replay doc id (frames are fetched after permission is granted); `meta` is its
+// metadata for the file name.
+function startReplayVideoExport(id, meta) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    alert('Screen recording is not supported in this browser.');
+    return;
+  }
+  const opts = { video: { frameRate: 30 }, audio: false };
+  try { opts.preferCurrentTab = true; } catch (e) {} // Chrome: default the picker to this tab
+  navigator.mediaDevices.getDisplayMedia(opts).then(function (stream) {
+    const panel = document.getElementById('replays-panel'); if (panel) panel.style.display = 'none';
+    loadReplayFramesJson(id).then(function (fj) {
+      if (!fj) { stream.getTracks().forEach(function (t) { t.stop(); }); alert('Could not load that replay.'); return; }
+      runReplayVideoExport(Object.assign({}, meta, { framesJson: fj }), stream);
+    });
+  }).catch(function () { /* user cancelled the share picker — do nothing */ });
+}
+
+function runReplayVideoExport(doc, stream) {
   const name = 'flight-' + (doc.aircraft || 'replay') + '-' + new Date(doc.endedAt || Date.now()).toISOString().slice(0, 10);
   const started = beginReplay(doc, function () {
-    stopVideoCapture(false);      // finished → finalize + download
-    setTimeout(function () { returnToMenu(); if (onDone) onDone(); }, 600);
+    stopVideoCapture(false);                        // replay finished → finalize + download
+    setTimeout(returnToMenu, 600);
   });
-  if (!started) { if (onDone) onDone('Could not load replay.'); return; }
-  // Wait until terrain is ready so the recording doesn't capture the loading screen.
+  if (!started) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+  // Wait until terrain is ready so we don't record the loading screen, then start
+  // the recorder and (re)start the replay from the very beginning at 1×.
   const waitReady = setInterval(function () {
-    if (!spectate.replay) { clearInterval(waitReady); return; } // bailed out
+    if (!spectate.replay) { clearInterval(waitReady); stream.getTracks().forEach(function (t) { t.stop(); }); return; }
     if (simReady) {
       clearInterval(waitReady);
-      // restart the replay clock from now so we record from the very beginning
-      if (replayPlay) { replayPlay.t0 = performance.now(); replayPlay.i = 0; replayPlay.ended = false; }
-      if (!startVideoCapture(name) && onDone) onDone('Recording not supported in this browser.');
+      if (replayPlay) { replayPlay.playheadMs = 0; replayPlay.ended = false; replayPlay.speed = 1; replayPlay.paused = false; }
+      startVideoRecorder(stream, name);
     }
   }, 200);
 }
@@ -11490,7 +11602,7 @@ onAccountChange(updateAccountStatusLine);
         const vidBtn = document.createElement('button');
         vidBtn.className = 'rep-btn'; vidBtn.textContent = '⬇ VIDEO';
 
-        async function withFrames(action) {
+        playBtn.addEventListener('click', async function () {
           playBtn.disabled = true; vidBtn.disabled = true;
           setStatus('Loading replay…');
           const framesJson = await loadReplayFramesJson(id);
@@ -11498,10 +11610,11 @@ onAccountChange(updateAccountStatusLine);
           playBtn.disabled = false; vidBtn.disabled = false;
           if (!framesJson) { setStatus('Could not load that replay.'); return; }
           panel.style.display = 'none';
-          action(Object.assign({}, d, { framesJson: framesJson }));
-        }
-        playBtn.addEventListener('click', function () { withFrames(function (full) { beginReplay(full); }); });
-        vidBtn.addEventListener('click', function () { withFrames(function (full) { exportReplayVideo(full, function (err) { if (err) alert(err); }); }); });
+          beginReplay(Object.assign({}, d, { framesJson: framesJson }));
+        });
+        // Must stay a direct (non-async) gesture so getDisplayMedia's prompt is
+        // allowed; frames are fetched inside, after permission is granted.
+        vidBtn.addEventListener('click', function () { startReplayVideoExport(id, d); });
 
         btns.appendChild(playBtn); btns.appendChild(vidBtn);
         row.appendChild(btns);
@@ -11702,13 +11815,13 @@ function togglePause() { if (chosen && simReady) setPaused(!paused); }
 function returnToMenu() {
   setPaused(false);
   stopVideoCapture(true); // abort any in-progress screen recording without downloading
-  if (spectate.replay) replayPlay = null; // leaving a replay — drop its cursor (no stats to finalize)
+  if (spectate.replay) { replayPlay = null; hideReplayBar(); } // leaving a replay — drop its cursor + controls
   else finalizeFlightStats('quit');
   chosen = false; simReady = false; spawnResolved = false;
   realWeatherActive = false; realWeatherLat = null; realWeatherLon = null;
   spectate.active = false; spectate.id = null; spectate.playerOnly = false; spectate.random = false;
   spectate.replay = false; spectate.hudOverride = false; spectate._lastAltM = null;
-  if (spectate.banner) spectate.banner.textContent = '';
+  if (spectate.banner) { spectate.banner.textContent = ''; spectate.banner.style.display = 'block'; }
   if (startMenu) startMenu.style.display = 'flex';
   if (minimapEl) minimapEl.style.display = 'none';
   const fbEl = document.getElementById('flight-btns');
@@ -12709,7 +12822,6 @@ function loop() {
   if (chosen && simReady) pollApGamepad();
   if (simReady && !paused) update(dt);
   render();
-  grabVideoFrame(); // composite this freshly-rendered frame into an active screen recording (if any)
   requestAnimationFrame(loop);
 }
 
