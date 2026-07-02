@@ -12346,6 +12346,9 @@ onAccountChange(updateAccountStatusLine);
         row.appendChild(btns);
         listEl.appendChild(row);
       });
+      // Rows are built async after the panel opened, so the gamepad's focus list is
+      // stale — re-scan now that PLAY/VIDEO buttons exist, and focus the first one.
+      if (typeof refreshMenuItems === 'function') { refreshMenuItems(); setMenuFocus(0); }
     } catch (e) {
       console.warn('[Replay] list failed', e);
       setStatus('Could not load replays.');
@@ -12993,6 +12996,21 @@ function nmPointerDist() {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 const nmPad = { a: false, b: false, zin: false, zout: false, start: false };
+// Controller confirm for offline-map download: set the selection to the whole
+// current viewport, then trigger the same SAVE AREA dialog the pointer flow uses.
+function navPickerGamepadSaveViewport() {
+  const cv = document.getElementById('nm-canvas');
+  const cw = cv ? cv.width : window.innerWidth, ch = cv ? cv.height : window.innerHeight;
+  const tl = nmPixelToLatLon(0, 0), br = nmPixelToLatLon(cw, ch);
+  nmSelectRect = {
+    minLat: Math.min(tl.lat, br.lat), maxLat: Math.max(tl.lat, br.lat),
+    minLon: Math.min(tl.lon, br.lon), maxLon: Math.max(tl.lon, br.lon)
+  };
+  drawNavMap();
+  const saveBtn = document.getElementById('nm-save-area');
+  if (saveBtn) { saveBtn.style.display = 'block'; saveBtn.click(); }
+}
+
 function pollNavPickerGamepad() {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   let gp = null;
@@ -13000,14 +13018,58 @@ function pollNavPickerGamepad() {
   if (!gp) return;
   const ax = gp.axes || [];
   const pr = function (i) { return !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed); };
+  // While the SAVE-AREA dialog is up, the controller drives it instead of the map:
+  // A = DOWNLOAD/CLOSE, B = CANCEL. (An empty name defaults to "Area <timestamp>".)
+  const saveOv = document.getElementById('nm-save-overlay');
+  if (saveOv && saveOv.style.display !== 'none' && saveOv.getClientRects().length) {
+    const doneVis = (function(){ const s = document.getElementById('nm-dl-step-done'); return s && s.style.display !== 'none'; })();
+    const progVis = (function(){ const s = document.getElementById('nm-dl-step-progress'); return s && s.style.display !== 'none'; })();
+    const a1 = pr(0), b1 = pr(1);
+    if (a1 && !nmPad.a) {
+      if (doneVis) { const el = document.getElementById('nm-save-dismiss'); if (el) el.click(); }
+      else if (!progVis) { const el = document.getElementById('nm-save-confirm-btn'); if (el) el.click(); }
+    }
+    if (b1 && !nmPad.b && !progVis) {
+      const el = document.getElementById(doneVis ? 'nm-save-dismiss' : 'nm-save-cancel-btn'); if (el) el.click();
+    }
+    nmPad.a = a1; nmPad.b = b1;
+    return;
+  }
   const dz = function (v) { v = v || 0; return Math.abs(v) < 0.18 ? 0 : v; };
   const lx = dz(ax[0]), ly = dz(ax[1]);
   if (lx || ly) { const spd = 480 * (frameDt || 0.016); nmPanPixels(lx * spd, ly * spd); }
-  const a = pr(0);    if (a && !nmPad.a) nmFly();           nmPad.a = a;
+  // In download mode there's no "fly" — A confirms the current viewport as the area
+  // to save (box-drawing is pointer-only, so the controller just frames it and saves).
+  const a = pr(0);    if (a && !nmPad.a) { if (nmDownloadMode) navPickerGamepadSaveViewport(); else nmFly(); }  nmPad.a = a;
   const b = pr(1);    if (b && !nmPad.b) closeNavPicker();  nmPad.b = b;
   const zin = pr(7) || pr(5) || ((ax[7] || 0) < -0.5);  if (zin && !nmPad.zin) nmZoom(1);    nmPad.zin = zin;
   const zout = pr(6) || pr(4) || ((ax[7] || 0) > 0.5);  if (zout && !nmPad.zout) nmZoom(-1); nmPad.zout = zout;
   const st = pr(9);   if (st && !nmPad.start) closeNavPicker(); nmPad.start = st;
+}
+
+// ---- Replay playback: drive the control bar with a controller ----
+// A = play/pause · B = exit · dpad L/R (or bumpers) = seek ∓10s · dpad U/D = speed ± ·
+// scrub the timeline with the left stick's X axis (held).
+const rpPad = { a: false, b: false, l: false, r: false, u: false, d: false };
+function pollReplayGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+  if (!gp) return;
+  if (!gpConnected) { gpConnected = true; updateGpIndicator(); }
+  const ax = gp.axes || [];
+  const pr = function (i) { return !!(gp.buttons && gp.buttons[i] && gp.buttons[i].pressed); };
+  const a = pr(0);                                    if (a && !rpPad.a) replayTogglePause();   rpPad.a = a;
+  const b = pr(1);                                    if (b && !rpPad.b) returnToMenu();         rpPad.b = b;
+  const l = pr(14) || pr(4);                          if (l && !rpPad.l) replaySeek(-10000);     rpPad.l = l;
+  const r = pr(15) || pr(5);                          if (r && !rpPad.r) replaySeek(10000);      rpPad.r = r;
+  const u = pr(12) || (ax[1] || 0) < -0.6;            if (u && !rpPad.u) replayCycleSpeed(1);    rpPad.u = u;
+  const d = pr(13) || (ax[1] || 0) > 0.6;             if (d && !rpPad.d) replayCycleSpeed(-1);   rpPad.d = d;
+  // Left-stick X: hold to scrub the timeline (full deflection ≈ whole timeline in 8s).
+  const sx = ax[0] || 0;
+  if (replayPlay && Math.abs(sx) > 0.25 && replayPlay.durationMs) {
+    replaySeek(sx * (replayPlay.durationMs / 8) * (frameDt || 0.016));
+  }
 }
 
 function initNavPicker() {
@@ -13504,6 +13566,7 @@ function loop() {
   if (navPickerOpen) { pollNavPickerGamepad(); drawNavMap(); render(); requestAnimationFrame(loop); return; }
 
   if (!chosen) pollMenuGamepad(); // let a controller drive the start menu
+  else if (replayPlay) pollReplayGamepad(); // …or the replay control bar during playback
 
   // Phase 1: site startup — trigger dynamic import of Three.js on first loop frame,
   // then show loading screen until Grand Canyon preview is ready.
