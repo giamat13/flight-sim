@@ -348,6 +348,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #sm-status{font-size:10px;letter-spacing:1px;min-height:14px;color:rgba(0,255,65,0.6);text-align:center}
 #sm-status.sm-err{color:#ff6060}
 #wx-status{font-size:9px;letter-spacing:2px;color:rgba(0,255,65,0.45);min-height:14px;text-align:center}
+#sm-proc{margin-top:14px;padding-top:12px;border-top:1px dashed rgba(0,255,65,0.2)}
+#sm-proc-row{display:flex;gap:8px;width:100%}
+#sm-proc-input{flex:1;background:rgba(0,255,65,0.04);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:12px;padding:11px 12px;border-radius:5px;outline:none}
+#sm-proc-input::placeholder{color:rgba(0,255,65,0.35)}
+#sm-proc-input:focus{border-color:#00FF41;box-shadow:0 0 12px rgba(0,255,65,0.2)}
+#sm-proc-random{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.08);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:inherit;font-size:14px;padding:11px 13px;border-radius:5px;transition:all .15s}
+#sm-proc-random:hover{background:rgba(0,255,65,0.2)}
+#sm-proc-go{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.12);border:1px solid rgba(0,255,65,0.4);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:1px;padding:11px 16px;border-radius:5px;transition:all .15s}
+#sm-proc-go:hover{background:rgba(0,255,65,0.22);box-shadow:0 0 12px rgba(0,255,65,0.25)}
+#sm-proc-hint{font-size:9px;letter-spacing:1px;color:rgba(0,255,65,0.45);margin-top:7px;text-align:center;line-height:1.5}
 /* ===== Aircraft selector ===== */
 #ac-selector{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:460px;width:92%}
 .ac-btn{cursor:pointer;pointer-events:auto;background:rgba(0,255,65,0.05);border:1px solid rgba(0,255,65,0.3);color:#00FF41;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;padding:11px 14px;border-radius:5px;transition:all .15s;text-align:center;text-transform:uppercase;min-width:110px}
@@ -860,6 +870,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     </div>
     <div id="sm-status"></div>
     <div id="wx-status"></div>
+
+    <div id="sm-proc">
+      <div class="fm-section-label">🌍 CUSTOM WORLD · SEED</div>
+      <div id="sm-proc-row">
+        <input id="sm-proc-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Enter a seed (any word or number)…" />
+        <button id="sm-proc-random" title="Random seed">🎲</button>
+        <button id="sm-proc-go">FLY 🌍</button>
+      </div>
+      <div id="sm-proc-hint">Same seed = same world for everyone — share it with friends. </div>
+    </div>
 
    </div>
    <div class="fm-side">
@@ -4542,6 +4563,145 @@ function enuVec(lat, lon, altM, out) {
 function headingDirX(deg) { return Math.sin(deg * Math.PI / 180); }
 function headingDirZ(deg) { return -Math.cos(deg * Math.PI / 180); }
 
+// ===================== Procedural world (seeded, offline) =====================
+// When PROC.active, terrain height and tile colouring come from a seeded noise
+// field instead of AWS/Esri tiles. A SEED reproduces the exact same world for
+// anyone, with no network calls — share the seed, fly the same planet. Real-Earth
+// mode is completely untouched; this is a parallel terrain source.
+const PROC = { active: false, seed: 0 };
+
+// Accept any word or number as a seed; hash text to a stable 32-bit number so
+// "hello" and 12345 both work and always yield the same world.
+function procSetSeed(seed) {
+  const s = String(seed == null ? '' : seed).trim();
+  if (s !== '' && /^\d+$/.test(s)) { PROC.seed = (parseInt(s, 10) >>> 0) % 1000000000; return; }
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  PROC.seed = (h >>> 0) % 1000000000;
+}
+function _pHash(ix, iy, seed) {
+  let h = Math.imul(ix | 0, 374761393) + Math.imul(iy | 0, 668265263) + Math.imul(seed | 0, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967295;
+}
+function _pSmooth(t) { return t * t * (3 - 2 * t); }
+function _pNoise(x, y, seed) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const a = _pHash(ix, iy, seed), b = _pHash(ix + 1, iy, seed);
+  const c = _pHash(ix, iy + 1, seed), d = _pHash(ix + 1, iy + 1, seed);
+  const ux = _pSmooth(fx), uy = _pSmooth(fy);
+  return (a * (1 - ux) + b * ux) * (1 - uy) + (c * (1 - ux) + d * ux) * uy;
+}
+// Deterministic, continuous elevation (m) at a lat/lon for the active seed.
+// Frequencies are tuned so relief and coastlines are clearly visible from the
+// cockpit: base features are ~20 km and detail hills ~0.6 km, well inside the
+// ~40 km draw distance (the old ~120 km base made everything look flat and green).
+function procElevM(lat, lon) {
+  const seed = PROC.seed | 0;
+  const ox = (seed % 1000) * 0.137, oy = (((seed / 1000) | 0) % 1000) * 0.191;
+  const x = lon + ox, y = lat + oy;
+  // Fractal (fBm) mountain/hill field.
+  let amp = 1, freq = 5.0, sum = 0, norm = 0;    // ~0.2° (~22 km) base features
+  for (let o = 0; o < 6; o++) {
+    sum += amp * _pNoise(x * freq, y * freq, seed + o * 1013);
+    norm += amp; amp *= 0.5; freq *= 2.03;
+  }
+  const n = sum / norm;                          // 0..1 rough height
+  // Land / sea mask at a medium scale so coastlines and lakes appear within view.
+  const land = _pNoise(x * 1.1 + 11.3, y * 1.1 - 7.1, seed + 90001); // 0..1
+  let elev;
+  if (land < 0.44) {                             // water, deeper away from coast
+    elev = -25 - (0.44 - land) * 1200;
+  } else {
+    const l = (land - 0.44) / 0.56;              // 0..1 inland factor
+    let ridge = 1 - Math.abs(n - 0.5) * 2;       // ridge lines for mountains
+    ridge = ridge * ridge;
+    elev = (n - 0.32) * 1100 + ridge * 2800 * l; // rolling hills + ridged peaks
+    if (elev < 0) elev = elev * 0.35;            // gentle coastal lowlands
+  }
+  return elev;
+}
+// Biome colour (RGB) from elevation + local slope.
+function _procBiome(elevM, slope) {
+  if (elevM < -8) return [26, 58, 104];          // deep water
+  if (elevM < 0) return [40, 96, 150];           // shallow water
+  if (elevM < 8) return [206, 196, 148];         // beach
+  if (elevM > 2400) return [242, 246, 250];      // snow
+  if (elevM > 1700) return [120, 116, 112];      // bare rock
+  if (slope > 55) return [116, 104, 86];         // steep dirt
+  const t = Math.max(0, Math.min(1, elevM / 1700));
+  return [72 + t * 44, 128 - t * 46, 58 + t * 8]; // grass -> highland
+}
+// A CanvasTexture coloured by procedural biome for one ground tile (no network).
+function procTileTexture(z, x, y) {
+  const N = 24;
+  const cv = document.createElement('canvas'); cv.width = N; cv.height = N;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(N, N);
+  const lonW = tileXfToLon(x, z), lonE = tileXfToLon(x + 1, z);
+  const latN = tileYfToLat(y, z), latS = tileYfToLat(y + 1, z);
+  const el = new Float32Array(N * N);
+  for (let gy = 0; gy < N; gy++) {
+    const lat = latN + (latS - latN) * (gy / (N - 1));
+    for (let gx = 0; gx < N; gx++) {
+      const lon = lonW + (lonE - lonW) * (gx / (N - 1));
+      el[gy * N + gx] = procElevM(lat, lon);
+    }
+  }
+  for (let gy = 0; gy < N; gy++) {
+    for (let gx = 0; gx < N; gx++) {
+      const h = el[gy * N + gx];
+      const hx = el[gy * N + Math.min(N - 1, gx + 1)] - h;
+      const hy = el[Math.min(N - 1, gy + 1) * N + gx] - h;
+      const slope = Math.sqrt(hx * hx + hy * hy);
+      const c = _procBiome(h, slope);
+      const i = (gy * N + gx) * 4;
+      img.data[i] = c[0]; img.data[i + 1] = c[1]; img.data[i + 2] = c[2]; img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter;
+  if (THREEJS && THREEJS.renderer) {
+    if (!_maxAniso) _maxAniso = THREEJS.renderer.capabilities.getMaxAnisotropy() || 1;
+    tex.anisotropy = Math.min(8, _maxAniso || 1);
+  }
+  return tex;
+}
+// Pick a deterministic spawn for the current seed that is ALWAYS on dry land —
+// never in the sea. Spirals out from a seed-derived point and prefers flat coastal
+// land, but guarantees a land cell (elev > sea level) as long as any exists nearby.
+function procPickSpawn() {
+  const seed = PROC.seed | 0;
+  const startLat = ((seed % 97) - 48) * 0.9;
+  const startLon = ((((seed / 97) | 0) % 179) - 89) * 1.3;
+  const SEA = 8;                 // metres — below this we treat it as water/beach, never spawn
+  let ideal = null;              // flat land, 20..500 m
+  let ok = null;                 // any reasonable land, 8..1500 m (first seen)
+  let anyLand = null, anyLandH = -Infinity; // highest land anywhere in range (last-resort, still dry)
+  for (let ring = 0; ring < 90 && !ideal; ring++) {
+    const rr = ring * 0.35;
+    const steps = Math.max(8, ring * 4);      // sample denser rings further out
+    for (let a = 0; a < steps; a++) {
+      const ang = a / steps * Math.PI * 2;
+      const lat = startLat + Math.cos(ang) * rr;
+      const lon = startLon + Math.sin(ang) * rr;
+      const h = procElevM(lat, lon);
+      if (h <= SEA) continue;                 // water — reject outright
+      if (h > anyLandH) { anyLandH = h; anyLand = { lat: lat, lon: lon }; }
+      if (!ok && h <= 1500) ok = { lat: lat, lon: lon };
+      if (h >= 20 && h <= 500) {
+        const s = Math.abs(procElevM(lat + 0.02, lon) - h) + Math.abs(procElevM(lat, lon + 0.02) - h);
+        if (s < 40) { ideal = { lat: lat, lon: lon }; break; }
+      }
+    }
+  }
+  return ideal || ok || anyLand || { lat: startLat, lon: startLon };
+}
+
 // ===================== Elevation tiles (AWS Terrarium, keyless) =====================
 const ELEV_Z = 12;       // zoom used for elevation lookups (physics + terrain mesh)
 const ELEV_GRID = 64;    // decoded grid resolution per elevation tile
@@ -4609,6 +4769,7 @@ function coreMeshElevReady() {
 // True when the 3×3 elevation tiles around (lat,lon) have all settled (loaded or errored).
 // Kicks off any not-yet-started fetches as a side-effect.
 function coreElevReady(lat, lon) {
+  if (PROC.active) return true;                  // seeded elevation is synchronous
   const ex0 = Math.floor(lonToTileXf(lon, ELEV_Z));
   const ey0 = Math.floor(latToTileYf(lat, ELEV_Z));
   for (let dx = -1; dx <= 1; dx++) {
@@ -4622,6 +4783,7 @@ function coreElevReady(lat, lon) {
 }
 // Bilinear elevation (m) at lat/lon, or null if its tile is not decoded yet.
 function sampleElev(lat, lon) {
+  if (PROC.active) return procElevM(lat, lon);   // seeded world — no tiles, always ready
   const z = ELEV_Z;
   const xf = lonToTileXf(lon, z), yf = latToTileYf(lat, z);
   const x = Math.floor(xf), y = Math.floor(yf);
@@ -4688,10 +4850,11 @@ async function initThree() {
   const buildingGroup = new THREE.Group(); scene.add(buildingGroup);
   const aircraft = new THREE.Group(); scene.add(aircraft);
   const landmarkGroup = new THREE.Group(); scene.add(landmarkGroup);
+  const scatterGroup = new THREE.Group(); scene.add(scatterGroup);
 
   THREEJS = {
     renderer, scene, camera, sun, hemi, amb,
-    groundGroup, buildingGroup, aircraft, landmarkGroup,
+    groundGroup, buildingGroup, aircraft, landmarkGroup, scatterGroup,
     groundTiles: {}, acFlaps: -1, acGear: null, bldBoxes: [],
     bld: { center: null, loading: false },
     _v: new THREE.Vector3(), _cs: new THREE.Vector3(), _acPos: new THREE.Vector3()
@@ -4754,6 +4917,7 @@ function resetWorld() {
   for (let i = bg.children.length - 1; i >= 0; i--) { const m = bg.children[i]; bg.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }
   THREEJS.bld.center = null;
   THREEJS.bldBoxes = [];
+  clearProcScatter();
   groundTileLoadedCount = 0;
 }
 
@@ -4882,6 +5046,9 @@ function buildGroundTile(z, x, y, seg, keepTex) {
   if (keepTex) {
     // Reuse an already-loaded texture (render reload) — no network fetch.
     mat.map = keepTex; mat.color.set(terrainSeasonTint(maxElevM)); mat.needsUpdate = true;
+  } else if (PROC.active) {
+    // Seeded world — colour the tile locally from the biome, no network fetch.
+    mat.map = procTileTexture(z, x, y); mat.color.set(0xffffff); mat.needsUpdate = true; groundTileLoadedCount++;
   } else {
     loadTileTexture(mat, z, y, wx, 0, maxElevM);
   }
@@ -5101,6 +5268,115 @@ function updateLandmarks() {
   // Reposition every frame (geoOrigin shifts as the world re-anchors).
   THREEJS.eiffelTower.visible = true;
   THREEJS.eiffelTower.position.copy(enuVec(EIFFEL_LAT, EIFFEL_LON, groundM));
+}
+
+// ===================== Procedural scatter — trees, rocks & detail (seeded) =====================
+// Seeded worlds get a scatter of low-poly trees (forest patches) and boulders so the
+// terrain reads as a real landscape, not a bare green shell. Everything is deterministic
+// from the seed (shared seeds match) and baked in ENU world coords per z13 tile near the
+// aircraft, cleared/rebuilt with the world exactly like the ground tiles.
+let _scatterAssets = null;
+function _ensureScatterAssets() {
+  if (_scatterAssets || !THREE) return _scatterAssets;
+  const treeGeo = new THREE.ConeGeometry(1, 3, 6); treeGeo.translate(0, 1.5, 0); // base at y=0
+  const treeMat = new THREE.MeshStandardMaterial({ color: 0x2f6b2a, roughness: 1, metalness: 0, flatShading: true });
+  const rockGeo = new THREE.IcosahedronGeometry(1, 0); rockGeo.translate(0, 0.55, 0);
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x6b6660, roughness: 1, metalness: 0, flatShading: true });
+  _scatterAssets = { treeGeo: treeGeo, treeMat: treeMat, rockGeo: rockGeo, rockMat: rockMat };
+  return _scatterAssets;
+}
+// Build the scatter group (trees + rocks) for one z13 tile, or null if it has none.
+function buildScatterForTile(x, y) {
+  const a = _ensureScatterAssets(); if (!a) return null;
+  const z = 13;
+  const lonW = tileXfToLon(x, z), lonE = tileXfToLon(x + 1, z);
+  const latN = tileYfToLat(y, z), latS = tileYfToLat(y + 1, z);
+  const seed = PROC.seed | 0;
+  const K = 200;                    // candidate points per tile
+  const trees = [], rocks = [];
+  const tmp = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), m = new THREE.Matrix4();
+  for (let i = 0; i < K; i++) {
+    const r1 = _pHash(x * 7919 + i, y * 104729 + i * 3, seed + 4242);
+    const r2 = _pHash(x * 6547 + i * 5, y * 92873 + i, seed + 9191);
+    const r3 = _pHash(i * 131 + x, i * 17 + y, seed + 555);
+    const lon = lonW + (lonE - lonW) * r1;
+    const lat = latS + (latN - latS) * r2;
+    const h = procElevM(lat, lon);
+    if (h < 6) continue;            // no scatter on water / beach
+    const slope = Math.abs(procElevM(lat + 0.003, lon) - h) + Math.abs(procElevM(lat, lon + 0.003) - h);
+    if (h >= 8 && h <= 1500 && slope < 40) {
+      // Grass band — trees, clustered into forest patches so clearings exist.
+      const forest = _pNoise(lon * 4 + 3.1, lat * 4 - 5.7, seed + 7777);
+      if (forest > 0.48 && r3 < (forest - 0.48) * 2.4) {
+        const th = 8 + r3 * 13;     // tree height 8..21 m
+        enuVec(lat, lon, h, tmp);
+        sc.set(th * 0.32, th, th * 0.32);
+        trees.push(m.compose(tmp, q, sc).clone());
+      }
+    } else if (h > 1300 && h <= 2400 && slope < 90 && r3 < 0.12) {
+      // Rocky band — occasional boulders.
+      const rs = 3 + r3 * 22;
+      enuVec(lat, lon, h, tmp);
+      sc.set(rs, rs * 0.8, rs);
+      rocks.push(m.compose(tmp, q, sc).clone());
+    }
+  }
+  if (!trees.length && !rocks.length) return null;
+  const g = new THREE.Group();
+  if (trees.length) {
+    const im = new THREE.InstancedMesh(a.treeGeo, a.treeMat, trees.length);
+    for (let i = 0; i < trees.length; i++) im.setMatrixAt(i, trees[i]);
+    im.instanceMatrix.needsUpdate = true; im.frustumCulled = false; im.castShadow = false;
+    g.add(im);
+  }
+  if (rocks.length) {
+    const im = new THREE.InstancedMesh(a.rockGeo, a.rockMat, rocks.length);
+    for (let i = 0; i < rocks.length; i++) im.setMatrixAt(i, rocks[i]);
+    im.instanceMatrix.needsUpdate = true; im.frustumCulled = false;
+    g.add(im);
+  }
+  return g;
+}
+function disposeScatter(g) {
+  if (!g || !g.children) return;
+  for (let i = 0; i < g.children.length; i++) { const im = g.children[i]; if (im && im.dispose) { try { im.dispose(); } catch (e) {} } }
+}
+const procScatterTiles = {};      // "x/y" (z13) -> Group | 'empty'
+const _SCATTER_RING = 2;          // (2R+1)^2 nearest z13 tiles get scatter
+function clearProcScatter() {
+  if (!THREEJS || !THREEJS.scatterGroup) return;
+  const grp = THREEJS.scatterGroup;
+  for (let i = grp.children.length - 1; i >= 0; i--) { const c = grp.children[i]; grp.remove(c); disposeScatter(c); }
+  for (const k in procScatterTiles) delete procScatterTiles[k];
+}
+function updateProcScatter() {
+  if (!THREEJS || !THREEJS.scatterGroup) return;
+  // Only in seeded worlds, and only at the low-altitude (finest) zoom where trees read.
+  if (!PROC.active || groundZoomForAlt(state.altitude) !== 13) {
+    if (THREEJS.scatterGroup.children.length) clearProcScatter();
+    return;
+  }
+  const z = 13;
+  const cx = Math.floor(lonToTileXf(state.lon, z));
+  const cy = Math.floor(latToTileYf(state.lat, z));
+  const want = {};
+  for (let dx = -_SCATTER_RING; dx <= _SCATTER_RING; dx++) {
+    for (let dy = -_SCATTER_RING; dy <= _SCATTER_RING; dy++) {
+      const kx = cx + dx, ky = cy + dy, key = kx + '/' + ky;
+      want[key] = true;
+      if (procScatterTiles[key] === undefined) {
+        const g = buildScatterForTile(kx, ky);
+        procScatterTiles[key] = g || 'empty';
+        if (g) THREEJS.scatterGroup.add(g);
+      }
+    }
+  }
+  for (const key in procScatterTiles) {
+    if (want[key]) continue;
+    const g = procScatterTiles[key];
+    if (g && g !== 'empty') { THREEJS.scatterGroup.remove(g); disposeScatter(g); }
+    delete procScatterTiles[key];
+  }
 }
 
 // Find a flat, runway-capable spawn point near (lat, lon).
@@ -5460,6 +5736,7 @@ function updateCamera() {
   updateGround();
   updateBuildings();
   updateLandmarks();
+  updateProcScatter();     // trees / rocks / detail in seeded worlds
   updateTrafficModels();   // place/refresh real downloaded aircraft models in the scene
   THREEJS.renderer.render(THREEJS.scene, cam);
 }
@@ -11303,6 +11580,11 @@ function runReplayVideoExport(doc, stream) {
 }
 
 function beginFlight(loc) {
+  // Procedural / custom-world mode: seeded terrain, no network. Real-Earth flights
+  // pass no .proc and leave PROC inactive.
+  PROC.active = !!loc.proc;
+  if (PROC.active) procSetSeed(loc.seed);
+
   START.lat = loc.lat;
   START.lon = loc.lon;
   START.hdg = (loc.hdg != null) ? loc.hdg : 90;
@@ -11358,6 +11640,15 @@ function beginFlight(loc) {
     }
     spawnResolved = true;
   }
+  // Seeded / custom world: no runways to look up — just anchor at the chosen point,
+  // build the seeded terrain, and seat the aircraft on the ground.
+  if (PROC.active) {
+    if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = 'GENERATING WORLD…'; }
+    setGeoOrigin(loc.lat, loc.lon);
+    resetWorld();
+    if (THREEJS) THREEJS._menuPreview = false;
+    sampleGroundFt(loc.lat, loc.lon, function (ft) { spawnAt(ft * FT_TO_M); });
+  } else {
   // Find an open/flat clearing first (never spawn stuck inside a built-up block),
   // anchor the local ENU world there, then resolve the ground elevation.
   if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = 'FINDING NEAREST RUNWAY…'; }
@@ -11383,6 +11674,7 @@ function beginFlight(loc) {
       });
     }
   });
+  } // end real-Earth (non-PROC) spawn branch
 
   // Start with engine off — player must press E to start.
   // (The tutorial spawns airborne with the engine already running; spawnAt sets that.)
@@ -11396,10 +11688,14 @@ function beginFlight(loc) {
   chosen = true;
   simReady = false;
   startTime = performance.now();
-  // Fetch real weather for the chosen location
-  realWeatherActive = true;
-  realWeatherTimer = 60; // first auto-refresh after 60 s
-  fetchRealWeather(loc.lat, loc.lon, true);
+  // Fetch real weather for the chosen location (skipped for offline seeded worlds).
+  if (!PROC.active) {
+    realWeatherActive = true;
+    realWeatherTimer = 60; // first auto-refresh after 60 s
+    fetchRealWeather(loc.lat, loc.lon, true);
+  } else {
+    realWeatherActive = false;
+  }
   try { window.focus(); } catch (e) {} // capture keyboard for flight controls
 }
 
@@ -12462,6 +12758,27 @@ if (startMenu) {
     });
   }
 
+  // ---- Custom (seeded) world ----
+  (function () {
+    const procInput = document.getElementById('sm-proc-input');
+    const procGo = document.getElementById('sm-proc-go');
+    const procRnd = document.getElementById('sm-proc-random');
+    function launchProc() {
+      let s = (procInput && procInput.value || '').trim();
+      if (!s) { s = String(Math.floor(Math.random() * 1e9)); if (procInput) procInput.value = s; }
+      PROC.active = true; procSetSeed(s);       // set seed so we can pick a land spawn
+      const sp = procPickSpawn();
+      beginFlight({
+        name: 'CUSTOM WORLD · SEED ' + s,
+        lat: sp.lat, lon: sp.lon, alt: 2000, hdg: 90,
+        proc: true, seed: s
+      });
+    }
+    if (procGo) procGo.addEventListener('click', launchProc);
+    if (procInput) procInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') launchProc(); });
+    if (procRnd) procRnd.addEventListener('click', function () { if (procInput) procInput.value = String(Math.floor(Math.random() * 1e9)); });
+  })();
+
   // ---- Custom location: city name / coordinates / Google Maps link ----
   const goBtn = document.getElementById('sm-go');
   const input = document.getElementById('sm-input');
@@ -12731,6 +13048,9 @@ function airportCacheLoad(key) {
 // Minimap airport markers — fetch radius ~55km, keyed per ~55km grid
 let mmAirports = [], mmAirportKey = '', mmAirportFetching = false, mmAirportRetryAt = 0;
 function mmFetchAirports() {
+  // Seeded worlds have no real airports — never fetch or show phantom markers there,
+  // and clear any left over from a previous real-Earth flight.
+  if (PROC.active) { if (mmAirports.length) mmAirports = []; return; }
   if (!state.lat) return;
   if (mmAirportFetching) return;
   const now = Date.now();
