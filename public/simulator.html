@@ -5292,9 +5292,10 @@ function buildScatterForTile(x, y) {
   const lonW = tileXfToLon(x, z), lonE = tileXfToLon(x + 1, z);
   const latN = tileYfToLat(y, z), latS = tileYfToLat(y + 1, z);
   const seed = PROC.seed | 0;
-  const K = 200;                    // candidate points per tile
-  const trees = [], rocks = [];
+  const K = 220;                    // candidate points per tile
+  const trees = [], treeCols = [], rocks = [];
   const tmp = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), m = new THREE.Matrix4();
+  const col = new THREE.Color();
   for (let i = 0; i < K; i++) {
     const r1 = _pHash(x * 7919 + i, y * 104729 + i * 3, seed + 4242);
     const r2 = _pHash(x * 6547 + i * 5, y * 92873 + i, seed + 9191);
@@ -5304,18 +5305,29 @@ function buildScatterForTile(x, y) {
     const h = procElevM(lat, lon);
     if (h < 6) continue;            // no scatter on water / beach
     const slope = Math.abs(procElevM(lat + 0.003, lon) - h) + Math.abs(procElevM(lat, lon + 0.003) - h);
-    if (h >= 8 && h <= 1500 && slope < 40) {
-      // Grass band — trees, clustered into forest patches so clearings exist.
+    if (h >= 8 && h <= 1600 && slope < 45) {
+      // Vegetated band. Forest noise gives dense woods with a sparse baseline
+      // everywhere else, so grassland is never completely barren.
       const forest = _pNoise(lon * 4 + 3.1, lat * 4 - 5.7, seed + 7777);
-      if (forest > 0.48 && r3 < (forest - 0.48) * 2.4) {
-        const th = 8 + r3 * 13;     // tree height 8..21 m
+      const treeChance = Math.max(0.06, Math.min(0.9, 0.06 + (forest - 0.4) * 1.5));
+      if (r3 < treeChance) {
+        const th = 8 + r3 / Math.max(treeChance, 0.001) * 13; // 8..21 m
         enuVec(lat, lon, h, tmp);
         sc.set(th * 0.32, th, th * 0.32);
         trees.push(m.compose(tmp, q, sc).clone());
+        const g2 = 0.32 + r2 * 0.24;                          // varied green foliage
+        col.setRGB(0.10 + r1 * 0.10, g2, 0.10 + r1 * 0.06);
+        treeCols.push(col.clone());
+      } else if (r3 > 0.985) {
+        // Rare boulder among the grass, for ground-level detail.
+        const rs = 2 + r2 * 6;
+        enuVec(lat, lon, h, tmp);
+        sc.set(rs, rs * 0.8, rs);
+        rocks.push(m.compose(tmp, q, sc).clone());
       }
-    } else if (h > 1300 && h <= 2400 && slope < 90 && r3 < 0.12) {
-      // Rocky band — occasional boulders.
-      const rs = 3 + r3 * 22;
+    } else if (h > 1200 && h <= 2400 && slope < 100 && r3 < 0.16) {
+      // Rocky highlands — boulders and scree.
+      const rs = 3 + r3 * 24;
       enuVec(lat, lon, h, tmp);
       sc.set(rs, rs * 0.8, rs);
       rocks.push(m.compose(tmp, q, sc).clone());
@@ -5325,8 +5337,9 @@ function buildScatterForTile(x, y) {
   const g = new THREE.Group();
   if (trees.length) {
     const im = new THREE.InstancedMesh(a.treeGeo, a.treeMat, trees.length);
-    for (let i = 0; i < trees.length; i++) im.setMatrixAt(i, trees[i]);
-    im.instanceMatrix.needsUpdate = true; im.frustumCulled = false; im.castShadow = false;
+    for (let i = 0; i < trees.length; i++) { im.setMatrixAt(i, trees[i]); im.setColorAt(i, treeCols[i]); }
+    im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.frustumCulled = false; im.castShadow = false;
     g.add(im);
   }
   if (rocks.length) {
