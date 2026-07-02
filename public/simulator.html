@@ -3273,7 +3273,11 @@ const MENU_OVERLAYS = [
 ];
 const MENU_ITEM_SELECTOR = 'input:not([type=hidden]):not([type=file]), select, textarea, button, .ac-btn, .sm-btn, .fm-nav-item, .acs-card, .stp-tab';
 
-function isVisible(el) { return !!el && el.offsetParent !== null; }
+// NOTE: don't use `offsetParent !== null` — it is always null for position:fixed
+// elements (every overlay panel + the aircraft screen are fixed), which made scope
+// detection silently fall back to the start menu. getClientRects() is empty only when
+// the element (or an ancestor) is display:none, so it works for fixed elements too.
+function isVisible(el) { return !!el && el.getClientRects().length > 0; }
 
 function findActiveMenuScope() {
   for (let k = 0; k < MENU_OVERLAYS.length; k++) {
@@ -3285,7 +3289,7 @@ function findActiveMenuScope() {
 
 function isTextInput(el) {
   return !!el && el.tagName === 'INPUT' &&
-    ['text', 'search', 'email', 'password'].indexOf(el.type) !== -1;
+    ['text', 'search', 'email', 'password', 'number'].indexOf(el.type) !== -1;
 }
 
 function refreshMenuItems() {
@@ -3305,12 +3309,41 @@ function activateMenuItem() {
   const el = menuItems[menuFocus];
   if (!el) return;
   if (isTextInput(el)) { openVkb(el); return; } // open virtual keyboard targeting this field
+  if (el.tagName === 'SELECT') {
+    // Native <select> popups don't reliably open via .click() with a controller;
+    // cycle to the next option instead.
+    el.selectedIndex = (el.selectedIndex + 1) % el.options.length;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
   el.click();
   // The click may have switched tabs, rebuilt a list/grid, or opened/closed a
   // whole surface — re-scan so focus tracks whatever is actually on screen now.
   refreshMenuItems();
   const idx = menuItems.indexOf(el);
   setMenuFocus(idx !== -1 ? idx : 0);
+}
+
+// Column count of a contiguous run of grid cards, inferred from layout rather
+// than hardcoded, since .acs-grid's column count is responsive (3/2/1).
+function gridRunAt(items, idx) {
+  const el = items[idx];
+  if (!el || !el.classList.contains('acs-card')) return null;
+  let start = idx, end = idx;
+  while (start > 0 && items[start - 1].classList.contains('acs-card')) start--;
+  while (end < items.length - 1 && items[end + 1].classList.contains('acs-card')) end++;
+  const top0 = items[start].offsetTop;
+  let cols = 1;
+  while (start + cols <= end && items[start + cols].offsetTop === top0) cols++;
+  return { start: start, end: end, cols: cols };
+}
+function moveMenuFocusVertical(dir) {
+  const run = gridRunAt(menuItems, menuFocus);
+  if (!run) { setMenuFocus(menuFocus + dir); return; }
+  const next = menuFocus + dir * run.cols;
+  if (next >= run.start && next <= run.end) setMenuFocus(next);
+  else if (dir < 0 && run.start > 0) setMenuFocus(run.start - 1);
+  else if (dir > 0 && run.end < menuItems.length - 1) setMenuFocus(run.end + 1);
 }
 
 // ----- On-screen virtual keyboard (type into any focused text field with a controller) -----
@@ -3382,7 +3415,8 @@ function vkbSubmitFor(el) {
 function vkbActivate() {
   const key = VKB_ROWS[vkbR][vkbC];
   const i = vkbTarget; if (!i) return;
-  if (key === 'SPACE') i.value += ' ';
+  const isNumeric = i.type === 'number';
+  if (key === 'SPACE') { if (!isNumeric) i.value += ' '; }
   else if (key === '⌫') i.value = i.value.slice(0, -1);
   else if (key === 'CLEAR') i.value = '';
   else if (key === '✕') { closeVkb(); return; }
@@ -3392,6 +3426,9 @@ function vkbActivate() {
     if (submit) submit(); else i.dispatchEvent(new Event('input', { bubbles: true }));
     return;
   }
+  // Number inputs only accept digits, '.', and a leading '-' — letters and
+  // ',' would otherwise silently reset the field's value to "" on the browser side.
+  else if (isNumeric) { if (/[0-9.\-]/.test(key)) i.value += key; }
   else i.value += key;
   i.dispatchEvent(new Event('input', { bubbles: true }));
   vkbSync();
@@ -3424,8 +3461,10 @@ function pollMenuGamepad() {
     // into and out of whatever they just opened.
     const scope = findActiveMenuScope();
     if (scope.root !== menuScopeRoot || !menuItems.length) { refreshMenuItems(); setMenuFocus(0); }
-    if ((up || left) && !(menuNavPrev.u || menuNavPrev.l)) setMenuFocus(menuFocus - 1);
-    else if ((down || right) && !(menuNavPrev.d || menuNavPrev.r)) setMenuFocus(menuFocus + 1);
+    if (up && !menuNavPrev.u) moveMenuFocusVertical(-1);
+    else if (down && !menuNavPrev.d) moveMenuFocusVertical(1);
+    else if (left && !menuNavPrev.l) setMenuFocus(menuFocus - 1);
+    else if (right && !menuNavPrev.r) setMenuFocus(menuFocus + 1);
     if (a && !menuNavPrev.a) activateMenuItem();
     if (b && !menuNavPrev.b && menuScopeClose) menuScopeClose.click();
   }
@@ -13169,6 +13208,11 @@ function initAircraftScreen() {
 
     if (emptyEl) emptyEl.style.display = keys.length === 0 ? '' : 'none';
     keys.forEach(buildCard);
+
+    // Cards are rebuilt from scratch above, so any gamepad focus list pointing
+    // at the old (now-detached) card nodes must be re-scanned, or D-pad/A
+    // silently act on nothing.
+    if (typeof refreshMenuItems === 'function') { refreshMenuItems(); setMenuFocus(0); }
   }
 
   rebuildGrid();
