@@ -3255,7 +3255,8 @@ let menuItems = [];
 let menuFocus = -1;
 let menuScopeRoot = null; // element whose items are currently listed in menuItems
 let menuScopeClose = null; // "B" button target for the active scope (null = top-level menu)
-const menuNavPrev = { u: false, d: false, l: false, r: false, a: false, b: false };
+const menuNavPrev = { u: false, d: false, l: false, r: false, a: false, b: false, y: false };
+let lastMenuAPress = 0; // for double-tap-A = confirm on the aircraft screen
 let runSubmitCustom = function () {}; // set when the start menu wires up
 
 // Every full-screen / modal surface that can sit on top of the start menu, most-specific first.
@@ -3446,7 +3447,7 @@ function pollMenuGamepad() {
   const down = pressed(13) || (ax[1] || 0) > 0.5;
   const left = pressed(14) || (ax[0] || 0) < -0.5;
   const right = pressed(15) || (ax[0] || 0) > 0.5;
-  const a = pressed(0), b = pressed(1);
+  const a = pressed(0), b = pressed(1), y = pressed(3);
 
   if (vkbOpen) {
     if (up && !menuNavPrev.u) vkbMove(-1, 0);
@@ -3465,11 +3466,33 @@ function pollMenuGamepad() {
     else if (down && !menuNavPrev.d) moveMenuFocusVertical(1);
     else if (left && !menuNavPrev.l) setMenuFocus(menuFocus - 1);
     else if (right && !menuNavPrev.r) setMenuFocus(menuFocus + 1);
-    if (a && !menuNavPrev.a) activateMenuItem();
+    if (a && !menuNavPrev.a) {
+      const tnow = performance.now();
+      // Double-tap A quickly on the aircraft screen = confirm (CHOOSE DEPARTURE),
+      // so the player doesn't have to scroll all the way down to the continue button.
+      // Guarded to the aircraft screen so it can't accidentally cancel the custom-editor modal.
+      if (tnow - lastMenuAPress < 350 && menuScopeRoot && menuScopeRoot.id === 'aircraft-screen') {
+        lastMenuAPress = 0;
+        const go = document.getElementById('acs-continue');
+        if (go) go.click();
+      } else {
+        lastMenuAPress = tnow;
+        activateMenuItem();
+      }
+    }
     if (b && !menuNavPrev.b && menuScopeClose) menuScopeClose.click();
+    // Y = jump straight to the toolbar (search box is its first item), so the player
+    // doesn't have to hold up repeatedly to reach it from the card grid. No keyboard —
+    // from here they can step right to sort / archive / custom, or press A to type.
+    if (y && !menuNavPrev.y) {
+      const searchEl = menuScopeRoot &&
+        menuScopeRoot.querySelector('input[type=text], input[type=search]');
+      const idx = searchEl ? menuItems.indexOf(searchEl) : -1;
+      if (idx !== -1) setMenuFocus(idx);
+    }
   }
   menuNavPrev.u = up; menuNavPrev.d = down; menuNavPrev.l = left; menuNavPrev.r = right;
-  menuNavPrev.a = a; menuNavPrev.b = b;
+  menuNavPrev.a = a; menuNavPrev.b = b; menuNavPrev.y = y;
 }
 
 // ===================== Aircraft definitions =====================
