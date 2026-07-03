@@ -71,6 +71,23 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #fire-warn{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:44px;font-weight:700;color:#ff3000;text-shadow:0 0 40px rgba(255,50,0,0.9);font-family:'JetBrains Mono',monospace;letter-spacing:5px;pointer-events:none;display:none}
 #wing-warn{position:fixed;top:38%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:38px;font-weight:700;color:#ff6600;text-shadow:0 0 35px rgba(255,100,0,0.9);font-family:'JetBrains Mono',monospace;letter-spacing:4px;pointer-events:none;display:none}
 #gear-warn{position:fixed;top:68%;left:50%;transform:translate(-50%,-50%);z-index:30;font-size:30px;font-weight:700;color:#ff6a00;text-shadow:0 0 30px rgba(255,106,0,0.6);font-family:'JetBrains Mono',monospace;letter-spacing:4px;pointer-events:none;display:none}
+/* ===== Realistic cockpit mode ===== */
+/* Window frame sits above the 3D world (z=1, later in DOM) but below the 2D HUD canvas (z=2),
+   so the analog panel painted on the canvas naturally covers the pillar bottoms. */
+#cockpit-frame{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none;display:none}
+#cockpit-frame svg{width:100%;height:100%;display:block}
+/* When the analog panel is active, hide the scattered digital HUD gauges… */
+body.rc-panel #hud,body.rc-panel #ahi-container,body.rc-panel #compass,
+body.rc-panel #throttle-bar-container,body.rc-panel #fuel-gauge-container,
+body.rc-panel #sys-panel{display:none !important}
+/* …and lift bottom-anchored overlays above the panel (--rc-lift = panel height, set from JS) */
+body.rc-panel #minimap{bottom:calc(var(--rc-lift,240px) + 10px)}
+body.rc-panel #loc-label{bottom:calc(var(--rc-lift,240px) + 6px)}
+body.rc-panel #coord-display{bottom:calc(var(--rc-lift,240px) + 8px)}
+body.rc-panel #traffic-info{bottom:calc(var(--rc-lift,240px) + 8px) !important}
+body.rc-panel #ap-panel{bottom:calc(var(--rc-lift,240px) + 14px)}
+body.rc-panel #vjoy-wrap{bottom:calc(var(--rc-lift,240px) + 12px)}
+body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
 /* ===== Touch controls (mobile) ===== */
 #touch-controls{position:fixed;inset:0;z-index:25;pointer-events:none;display:none}
 #tc-top{position:absolute;top:12px;left:12px;display:flex;flex-wrap:wrap;gap:8px}
@@ -479,6 +496,48 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 </head>
 <body>
 <div id="three-container"></div>
+<!-- Realistic cockpit window frame (feature 2) — A-pillars + canopy header drawn as
+     stretched SVG so it scales to any aspect ratio. Shown only in realistic mode. -->
+<div id="cockpit-frame" aria-hidden="true">
+ <svg viewBox="0 0 1600 900" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="rcg-pl" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#08090a"/><stop offset="0.45" stop-color="#17181c"/>
+      <stop offset="0.86" stop-color="#232529"/><stop offset="1" stop-color="#0a0b0d"/>
+    </linearGradient>
+    <linearGradient id="rcg-pr" x1="1" y1="0" x2="0" y2="0">
+      <stop offset="0" stop-color="#08090a"/><stop offset="0.45" stop-color="#17181c"/>
+      <stop offset="0.86" stop-color="#232529"/><stop offset="1" stop-color="#0a0b0d"/>
+    </linearGradient>
+    <linearGradient id="rcg-roof" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#050506"/><stop offset="0.55" stop-color="#141518"/>
+      <stop offset="0.88" stop-color="#232529"/><stop offset="1" stop-color="#0c0d0f"/>
+    </linearGradient>
+  </defs>
+  <!-- canopy header (arched: thicker in the corners, thin in the middle) -->
+  <path d="M0,0 H1600 V78 Q1300,36 800,36 Q300,36 0,78 Z" fill="url(#rcg-roof)"/>
+  <path d="M0,78 Q300,36 800,36 Q1300,36 1600,78" fill="none" stroke="#3a3e46" stroke-width="2.5"/>
+  <!-- left A-pillar -->
+  <path d="M0,900 L0,0 L318,0 L296,74 C212,252 124,542 98,900 Z" fill="url(#rcg-pl)"/>
+  <path d="M296,74 C212,252 124,542 98,900" fill="none" stroke="#41454d" stroke-width="3.5"/>
+  <path d="M282,110 C202,286 122,556 98,880" fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="5"/>
+  <!-- right A-pillar -->
+  <path d="M1600,900 L1600,0 L1282,0 L1304,74 C1388,252 1476,542 1502,900 Z" fill="url(#rcg-pr)"/>
+  <path d="M1304,74 C1388,252 1476,542 1502,900" fill="none" stroke="#41454d" stroke-width="3.5"/>
+  <path d="M1318,110 C1398,286 1478,556 1502,880" fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="5"/>
+  <!-- rivets along the pillar seams -->
+  <g fill="#1b1d21" stroke="#383c43" stroke-width="1">
+    <circle cx="268" cy="150" r="4"/><circle cx="222" cy="270" r="4"/><circle cx="180" cy="400" r="4"/>
+    <circle cx="148" cy="540" r="4"/><circle cx="124" cy="690" r="4"/><circle cx="108" cy="840" r="4"/>
+    <circle cx="1332" cy="150" r="4"/><circle cx="1378" cy="270" r="4"/><circle cx="1420" cy="400" r="4"/>
+    <circle cx="1452" cy="540" r="4"/><circle cx="1476" cy="690" r="4"/><circle cx="1492" cy="840" r="4"/>
+    <circle cx="440" cy="52" r="4"/><circle cx="680" cy="42" r="4"/><circle cx="920" cy="42" r="4"/><circle cx="1160" cy="52" r="4"/>
+  </g>
+  <!-- faint glass reflections -->
+  <path d="M470,140 L590,140 L360,780 L280,780 Z" fill="rgba(255,255,255,0.028)"/>
+  <path d="M650,140 L700,140 L510,780 L460,780 Z" fill="rgba(255,255,255,0.018)"/>
+ </svg>
+</div>
 <canvas id="sim-canvas"></canvas>
 <div id="scanlines"></div>
 <div id="vignette"></div>
@@ -1025,6 +1084,29 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
               <label class="stp-toggle"><input type="checkbox" id="stp-fps-counter" checked><span class="stp-toggle-track"></span></label>
             </div>
           </div>
+        </div>
+
+        <div class="stp-card">
+          <div class="stp-card-head"><span class="stp-card-icon">🛩</span><span class="stp-card-title">REALISTIC COCKPIT</span></div>
+          <div class="stp-toggle-grid">
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">REALISTIC COCKPIT MODE</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-rc-mode"><span class="stp-toggle-track"></span></label>
+            </div>
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">① ANALOG INSTRUMENT PANEL</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-rc-panel" checked><span class="stp-toggle-track"></span></label>
+            </div>
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">② COCKPIT WINDOW FRAME</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-rc-frame" checked><span class="stp-toggle-track"></span></label>
+            </div>
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">③ HIDE WORLD MARKERS</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-rc-markers"><span class="stp-toggle-track"></span></label>
+            </div>
+          </div>
+          <div class="stp-hint">Analog gauges + window frame replace the scattered HUD (cockpit view). HIDE WORLD MARKERS also removes airport &amp; traffic overlays from the world.</div>
         </div>
       </div>
 
@@ -4546,6 +4628,25 @@ function stallSpeedKts() {
 
 let lastTime = performance.now();
 let cameraMode = 1; // 0=cockpit, 1=chase (default: 3rd-person so you see the plane)
+
+// ===================== Realistic cockpit mode =====================
+// Feature flags: (1) analog instrument panel, (2) cockpit window frame,
+// (3) hide world markers (airport icons/boundaries, traffic symbols & labels).
+// 1+2 default ON inside the mode, 3 defaults OFF. The mode itself defaults OFF.
+const cockpit = { mode: false, panel: true, frame: true, hideMarkers: false };
+function cockpitPanelOn()    { return cockpit.mode && cockpit.panel && cameraMode === 0; }
+function cockpitFrameOn()    { return cockpit.mode && cockpit.frame && cameraMode === 0; }
+function worldMarkersHidden(){ return cockpit.mode && cockpit.hideMarkers; }
+
+let _rcDomState = null;
+function applyCockpitDom() {
+  const key = (cockpitPanelOn() ? '1' : '0') + (cockpitFrameOn() ? '1' : '0');
+  if (key === _rcDomState) return;
+  _rcDomState = key;
+  document.body.classList.toggle('rc-panel', cockpitPanelOn());
+  const fr = document.getElementById('cockpit-frame');
+  if (fr) fr.style.display = cockpitFrameOn() ? 'block' : 'none';
+}
 // Right-stick look offset (degrees). Decays back to centre when stick released.
 let lookYawOff = 0, lookPitchOff = 0;
 let pitchActivePrev = false;  // was the pilot actively pitching last frame? (for trim re-lock edge detection)
@@ -10241,6 +10342,10 @@ const airportBoundaryLines = {}; // key -> { line, poly }
 
 function updateAirportBoundaries() {
   if (!THREEJS) return;
+  if (worldMarkersHidden()) {
+    for (const key in airportBoundaryLines) airportBoundaryLines[key].line.visible = false;
+    return;
+  }
   const MAX_DIST_M = 80000; // show boundary up to 80 km
   const active = {};
 
@@ -10289,7 +10394,7 @@ function updateAirportBoundaries() {
 }
 
 function drawAirports3D() {
-  if (!THREEJS || !mmAirports.length) return;
+  if (!THREEJS || !mmAirports.length || worldMarkersHidden()) return;
   const MAX_DIST_M = 120000;
 
   for (let i = 0; i < mmAirports.length; i++) {
@@ -10327,6 +10432,9 @@ function drawAirports3D() {
 
 function drawTraffic() {
   if (!THREEJS || !traffic.length) return;
+  // Realistic mode, feature 3: keep the physical 3D aircraft but drop the symbolic
+  // overlays (diamonds, callsign labels, route trails) painted over the world.
+  const hideMarkers   = worldMarkersHidden();
   const camHeadingDeg = cameraHeadingDeg();
   const maxRenderM    = TRAFFIC_RENDER_KM * 1000;
 
@@ -10356,6 +10464,7 @@ function drawTraffic() {
 
     // ── FAR: 2D symbol + label + trail ──────────────────────────────────
     if (distM >= TRAFFIC_3D_M) {
+      if (hideMarkers) continue;   // distant planes exist only as symbols
       const cx = center.x, cy = center.y;
       // off-screen cull with some margin for label text
       if (cx < -200 || cx > W + 200 || cy < -60 || cy > H + 60) continue;
@@ -10436,7 +10545,7 @@ function drawTraffic() {
 
     // ---- Route trail for near planes too ----
     const trail = t.trail;
-    if (trail && trail.length >= 2) {
+    if (!hideMarkers && trail && trail.length >= 2) {
       ctx.beginPath();
       let trailFirst = true;
       for (let k = 0; k < trail.length; k++) {
@@ -10456,7 +10565,7 @@ function drawTraffic() {
     // plane — just add the HUD callsign/type label and skip the 2D fallback mesh.
     if (t._hasModel) {
       const cs = t.callsign || t.icao;
-      if (cs) {
+      if (cs && !hideMarkers) {
         const altStr = t.altitude > 0 ? Math.round(t.altitude / 100) * 100 + 'ft' : 'GND';
         const label  = cs + (t.acType ? '  ' + t.acType : '') + '  ' + altStr;
         ctx.font      = '10px JetBrains Mono, monospace';
@@ -10559,7 +10668,7 @@ function drawTraffic() {
 
     // Callsign label for near planes
     const t = d.t;
-    if (t && (t.callsign || t.icao)) {
+    if (t && !hideMarkers && (t.callsign || t.icao)) {
       const cs     = t.callsign || t.icao;
       const altStr = t.altitude > 0 ? Math.round(t.altitude / 100) * 100 + 'ft' : 'GND';
       const label  = cs + (t.acType ? '  ' + t.acType : '') + '  ' + altStr;
@@ -10574,10 +10683,633 @@ function drawTraffic() {
 
 
 
+// ===================== Realistic analog cockpit panel (feature 1) =====================
+// A classic "six-pack" instrument panel drawn along the bottom of the HUD canvas:
+// airspeed, attitude, altimeter, heading gyro, vertical speed, RPM — plus an
+// annunciator block (engine / gear / flaps / stall lamps and a fuel gauge).
+// Static art (panel background, bezels, dial faces, glass) is pre-rendered into
+// offscreen canvases and only needles / rotating cards are redrawn per frame.
+const RC_TAU = Math.PI * 2;
+const RC = { layout: null, layoutKey: '', bg: null, faces: {}, lift: 0 };
+
+function rcComputeLayout() {
+  const key = W + 'x' + H;
+  if (RC.layout && RC.layoutKey === key) return RC.layout;
+  // A real six-pack is two rows of three dials — six gauges never fit a single
+  // row on an actual panel, so this is fixed regardless of screen size.
+  const sideAnn = W >= 760;                  // annunciator column fits on the right
+  const glare   = 16;                        // glareshield strip height
+  const stripH  = sideAnn ? 0 : 22;          // bottom lamp strip when no side column
+  let PH = Math.round(H * 0.42);
+  PH = Math.max(200, Math.min(430, PH));
+  const availH = PH - glare - 16 - stripH;
+  const annW   = sideAnn ? Math.max(100, Math.min(150, Math.round(W * 0.095))) : 0;
+  const cols   = 3;
+  const gap    = Math.max(8, Math.round(W * 0.009));
+  let D = Math.min(
+    (availH - gap) / 2,
+    (W - annW - 24 - gap * (cols + (sideAnn ? 2 : 1))) / cols
+  );
+  D = Math.max(52, Math.floor(D));
+  const totalW = cols * D + (cols - 1) * gap + (sideAnn ? annW + gap * 2 : 0);
+  const x0  = Math.max(8, (W - totalW) / 2);
+  const top = H - PH;
+  const gy0 = top + glare + 10 + D / 2;
+  const centers = [];
+  for (let i = 0; i < 6; i++) {
+    const r = Math.floor(i / 3), c = i % 3;
+    centers.push({ x: Math.round(x0 + c * (D + gap) + D / 2), y: Math.round(gy0 + r * (D + gap)) });
+  }
+  const annX = sideAnn ? x0 + cols * (D + gap) + gap : 0;
+  RC.layoutKey = key;
+  RC.layout = { sideAnn, PH, top, glare, D, gap, centers, annW, annX, stripH };
+  RC.faces = {};   // sizes changed → drop cached art
+  RC.bg = null;
+  return RC.layout;
+}
+
+function rcCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h));
+  return c;
+}
+
+// Metal bezel + recessed black dial face (shared by all round gauges)
+function rcDrawBezel(g, D) {
+  const r = D / 2, cx = r, cy = r;
+  let grd = g.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.15, cx, cy, r);
+  grd.addColorStop(0, '#82868e'); grd.addColorStop(0.5, '#4a4e56');
+  grd.addColorStop(0.85, '#26282d'); grd.addColorStop(1, '#0e0f11');
+  g.fillStyle = grd;
+  g.beginPath(); g.arc(cx, cy, r, 0, RC_TAU); g.fill();
+  const fr = r * 0.9;
+  grd = g.createRadialGradient(cx, cy, fr * 0.15, cx, cy, fr);
+  grd.addColorStop(0, '#16171b'); grd.addColorStop(0.75, '#0c0d10'); grd.addColorStop(1, '#050607');
+  g.fillStyle = grd;
+  g.beginPath(); g.arc(cx, cy, fr, 0, RC_TAU); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.85)';
+  g.lineWidth = Math.max(1.5, D * 0.014);
+  g.beginPath(); g.arc(cx, cy, fr, 0, RC_TAU); g.stroke();
+}
+
+function rcTick(g, cx, cy, ang, r0, r1, w, color) {
+  g.strokeStyle = color; g.lineWidth = w;
+  g.beginPath();
+  g.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
+  g.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+  g.stroke();
+}
+
+// Curved glass reflection, cached per size, blitted over each gauge after the needles
+function rcGlass(D) {
+  const key = 'glass' + D;
+  if (RC.faces[key]) return RC.faces[key];
+  const c = rcCanvas(D, D), g = c.getContext('2d');
+  const r = D / 2, fr = r * 0.9;
+  g.save();
+  g.beginPath(); g.arc(r, r, fr, 0, RC_TAU); g.clip();
+  const grd = g.createLinearGradient(0, 0, D * 0.7, D * 0.7);
+  grd.addColorStop(0, 'rgba(255,255,255,0.10)');
+  grd.addColorStop(0.4, 'rgba(255,255,255,0.02)');
+  grd.addColorStop(0.6, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, D, D);
+  g.beginPath(); g.ellipse(r - fr * 0.35, r - fr * 0.45, fr * 0.42, fr * 0.2, -0.6, 0, RC_TAU);
+  g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
+  g.restore();
+  RC.faces[key] = c;
+  return c;
+}
+
+// White pointer needle: ang in canvas radians (0 = +x), pivot (cx, cy)
+function rcNeedle(cx, cy, ang, len, tail, w, color, hub) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(ang);
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 3; ctx.shadowOffsetY = 2;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(len, 0); ctx.lineTo(len * 0.55, -w); ctx.lineTo(-tail, -w * 0.8);
+  ctx.lineTo(-tail, w * 0.8); ctx.lineTo(len * 0.55, w); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  if (hub !== false) {
+    ctx.fillStyle = '#1c1e22';
+    ctx.beginPath(); ctx.arc(cx, cy, Math.max(2.5, w * 1.6), 0, RC_TAU); ctx.fill();
+    ctx.strokeStyle = '#4a4e56'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, Math.max(2.5, w * 1.6), 0, RC_TAU); ctx.stroke();
+  }
+}
+
+function rcDialLabel(g, D, line1, line2) {
+  const r = D / 2;
+  g.fillStyle = 'rgba(230,232,235,0.7)';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = '600 ' + Math.max(6, D * 0.055) + 'px Arial, sans-serif';
+  g.fillText(line1, r, r - D * 0.16);
+  if (line2) {
+    g.font = '600 ' + Math.max(5, D * 0.04) + 'px Arial, sans-serif';
+    g.fillStyle = 'rgba(230,232,235,0.45)';
+    g.fillText(line2, r, r - D * 0.16 + D * 0.06);
+  }
+}
+
+// ── Airspeed indicator: 0 at 12 o'clock, 330° sweep clockwise ──
+const RC_ASI_SWEEP = 330 * DEG, RC_ASI_START = -Math.PI / 2;
+function rcAsiMax() {
+  const cands = [200, 300, 400, 500, 700, 1000, 1500, 2500];
+  const need = VNE_KTS * 1.1;
+  for (let i = 0; i < cands.length; i++) if (cands[i] >= need) return cands[i];
+  return 2500;
+}
+function rcAsiAng(v, maxV) { return RC_ASI_START + Math.min(1, Math.max(0, v / maxV)) * RC_ASI_SWEEP; }
+
+function rcFaceASI(D) {
+  const maxV = rcAsiMax();
+  const key = 'asi' + D + '_' + maxV + '_' + Math.round(VNE_KTS);
+  if (RC.faces[key]) return RC.faces[key];
+  const c = rcCanvas(D, D), g = c.getContext('2d');
+  rcDrawBezel(g, D);
+  const r = D / 2, fr = r * 0.9;
+  // colored speed arcs
+  const vs0 = Math.min(stallSpeedKts(), VNE_KTS * 0.6);
+  const arcs = [
+    { a: vs0,            b: VNE_KTS * 0.8,               col: '#1fae4b' },
+    { a: VNE_KTS * 0.8,  b: Math.min(VNE_KTS, maxV),     col: '#e8c832' }
+  ];
+  arcs.forEach(function (a) {
+    g.strokeStyle = a.col; g.lineWidth = Math.max(2, D * 0.035);
+    g.beginPath(); g.arc(r, r, fr * 0.87, rcAsiAng(a.a, maxV), rcAsiAng(a.b, maxV)); g.stroke();
+  });
+  // red radial line at Vne
+  rcTick(g, r, r, rcAsiAng(Math.min(VNE_KTS, maxV), maxV), fr * 0.78, fr * 0.97, Math.max(2, D * 0.03), '#e33');
+  // ticks + numerals
+  const step = maxV <= 300 ? 20 : maxV <= 500 ? 50 : maxV <= 1000 ? 100 : 250;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let v = 0; v <= maxV; v += step / 2) {
+    const major = v % step === 0;
+    const ang = rcAsiAng(v, maxV);
+    rcTick(g, r, r, ang, major ? fr * 0.78 : fr * 0.84, fr * 0.94,
+      major ? Math.max(1.5, D * 0.014) : 1, 'rgba(235,237,240,' + (major ? 0.95 : 0.55) + ')');
+    if (major) {
+      g.fillStyle = '#e9ebee';
+      g.font = '600 ' + Math.max(7, D * 0.075) + 'px Arial, sans-serif';
+      g.fillText(String(v), r + Math.cos(ang) * fr * 0.62, r + Math.sin(ang) * fr * 0.62);
+    }
+  }
+  rcDialLabel(g, D, 'AIRSPEED', 'KNOTS');
+  RC.faces[key] = c;
+  return c;
+}
+
+// ── Altimeter face: 0-9 around, per-frame 3 needles ──
+function rcFaceALT(D) {
+  const key = 'alt' + D;
+  if (RC.faces[key]) return RC.faces[key];
+  const c = rcCanvas(D, D), g = c.getContext('2d');
+  rcDrawBezel(g, D);
+  const r = D / 2, fr = r * 0.9;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let i = 0; i < 50; i++) {
+    const major = i % 5 === 0;
+    const ang = -Math.PI / 2 + (i / 50) * RC_TAU;
+    rcTick(g, r, r, ang, major ? fr * 0.78 : fr * 0.86, fr * 0.94,
+      major ? Math.max(1.5, D * 0.014) : 1, 'rgba(235,237,240,' + (major ? 0.95 : 0.5) + ')');
+    if (major) {
+      g.fillStyle = '#e9ebee';
+      g.font = '600 ' + Math.max(8, D * 0.09) + 'px Arial, sans-serif';
+      g.fillText(String(i / 5), r + Math.cos(ang) * fr * 0.64, r + Math.sin(ang) * fr * 0.64);
+    }
+  }
+  rcDialLabel(g, D, 'ALTITUDE', '100 FT');
+  g.fillStyle = 'rgba(230,232,235,0.4)';
+  g.font = '600 ' + Math.max(5, D * 0.045) + 'px Arial, sans-serif';
+  g.fillText('29.92', r + fr * 0.5, r + fr * 0.02);
+  RC.faces[key] = c;
+  return c;
+}
+
+// ── VSI: 0 at 9 o'clock, climb sweeps clockwise (through 12) ──
+function rcVsiAng(vs) {
+  const f = Math.max(-2, Math.min(2, vs / 1000));
+  const k = Math.abs(f) <= 1 ? Math.abs(f) * 1.55 : 1.55 + (Math.abs(f) - 1) * 0.75;
+  return Math.PI + (f >= 0 ? k : -k);
+}
+function rcFaceVSI(D) {
+  const key = 'vsi' + D;
+  if (RC.faces[key]) return RC.faces[key];
+  const c = rcCanvas(D, D), g = c.getContext('2d');
+  rcDrawBezel(g, D);
+  const r = D / 2, fr = r * 0.9;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  [0, 500, 1000, 1500, 2000, -500, -1000, -1500, -2000].forEach(function (vs) {
+    const major = vs % 1000 === 0;
+    const ang = rcVsiAng(vs);
+    rcTick(g, r, r, ang, major ? fr * 0.76 : fr * 0.84, fr * 0.94,
+      major ? Math.max(1.5, D * 0.014) : 1, 'rgba(235,237,240,' + (major ? 0.95 : 0.55) + ')');
+    if (major) {
+      g.fillStyle = '#e9ebee';
+      g.font = '600 ' + Math.max(8, D * 0.085) + 'px Arial, sans-serif';
+      g.fillText(String(Math.abs(vs) / 1000), r + Math.cos(ang) * fr * 0.6, r + Math.sin(ang) * fr * 0.6);
+    }
+  });
+  g.fillStyle = 'rgba(230,232,235,0.55)';
+  g.font = '600 ' + Math.max(6, D * 0.05) + 'px Arial, sans-serif';
+  g.fillText('CLIMB', r + fr * 0.34, r - fr * 0.3);
+  g.fillText('DOWN',  r + fr * 0.34, r + fr * 0.3);
+  rcDialLabel(g, D, 'VERT SPEED', '1000 FT/MIN');
+  RC.faces[key] = c;
+  return c;
+}
+
+// ── RPM (with amber throttle bug drawn per frame) ──
+const RC_RPM_SWEEP = 270 * DEG, RC_RPM_START = 135 * DEG;
+function rcRpmAng(pct) { return RC_RPM_START + Math.min(1.1, Math.max(0, pct / 100)) / 1.1 * RC_RPM_SWEEP; }
+function rcFaceRPM(D) {
+  const key = 'rpm' + D;
+  if (RC.faces[key]) return RC.faces[key];
+  const c = rcCanvas(D, D), g = c.getContext('2d');
+  rcDrawBezel(g, D);
+  const r = D / 2, fr = r * 0.9;
+  g.strokeStyle = '#1fae4b'; g.lineWidth = Math.max(2, D * 0.035);
+  g.beginPath(); g.arc(r, r, fr * 0.87, rcRpmAng(40), rcRpmAng(95)); g.stroke();
+  g.strokeStyle = '#e33';
+  g.beginPath(); g.arc(r, r, fr * 0.87, rcRpmAng(100), rcRpmAng(110)); g.stroke();
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let p = 0; p <= 110; p += 5) {
+    const major = p % 20 === 0;
+    const ang = rcRpmAng(p);
+    rcTick(g, r, r, ang, major ? fr * 0.76 : fr * 0.84, fr * 0.94,
+      major ? Math.max(1.5, D * 0.014) : 1, 'rgba(235,237,240,' + (major ? 0.95 : 0.5) + ')');
+    if (major) {
+      g.fillStyle = '#e9ebee';
+      g.font = '600 ' + Math.max(7, D * 0.075) + 'px Arial, sans-serif';
+      g.fillText(String(p), r + Math.cos(ang) * fr * 0.6, r + Math.sin(ang) * fr * 0.6);
+    }
+  }
+  rcDialLabel(g, D, 'RPM', 'PERCENT');
+  RC.faces[key] = c;
+  return c;
+}
+
+// ── Heading gyro: rotating compass card (cached), fixed lubber + plane ──
+function rcHdgCard(D) {
+  const key = 'hdg' + D;
+  if (RC.faces[key]) return RC.faces[key];
+  const c = rcCanvas(D, D), g = c.getContext('2d');
+  const r = D / 2, fr = r * 0.9;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let d = 0; d < 360; d += 5) {
+    const major = d % 30 === 0;
+    const ang = (d - 90) * DEG;
+    rcTick(g, r, r, ang, major ? fr * 0.74 : fr * 0.84, fr * 0.93,
+      major ? Math.max(1.5, D * 0.014) : 1, 'rgba(235,237,240,' + (major ? 0.95 : 0.5) + ')');
+    if (major) {
+      const lbl = d === 0 ? 'N' : d === 90 ? 'E' : d === 180 ? 'S' : d === 270 ? 'W' : String(d / 10);
+      const cardinal = d % 90 === 0;
+      g.save();
+      g.translate(r + Math.cos(ang) * fr * 0.58, r + Math.sin(ang) * fr * 0.58);
+      g.rotate(ang + Math.PI / 2);
+      g.fillStyle = cardinal ? '#ffffff' : '#c9ccd1';
+      g.font = '600 ' + Math.max(7, D * (cardinal ? 0.095 : 0.075)) + 'px Arial, sans-serif';
+      g.fillText(lbl, 0, 0);
+      g.restore();
+    }
+  }
+  RC.faces[key] = c;
+  return c;
+}
+
+// ── Attitude indicator ball (drawn fully per frame — everything moves) ──
+function rcDrawAI(cx, cy, D) {
+  const key = 'aibez' + D;
+  if (!RC.faces[key]) {
+    const c = rcCanvas(D, D), g = c.getContext('2d');
+    rcDrawBezel(g, D);
+    RC.faces[key] = c;
+  }
+  ctx.drawImage(RC.faces[key], cx - D / 2, cy - D / 2);
+  const fr = D / 2 * 0.9;
+  const pitch = state.pitch || 0, bankRad = (state.bank || 0) * DEG;
+  const ppd = fr * 0.026;                       // px per degree of pitch
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, fr * 0.99, 0, RC_TAU); ctx.clip();
+  ctx.translate(cx, cy);
+  ctx.rotate(-bankRad);
+  const off = pitch * ppd;                      // nose up → horizon slides down
+  const ext = fr * 3;
+  let grd = ctx.createLinearGradient(0, off - ext, 0, off);
+  grd.addColorStop(0, '#2a5fa8'); grd.addColorStop(0.8, '#4a86cf'); grd.addColorStop(1, '#8fb7e6');
+  ctx.fillStyle = grd; ctx.fillRect(-ext, off - ext, ext * 2, ext);
+  grd = ctx.createLinearGradient(0, off, 0, off + ext);
+  grd.addColorStop(0, '#9a6b33'); grd.addColorStop(0.25, '#6f4a20'); grd.addColorStop(1, '#3a2610');
+  ctx.fillStyle = grd; ctx.fillRect(-ext, off, ext * 2, ext);
+  ctx.strokeStyle = '#f2f4f6'; ctx.lineWidth = Math.max(1.5, D * 0.014);
+  ctx.beginPath(); ctx.moveTo(-ext, off); ctx.lineTo(ext, off); ctx.stroke();
+  // pitch ladder ±30°
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '600 ' + Math.max(6, D * 0.055) + 'px Arial, sans-serif';
+  for (let p = -30; p <= 30; p += 5) {
+    if (p === 0) continue;
+    const y = off + p * ppd * -1;               // ladder above horizon = nose-up marks
+    const major = p % 10 === 0;
+    const w2 = major ? fr * 0.3 : fr * 0.15;
+    ctx.strokeStyle = 'rgba(245,247,249,0.9)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-w2, y); ctx.lineTo(w2, y); ctx.stroke();
+    if (major) {
+      ctx.fillStyle = 'rgba(245,247,249,0.9)';
+      ctx.fillText(String(Math.abs(p)), -w2 - fr * 0.12, y);
+      ctx.fillText(String(Math.abs(p)),  w2 + fr * 0.12, y);
+    }
+  }
+  // sky pointer (rotates with the ball)
+  ctx.fillStyle = '#f2f4f6';
+  ctx.beginPath();
+  ctx.moveTo(0, -fr * 0.98); ctx.lineTo(-fr * 0.06, -fr * 0.84); ctx.lineTo(fr * 0.06, -fr * 0.84);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // fixed bank scale
+  [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60].forEach(function (b) {
+    const ang = -Math.PI / 2 + b * DEG;
+    const major = b === 0 || Math.abs(b) === 30 || Math.abs(b) === 60;
+    rcTick(ctx, cx, cy, ang, fr * (major ? 0.84 : 0.88), fr * 0.97,
+      major ? Math.max(1.5, D * 0.014) : 1, 'rgba(245,247,249,0.9)');
+  });
+  // fixed miniature aircraft (orange)
+  ctx.strokeStyle = '#ff9a1f'; ctx.fillStyle = '#ff9a1f';
+  ctx.lineWidth = Math.max(2, D * 0.02);
+  ctx.beginPath();
+  ctx.moveTo(cx - fr * 0.42, cy); ctx.lineTo(cx - fr * 0.12, cy); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + fr * 0.12, cy); ctx.lineTo(cx + fr * 0.42, cy); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, Math.max(2, D * 0.018), 0, RC_TAU); ctx.fill();
+  // fixed bank pointer at top
+  ctx.fillStyle = '#ff9a1f';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - fr * 0.82); ctx.lineTo(cx - fr * 0.05, cy - fr * 0.7); ctx.lineTo(cx + fr * 0.05, cy - fr * 0.7);
+  ctx.closePath(); ctx.fill();
+}
+
+// ── Panel background: gradient face, glareshield, gauge recesses, screws ──
+function rcPanelBg(L) {
+  if (RC.bg) return RC.bg;
+  const c = rcCanvas(W, L.PH), g = c.getContext('2d');
+  let grd = g.createLinearGradient(0, 0, 0, L.PH);
+  grd.addColorStop(0, '#22252b'); grd.addColorStop(0.15, '#1a1d22');
+  grd.addColorStop(0.85, '#101216'); grd.addColorStop(1, '#0a0b0e');
+  g.fillStyle = grd; g.fillRect(0, 0, W, L.PH);
+  // brushed-metal noise
+  for (let i = 0; i < 1600; i++) {
+    const x = Math.random() * W, y = Math.random() * L.PH;
+    g.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.016)' : 'rgba(0,0,0,0.05)';
+    g.fillRect(x, y, Math.random() * 14 + 2, 1);
+  }
+  // glareshield lip
+  grd = g.createLinearGradient(0, 0, 0, L.glare + 6);
+  grd.addColorStop(0, '#060708'); grd.addColorStop(0.6, '#17191d'); grd.addColorStop(1, '#0c0d10');
+  g.fillStyle = grd;
+  g.beginPath();
+  g.moveTo(0, 0); g.lineTo(W, 0); g.lineTo(W, L.glare);
+  g.quadraticCurveTo(W / 2, L.glare + 10, 0, L.glare);
+  g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(120,126,136,0.35)'; g.lineWidth = 1.5;
+  g.beginPath();
+  g.moveTo(0, L.glare); g.quadraticCurveTo(W / 2, L.glare + 10, W, L.glare);
+  g.stroke();
+  // recessed wells behind each gauge
+  L.centers.forEach(function (p) {
+    const y = p.y - L.top, rr = L.D / 2 + 3;
+    const rg = g.createRadialGradient(p.x, y, rr * 0.8, p.x, y, rr + 5);
+    rg.addColorStop(0, 'rgba(0,0,0,0.65)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg;
+    g.beginPath(); g.arc(p.x, y, rr + 5, 0, RC_TAU); g.fill();
+  });
+  // screws
+  function screw(x, y, seed) {
+    const rg = g.createRadialGradient(x - 1, y - 1, 0.5, x, y, 4.5);
+    rg.addColorStop(0, '#8b9099'); rg.addColorStop(0.7, '#3d4148'); rg.addColorStop(1, '#15171a');
+    g.fillStyle = rg;
+    g.beginPath(); g.arc(x, y, 4, 0, RC_TAU); g.fill();
+    const a = seed * 2.4;
+    g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 1.2;
+    g.beginPath();
+    g.moveTo(x - Math.cos(a) * 3, y - Math.sin(a) * 3);
+    g.lineTo(x + Math.cos(a) * 3, y + Math.sin(a) * 3);
+    g.stroke();
+  }
+  const sy = L.glare + 12, by = L.PH - 10;
+  screw(12, sy, 1); screw(W - 12, sy, 2); screw(12, by, 3); screw(W - 12, by, 4);
+  for (let x = W / 6; x < W - 40; x += W / 6) { screw(Math.round(x), sy, x); screw(Math.round(x), by, x + 1); }
+  RC.bg = c;
+  return c;
+}
+
+// ── Annunciator lamps + fuel gauge ──
+function rcLamp(x, y, w, h, label, colorOn, lit, flash) {
+  const on = lit && (!flash || (performance.now() % 700) < 400);
+  ctx.fillStyle = '#08090b';
+  ctx.strokeStyle = 'rgba(90,95,104,0.6)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, 3); else ctx.rect(x, y, w, h);
+  ctx.fill(); ctx.stroke();
+  if (on) {
+    ctx.save();
+    ctx.shadowColor = colorOn; ctx.shadowBlur = 8;
+    ctx.fillStyle = colorOn; ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x + 1, y + 1, w - 2, h - 2, 2); else ctx.rect(x + 1, y + 1, w - 2, h - 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = on ? colorOn : 'rgba(150,155,163,0.35)';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '700 ' + Math.max(7, Math.min(11, h * 0.42)) + 'px Arial, sans-serif';
+  ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
+}
+
+function rcLampStates() {
+  const fuelPct = state.fuelMax > 0 ? (state.fuel / state.fuelMax) * 100 : 0;
+  return [
+    { label: state.engineState === 'fire' ? 'ENG FIRE' : state.engineState === 'starting' ? 'ENG START' : state.engineState === 'running' ? 'ENG ON' : 'ENG OFF',
+      color: state.engineState === 'fire' ? '#ff3322' : state.engineState === 'starting' ? '#ffb020' : '#25d05a',
+      lit: state.engineState !== 'off', flash: state.engineState === 'fire' },
+    { label: state.gearBroken ? 'GEAR FAIL' : state.gearDown ? 'GEAR DN' : 'GEAR UP',
+      color: state.gearBroken ? '#ff3322' : '#25d05a',
+      lit: state.gearBroken || state.gearDown, flash: state.gearBroken },
+    { label: 'FLAP ' + FLAP_LABELS[state.flaps],
+      color: '#ffb020', lit: state.flaps > 0, flash: false },
+    { label: state.stall ? 'STALL' : state.overspeed ? 'OVERSPD' : 'FUEL ' + Math.round(fuelPct) + '%',
+      color: state.stall || state.overspeed ? '#ff3322' : fuelPct <= 10 ? '#ff3322' : fuelPct <= 25 ? '#ffb020' : '#25d05a',
+      lit: true, flash: state.stall || state.overspeed || fuelPct <= 10 }
+  ];
+}
+
+function rcDrawAnnColumn(L) {
+  const x = L.annX, w = L.annW;
+  const top = L.top + L.glare + 10;
+  const availH = L.PH - L.glare - 22;
+  const fuelH = Math.min(availH * 0.42, w * 0.75);
+  const lamps = rcLampStates();
+  const lampH = Math.min(26, (availH - fuelH - 8 - lamps.length * 4) / lamps.length);
+  let y = top;
+  lamps.forEach(function (l) {
+    rcLamp(x, y, w, lampH, l.label, l.color, l.lit, l.flash);
+    y += lampH + 4;
+  });
+  // fuel half-dial
+  const fcx = x + w / 2, fcy = y + fuelH - 8, fr2 = Math.min(w / 2 - 4, fuelH - 16);
+  const fuelPct = state.fuelMax > 0 ? state.fuel / state.fuelMax : 0;
+  ctx.fillStyle = '#0b0c0f';
+  ctx.strokeStyle = 'rgba(90,95,104,0.6)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, fuelH, 3); else ctx.rect(x, y, w, fuelH);
+  ctx.fill(); ctx.stroke();
+  const fAng = function (f) { return Math.PI + f * Math.PI; };  // E left → F right
+  ctx.strokeStyle = '#e33'; ctx.lineWidth = Math.max(2, fr2 * 0.09);
+  ctx.beginPath(); ctx.arc(fcx, fcy, fr2 * 0.85, fAng(0), fAng(0.15)); ctx.stroke();
+  for (let f = 0; f <= 1.001; f += 0.25) {
+    rcTick(ctx, fcx, fcy, fAng(f), fr2 * 0.72, fr2 * 0.92, f === 0 || f >= 0.99 ? 2 : 1, 'rgba(235,237,240,0.85)');
+  }
+  ctx.fillStyle = '#e9ebee'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '700 ' + Math.max(7, fr2 * 0.28) + 'px Arial, sans-serif';
+  ctx.fillText('E', fcx - fr2 * 0.95, fcy - fr2 * 0.18);
+  ctx.fillText('F', fcx + fr2 * 0.95, fcy - fr2 * 0.18);
+  ctx.font = '600 ' + Math.max(6, fr2 * 0.22) + 'px Arial, sans-serif';
+  ctx.fillStyle = 'rgba(230,232,235,0.55)';
+  ctx.fillText('FUEL', fcx, fcy - fr2 * 0.45);
+  rcNeedle(fcx, fcy, fAng(Math.max(0, Math.min(1, fuelPct))), fr2 * 0.8, fr2 * 0.15, Math.max(1.5, fr2 * 0.06), '#f2f4f6');
+}
+
+function rcDrawLampStrip(L) {
+  const lamps = rcLampStates();
+  const gap = 4;
+  const w = Math.min(110, (W - 16 - gap * (lamps.length - 1)) / lamps.length);
+  const total = w * lamps.length + gap * (lamps.length - 1);
+  let x = (W - total) / 2;
+  const y = L.top + L.PH - L.stripH - 4;
+  lamps.forEach(function (l) {
+    rcLamp(x, y, w, L.stripH, l.label, l.color, l.lit, l.flash);
+    x += w + gap;
+  });
+}
+
+function drawCockpitPanel() {
+  const L = rcComputeLayout();
+  if (RC.lift !== L.PH) {
+    RC.lift = L.PH;
+    document.documentElement.style.setProperty('--rc-lift', (L.PH + 8) + 'px');
+  }
+  ctx.drawImage(rcPanelBg(L), 0, L.top);
+
+  const D = L.D, fr = D / 2 * 0.9;
+  const cs = L.centers;
+  const alt = Math.max(0, state.altitude || 0);
+  const maxV = rcAsiMax();
+
+  // 1 — Airspeed
+  ctx.drawImage(rcFaceASI(D), cs[0].x - D / 2, cs[0].y - D / 2);
+  rcNeedle(cs[0].x, cs[0].y, rcAsiAng(state.speed || 0, maxV), fr * 0.82, fr * 0.2, Math.max(1.5, D * 0.022), '#f2f4f6');
+  ctx.drawImage(rcGlass(D), cs[0].x - D / 2, cs[0].y - D / 2);
+
+  // 2 — Attitude
+  rcDrawAI(cs[1].x, cs[1].y, D);
+  ctx.drawImage(rcGlass(D), cs[1].x - D / 2, cs[1].y - D / 2);
+
+  // 3 — Altimeter (10000 / 1000 / 100 ft needles)
+  ctx.drawImage(rcFaceALT(D), cs[2].x - D / 2, cs[2].y - D / 2);
+  const a10k = -Math.PI / 2 + ((alt % 100000) / 100000) * RC_TAU;
+  const a1k  = -Math.PI / 2 + ((alt % 10000)  / 10000)  * RC_TAU;
+  const a100 = -Math.PI / 2 + ((alt % 1000)   / 1000)   * RC_TAU;
+  rcNeedle(cs[2].x, cs[2].y, a10k, fr * 0.9,  fr * 0.1,  Math.max(1, D * 0.008), '#d8dade', false);
+  ctx.save();
+  ctx.translate(cs[2].x, cs[2].y); ctx.rotate(a10k);
+  ctx.fillStyle = '#d8dade';
+  ctx.beginPath(); ctx.moveTo(fr * 0.95, 0); ctx.lineTo(fr * 0.78, -fr * 0.07); ctx.lineTo(fr * 0.78, fr * 0.07); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  rcNeedle(cs[2].x, cs[2].y, a1k,  fr * 0.52, fr * 0.14, Math.max(2.5, D * 0.034), '#f2f4f6', false);
+  rcNeedle(cs[2].x, cs[2].y, a100, fr * 0.82, fr * 0.18, Math.max(1.5, D * 0.018), '#f2f4f6');
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(cs[2].x - fr * 0.4, cs[2].y + fr * 0.3, fr * 0.8, fr * 0.24);
+  ctx.strokeStyle = 'rgba(120,126,136,0.4)'; ctx.lineWidth = 1;
+  ctx.strokeRect(cs[2].x - fr * 0.4, cs[2].y + fr * 0.3, fr * 0.8, fr * 0.24);
+  ctx.fillStyle = '#e9ebee'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '600 ' + Math.max(7, fr * 0.19) + 'px Arial, sans-serif';
+  ctx.fillText(Math.round(alt).toLocaleString('en-US') + ' FT', cs[2].x, cs[2].y + fr * 0.42);
+  ctx.drawImage(rcGlass(D), cs[2].x - D / 2, cs[2].y - D / 2);
+
+  // 4 — Heading gyro (bottom-middle, the standard six-pack position)
+  {
+    const cx = cs[4].x, cy = cs[4].y;
+    const key = 'hdgbez' + D;
+    if (!RC.faces[key]) { const c2 = rcCanvas(D, D); rcDrawBezel(c2.getContext('2d'), D); RC.faces[key] = c2; }
+    ctx.drawImage(RC.faces[key], cx - D / 2, cy - D / 2);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-(state.heading || 0) * DEG);
+    ctx.drawImage(rcHdgCard(D), -D / 2, -D / 2);
+    ctx.restore();
+    // AP heading bug
+    if (ap.on) {
+      const bug = ((ap.targetHdg - state.heading) - 90) * DEG;
+      ctx.save();
+      ctx.translate(cx, cy); ctx.rotate(bug);
+      ctx.fillStyle = '#ffb020';
+      ctx.beginPath();
+      ctx.moveTo(fr * 0.97, -fr * 0.09); ctx.lineTo(fr * 0.97, fr * 0.09); ctx.lineTo(fr * 0.8, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    // fixed lubber line + miniature plane
+    ctx.fillStyle = '#ff9a1f';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - fr * 0.86); ctx.lineTo(cx - fr * 0.05, cy - fr * 0.98); ctx.lineTo(cx + fr * 0.05, cy - fr * 0.98);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(245,247,249,0.9)'; ctx.lineWidth = Math.max(1.5, D * 0.016);
+    ctx.beginPath(); ctx.moveTo(cx, cy - fr * 0.4); ctx.lineTo(cx, cy + fr * 0.28); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - fr * 0.26, cy - fr * 0.05); ctx.lineTo(cx + fr * 0.26, cy - fr * 0.05); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - fr * 0.12, cy + fr * 0.24); ctx.lineTo(cx + fr * 0.12, cy + fr * 0.24); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(cx - fr * 0.28, cy - fr * 0.74, fr * 0.56, fr * 0.24);
+    ctx.strokeStyle = 'rgba(120,126,136,0.4)'; ctx.lineWidth = 1;
+    ctx.strokeRect(cx - fr * 0.28, cy - fr * 0.74, fr * 0.56, fr * 0.24);
+    ctx.fillStyle = '#e9ebee'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '600 ' + Math.max(7, fr * 0.2) + 'px Arial, sans-serif';
+    const hdg = Math.round(state.heading || 0) % 360;
+    ctx.fillText((hdg === 0 ? 360 : hdg).toString().padStart(3, '0') + '°', cx, cy - fr * 0.62);
+    ctx.drawImage(rcGlass(D), cx - D / 2, cy - D / 2);
+  }
+
+  // 5 — Vertical speed (bottom-right, the standard six-pack position)
+  ctx.drawImage(rcFaceVSI(D), cs[5].x - D / 2, cs[5].y - D / 2);
+  rcNeedle(cs[5].x, cs[5].y, rcVsiAng(state.vs || 0), fr * 0.82, fr * 0.2, Math.max(1.5, D * 0.022), '#f2f4f6');
+  ctx.drawImage(rcGlass(D), cs[5].x - D / 2, cs[5].y - D / 2);
+
+  // 6 — RPM + amber throttle bug on the rim (bottom-left, in the turn-coordinator slot)
+  ctx.drawImage(rcFaceRPM(D), cs[3].x - D / 2, cs[3].y - D / 2);
+  {
+    const bugA = rcRpmAng(state.throttle || 0);
+    ctx.save();
+    ctx.translate(cs[3].x, cs[3].y); ctx.rotate(bugA);
+    ctx.fillStyle = '#ffb020';
+    ctx.beginPath();
+    ctx.moveTo(fr * 0.99, 0); ctx.lineTo(fr * 1.12, -fr * 0.06); ctx.lineTo(fr * 1.12, fr * 0.06);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = 'rgba(230,232,235,0.6)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '600 ' + Math.max(6, fr * 0.17) + 'px Arial, sans-serif';
+    ctx.fillText('THR ' + Math.round(state.throttle || 0) + '%', cs[3].x, cs[3].y + fr * 0.45);
+  }
+  rcNeedle(cs[3].x, cs[3].y, rcRpmAng(state.rpm || 0), fr * 0.82, fr * 0.2, Math.max(1.5, D * 0.022), '#f2f4f6');
+  ctx.drawImage(rcGlass(D), cs[3].x - D / 2, cs[3].y - D / 2);
+
+  // Annunciators
+  if (L.sideAnn) rcDrawAnnColumn(L);
+  else rcDrawLampStrip(L);
+}
+
 function render() {
   // Update + render the Three.js world first (terrain, buildings, aircraft, camera),
   // then draw the 2D HUD overlay on top of it.
   updateCamera();
+  applyCockpitDom();
 
   // Transparent overlay on top of the real-world scene
   ctx.clearRect(0, 0, W, H);
@@ -10589,17 +11321,22 @@ function render() {
   drawAirports3D();
 
   const bankRad = state.bank * Math.PI / 180;
+  const rcPanel = cockpitPanelOn();
 
-  if (cameraMode === 0) {
+  if (cameraMode === 0 && !rcPanel) {
     drawPitchLadder(bankRad);
     drawCrosshair();
   }
   // Chase view: the aircraft is now a real, lit 3D mesh in the Three.js scene.
 
-  drawAltTape();
-  drawSpdTape();
-  drawAHI();
-  drawCompass();
+  if (rcPanel) {
+    drawCockpitPanel();   // realistic analog panel replaces the scattered HUD gauges
+  } else {
+    drawAltTape();
+    drawSpdTape();
+    drawAHI();
+    drawCompass();
+  }
 
   document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : 'CHASE';
 
@@ -12171,6 +12908,14 @@ function applyVolSettings() {
     if (vigCb && vignette) vigCb.checked = vignette.style.display !== 'none' && vignette.style.opacity !== '0';
     if (hudCb && hudEl)    hudCb.checked = hudEl.style.display !== 'none';
     if (mmCb  && mmEl)     mmCb.checked  = mmEl.style.display  !== 'none';
+    const rcM = document.getElementById('stp-rc-mode');
+    const rcP = document.getElementById('stp-rc-panel');
+    const rcF = document.getElementById('stp-rc-frame');
+    const rcK = document.getElementById('stp-rc-markers');
+    if (rcM) rcM.checked = cockpit.mode;
+    if (rcP) rcP.checked = cockpit.panel;
+    if (rcF) rcF.checked = cockpit.frame;
+    if (rcK) rcK.checked = cockpit.hideMarkers;
   }
 
   function wireToggle(cbId, onToggle) {
@@ -12194,6 +12939,16 @@ function applyVolSettings() {
     const el = document.getElementById('minimap');
     if (el) el.style.display = on ? '' : 'none';
   });
+
+  // ── Realistic cockpit mode (1=analog panel, 2=window frame, 3=hide markers) ──
+  wireToggle('stp-rc-mode', function (on) {
+    cockpit.mode = on;
+    if (on) cameraMode = 0;   // panel + frame live in the cockpit view
+    applyCockpitDom();
+  });
+  wireToggle('stp-rc-panel',   function (on) { cockpit.panel = on;       applyCockpitDom(); });
+  wireToggle('stp-rc-frame',   function (on) { cockpit.frame = on;       applyCockpitDom(); });
+  wireToggle('stp-rc-markers', function (on) { cockpit.hideMarkers = on; });
 
   // ── Render distance slider ─────────────────────────────────────────────────
   (function () {
@@ -12320,6 +13075,10 @@ function applyVolSettings() {
       hud:         get('stp-hud'),
       minimap:     get('stp-minimap'),
       fpsCounter:  get('stp-fps-counter'),
+      rcMode:      cockpit.mode,
+      rcPanel:     cockpit.panel,
+      rcFrame:     cockpit.frame,
+      rcMarkers:   cockpit.hideMarkers,
       fpsCap:      getActive('[id^="stp-fps-"]'),
       resCap:      getActive('[id^="stp-res-"]'),
       rdRing:      rdSlider ? rdSlider.value : '8',
@@ -12353,6 +13112,10 @@ function applyVolSettings() {
     applyToggle('stp-hud',       s.hud,       function(on){ const el = document.getElementById('hud');       if(el) el.style.display  = on ? 'flex':'none'; });
     applyToggle('stp-minimap',   s.minimap,   function(on){ const el = document.getElementById('minimap');   if(el) el.style.display  = on ? '':'none'; });
     applyToggle('stp-fps-counter', s.fpsCounter, function(on){ const el = document.getElementById('fps-counter'); if(el) el.style.display = on ? 'block':'none'; });
+    applyToggle('stp-rc-panel',   s.rcPanel,   function(on){ cockpit.panel = on; });
+    applyToggle('stp-rc-frame',   s.rcFrame,   function(on){ cockpit.frame = on; });
+    applyToggle('stp-rc-markers', s.rcMarkers, function(on){ cockpit.hideMarkers = on; });
+    applyToggle('stp-rc-mode',    s.rcMode,    function(on){ cockpit.mode = on; if (on) cameraMode = 0; applyCockpitDom(); });
 
     // FPS cap
     if (s.fpsCap) {
@@ -12431,7 +13194,8 @@ function applyVolSettings() {
     const rdSlider = document.getElementById('stp-rd-slider');
     if (rdSlider) rdSlider.addEventListener('input', _saveSettings);
     // Patch toggles
-    ['stp-scanlines','stp-vignette','stp-hud','stp-minimap','stp-fps-counter'].forEach(function(id){
+    ['stp-scanlines','stp-vignette','stp-hud','stp-minimap','stp-fps-counter',
+     'stp-rc-mode','stp-rc-panel','stp-rc-frame','stp-rc-markers'].forEach(function(id){
       const cb = document.getElementById(id); if (cb) cb.addEventListener('change', _saveSettings);
     });
   }
