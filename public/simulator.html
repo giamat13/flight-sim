@@ -1095,10 +1095,6 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
           <div class="stp-card-head"><span class="stp-card-icon">🛩</span><span class="stp-card-title">REALISTIC COCKPIT</span></div>
           <div class="stp-toggle-grid">
             <div class="stp-toggle-row">
-              <span class="stp-toggle-label">REALISTIC COCKPIT MODE</span>
-              <label class="stp-toggle"><input type="checkbox" id="stp-rc-mode"><span class="stp-toggle-track"></span></label>
-            </div>
-            <div class="stp-toggle-row">
               <span class="stp-toggle-label">① ANALOG INSTRUMENT PANEL</span>
               <label class="stp-toggle"><input type="checkbox" id="stp-rc-panel" checked><span class="stp-toggle-track"></span></label>
             </div>
@@ -1111,7 +1107,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
               <label class="stp-toggle"><input type="checkbox" id="stp-rc-markers"><span class="stp-toggle-track"></span></label>
             </div>
           </div>
-          <div class="stp-hint">Analog gauges + window frame replace the scattered HUD (cockpit view). HIDE WORLD MARKERS also removes airport &amp; traffic overlays from the world.</div>
+          <div class="stp-hint">Analog gauges + window frame replace the scattered HUD (cockpit view). HIDE WORLD MARKERS also removes airport &amp; traffic overlays from the world. Turn all three off to disable realistic cockpit entirely.</div>
         </div>
       </div>
 
@@ -4637,11 +4633,12 @@ let cameraMode = 1; // 0=cockpit, 1=chase (default: 3rd-person so you see the pl
 // ===================== Realistic cockpit mode =====================
 // Feature flags: (1) analog instrument panel, (2) cockpit window frame,
 // (3) hide world markers (airport icons/boundaries, traffic symbols & labels).
-// 1+2 default ON inside the mode, 3 defaults OFF. The mode itself defaults OFF.
-const cockpit = { mode: false, panel: true, frame: true, hideMarkers: false };
-function cockpitPanelOn()    { return cockpit.mode && cockpit.panel && cameraMode === 0; }
-function cockpitFrameOn()    { return cockpit.mode && cockpit.frame && cameraMode === 0; }
-function worldMarkersHidden(){ return cockpit.mode && cockpit.hideMarkers; }
+// There is no master on/off switch — 1+2 default ON, 3 defaults OFF, and turning
+// all three off is equivalent to disabling realistic cockpit mode entirely.
+const cockpit = { panel: true, frame: true, hideMarkers: false };
+function cockpitPanelOn()    { return cockpit.panel && cameraMode === 0; }
+function cockpitFrameOn()    { return cockpit.frame && cameraMode === 0; }
+function worldMarkersHidden(){ return cockpit.hideMarkers; }
 
 let _rcDomState = null;
 function applyCockpitDom() {
@@ -12957,11 +12954,9 @@ function applyVolSettings() {
     if (vigCb && vignette) vigCb.checked = vignette.style.display !== 'none' && vignette.style.opacity !== '0';
     if (hudCb && hudEl)    hudCb.checked = hudEl.style.display !== 'none';
     if (mmCb  && mmEl)     mmCb.checked  = mmEl.style.display  !== 'none';
-    const rcM = document.getElementById('stp-rc-mode');
     const rcP = document.getElementById('stp-rc-panel');
     const rcF = document.getElementById('stp-rc-frame');
     const rcK = document.getElementById('stp-rc-markers');
-    if (rcM) rcM.checked = cockpit.mode;
     if (rcP) rcP.checked = cockpit.panel;
     if (rcF) rcF.checked = cockpit.frame;
     if (rcK) rcK.checked = cockpit.hideMarkers;
@@ -12989,14 +12984,19 @@ function applyVolSettings() {
     if (el) el.style.display = on ? '' : 'none';
   });
 
-  // ── Realistic cockpit mode (1=analog panel, 2=window frame, 3=hide markers) ──
-  wireToggle('stp-rc-mode', function (on) {
-    cockpit.mode = on;
-    if (on) cameraMode = 0;   // panel + frame live in the cockpit view
+  // ── Realistic cockpit (1=analog panel, 2=window frame, 3=hide markers) ──
+  // No master switch: each toggle is independent, and turning all three off
+  // is equivalent to disabling realistic cockpit mode entirely.
+  wireToggle('stp-rc-panel', function (on) {
+    cockpit.panel = on;
+    if (on) cameraMode = 0;   // switch to cockpit view so the panel is visible
     applyCockpitDom();
   });
-  wireToggle('stp-rc-panel',   function (on) { cockpit.panel = on;       applyCockpitDom(); });
-  wireToggle('stp-rc-frame',   function (on) { cockpit.frame = on;       applyCockpitDom(); });
+  wireToggle('stp-rc-frame', function (on) {
+    cockpit.frame = on;
+    if (on) cameraMode = 0;   // switch to cockpit view so the frame is visible
+    applyCockpitDom();
+  });
   wireToggle('stp-rc-markers', function (on) { cockpit.hideMarkers = on; });
 
   // ── Render distance slider ─────────────────────────────────────────────────
@@ -13124,7 +13124,6 @@ function applyVolSettings() {
       hud:         get('stp-hud'),
       minimap:     get('stp-minimap'),
       fpsCounter:  get('stp-fps-counter'),
-      rcMode:      cockpit.mode,
       rcPanel:     cockpit.panel,
       rcFrame:     cockpit.frame,
       rcMarkers:   cockpit.hideMarkers,
@@ -13164,7 +13163,7 @@ function applyVolSettings() {
     applyToggle('stp-rc-panel',   s.rcPanel,   function(on){ cockpit.panel = on; });
     applyToggle('stp-rc-frame',   s.rcFrame,   function(on){ cockpit.frame = on; });
     applyToggle('stp-rc-markers', s.rcMarkers, function(on){ cockpit.hideMarkers = on; });
-    applyToggle('stp-rc-mode',    s.rcMode,    function(on){ cockpit.mode = on; if (on) cameraMode = 0; applyCockpitDom(); });
+    applyCockpitDom();
 
     // FPS cap
     if (s.fpsCap) {
@@ -13244,7 +13243,7 @@ function applyVolSettings() {
     if (rdSlider) rdSlider.addEventListener('input', _saveSettings);
     // Patch toggles
     ['stp-scanlines','stp-vignette','stp-hud','stp-minimap','stp-fps-counter',
-     'stp-rc-mode','stp-rc-panel','stp-rc-frame','stp-rc-markers'].forEach(function(id){
+     'stp-rc-panel','stp-rc-frame','stp-rc-markers'].forEach(function(id){
       const cb = document.getElementById(id); if (cb) cb.addEventListener('change', _saveSettings);
     });
   }
