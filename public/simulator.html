@@ -10703,8 +10703,8 @@ function rcComputeLayout() {
   const dockRadar = W >= 760;                // nav/radar scope docks into the panel on the left
   const glare   = 16;                        // glareshield strip height
   const stripH  = sideAnn ? 0 : 22;          // bottom lamp strip when no side column
-  let PH = Math.round(H * 0.42);
-  PH = Math.max(200, Math.min(430, PH));
+  let PH = Math.round(H * 0.30);
+  PH = Math.max(180, Math.min(300, PH));
   const availH = PH - glare - 16 - stripH;
   const annW   = sideAnn ? Math.max(100, Math.min(150, Math.round(W * 0.095))) : 0;
   const cols   = 3;
