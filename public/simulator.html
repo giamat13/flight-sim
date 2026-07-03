@@ -82,6 +82,11 @@ body.rc-panel #throttle-bar-container,body.rc-panel #fuel-gauge-container,
 body.rc-panel #sys-panel{display:none !important}
 /* …and lift bottom-anchored overlays above the panel (--rc-lift = panel height, set from JS) */
 body.rc-panel #minimap{bottom:calc(var(--rc-lift,240px) + 10px)}
+/* On wide screens the radar/nav scope is docked directly into the panel (JS sets its
+   exact left/top/width/height) — restyle it from a floating neon circle into a real
+   instrument bezel matching the rest of the six-pack. */
+#minimap.rc-radar-docked{border-radius:50%;border:4px solid #3a3e46;box-shadow:0 0 0 2px #0e0f11,0 3px 8px rgba(0,0,0,0.55),inset 0 0 22px rgba(0,0,0,0.55);background:#05070a}
+#minimap.rc-radar-docked #mm-label{color:rgba(230,232,235,0.55);text-shadow:none}
 body.rc-panel #loc-label{bottom:calc(var(--rc-lift,240px) + 6px)}
 body.rc-panel #coord-display{bottom:calc(var(--rc-lift,240px) + 8px)}
 body.rc-panel #traffic-info{bottom:calc(var(--rc-lift,240px) + 8px) !important}
@@ -10697,7 +10702,8 @@ function rcComputeLayout() {
   if (RC.layout && RC.layoutKey === key) return RC.layout;
   // A real six-pack is two rows of three dials — six gauges never fit a single
   // row on an actual panel, so this is fixed regardless of screen size.
-  const sideAnn = W >= 760;                  // annunciator column fits on the right
+  const sideAnn   = W >= 760;                // annunciator column fits on the right
+  const dockRadar = W >= 760;                // nav/radar scope docks into the panel on the left
   const glare   = 16;                        // glareshield strip height
   const stripH  = sideAnn ? 0 : 22;          // bottom lamp strip when no side column
   let PH = Math.round(H * 0.42);
@@ -10706,13 +10712,19 @@ function rcComputeLayout() {
   const annW   = sideAnn ? Math.max(100, Math.min(150, Math.round(W * 0.095))) : 0;
   const cols   = 3;
   const gap    = Math.max(8, Math.round(W * 0.009));
+  // Rough radar footprint (sized off the dial block height) so the width budget
+  // below leaves it room; the exact square size is fixed to the final gauge
+  // block height once D is known, so the scope lines up with the dial rows.
+  const radarWEst = dockRadar ? Math.max(90, Math.min(210, Math.round(availH * 0.95))) : 0;
   let D = Math.min(
     (availH - gap) / 2,
-    (W - annW - 24 - gap * (cols + (sideAnn ? 2 : 1))) / cols
+    (W - annW - radarWEst - 24 - gap * (cols + (sideAnn ? 2 : 0) + (dockRadar ? 2 : 0))) / cols
   );
   D = Math.max(52, Math.floor(D));
-  const totalW = cols * D + (cols - 1) * gap + (sideAnn ? annW + gap * 2 : 0);
-  const x0  = Math.max(8, (W - totalW) / 2);
+  const radarW = dockRadar ? Math.round(2 * D + gap) : 0;   // exact square, spans both rows
+  const totalW = radarW + (dockRadar ? gap * 2 : 0) + cols * D + (cols - 1) * gap + (sideAnn ? annW + gap * 2 : 0);
+  const blockX0 = Math.max(8, (W - totalW) / 2);
+  const x0  = blockX0 + (dockRadar ? radarW + gap * 2 : 0);
   const top = H - PH;
   const gy0 = top + glare + 10 + D / 2;
   const centers = [];
@@ -10720,9 +10732,11 @@ function rcComputeLayout() {
     const r = Math.floor(i / 3), c = i % 3;
     centers.push({ x: Math.round(x0 + c * (D + gap) + D / 2), y: Math.round(gy0 + r * (D + gap)) });
   }
-  const annX = sideAnn ? x0 + cols * (D + gap) + gap : 0;
+  const annX   = sideAnn   ? x0 + cols * (D + gap) + gap : 0;
+  const radarX = dockRadar ? blockX0 : 0;
+  const radarY = dockRadar ? top + glare + 10 : 0;
   RC.layoutKey = key;
-  RC.layout = { sideAnn, PH, top, glare, D, gap, centers, annW, annX, stripH };
+  RC.layout = { sideAnn, dockRadar, PH, top, glare, D, gap, centers, annW, annX, stripH, radarW, radarX, radarY };
   RC.faces = {};   // sizes changed → drop cached art
   RC.bg = null;
   return RC.layout;
@@ -11082,6 +11096,14 @@ function rcPanelBg(L) {
     g.fillStyle = rg;
     g.beginPath(); g.arc(p.x, y, rr + 5, 0, RC_TAU); g.fill();
   });
+  // recessed well + mounting screws behind the docked radar/nav scope
+  if (L.dockRadar) {
+    const rcx = L.radarX - 0 + L.radarW / 2, rcy = (L.radarY - L.top) + L.radarW / 2, rr = L.radarW / 2 + 5;
+    const rg = g.createRadialGradient(rcx, rcy, rr * 0.82, rcx, rcy, rr + 6);
+    rg.addColorStop(0, 'rgba(0,0,0,0.7)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg;
+    g.beginPath(); g.arc(rcx, rcy, rr + 6, 0, RC_TAU); g.fill();
+  }
   // screws
   function screw(x, y, seed) {
     const rg = g.createRadialGradient(x - 1, y - 1, 0.5, x, y, 4.5);
@@ -11580,9 +11602,36 @@ const mmImg = document.getElementById('mm-img');
 const mmCv = document.getElementById('mm-cv');
 const mmCtx = mmCv ? mmCv.getContext('2d') : null;
 const minimapEl = document.getElementById('minimap');
+
+// Realistic cockpit panel: dock the radar/nav scope into the panel itself instead of
+// leaving it floating over the world — a real instrument, not a HUD icon.
+let _radarDockKey = null;
+function rcPositionRadar() {
+  if (!minimapEl) return;
+  const L = cockpitPanelOn() ? rcComputeLayout() : null;
+  if (!L || !L.dockRadar) {
+    if (_radarDockKey !== null) {
+      minimapEl.classList.remove('rc-radar-docked');
+      minimapEl.style.left = minimapEl.style.top = minimapEl.style.width = minimapEl.style.height = minimapEl.style.bottom = '';
+      _radarDockKey = null;
+    }
+    return;
+  }
+  const key = L.radarX + '_' + L.radarY + '_' + L.radarW;
+  if (_radarDockKey === key) return;
+  _radarDockKey = key;
+  minimapEl.classList.add('rc-radar-docked');
+  minimapEl.style.left   = L.radarX + 'px';
+  minimapEl.style.top    = L.radarY + 'px';
+  minimapEl.style.width  = L.radarW + 'px';
+  minimapEl.style.height = L.radarW + 'px';
+  minimapEl.style.bottom = 'auto';
+}
+
 let mmLast = 0;
 let mmLastRadarKey = null; // track aircraft changes for satellite refresh
 function updateMinimap() {
+  rcPositionRadar();  // dock into the instrument panel when realistic cockpit mode is on
   mmFetchAirports(); // always fetch, even if minimap is hidden (needed for 3D overlay)
   if (!mmCtx || !minimapEl || minimapEl.style.display === 'none') return;
   const s = mmCv.width;
