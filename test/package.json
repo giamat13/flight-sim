@@ -1,0 +1,23 @@
+{
+  "name": "flight-sim",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Web-based 3D flight simulator",
+  "author": "giamat13",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cesium": "^1.142.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^1.1.0",
+    "electron": "^42.5.2",
+    "electron-builder": "^26.15.3",
+    "vite": "^6.1.0"
+  }
+}

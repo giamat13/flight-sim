@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flight Simulator</title>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-9025XV85CH"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-9025XV85CH');
+    </script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-analytics.js";
+    const firebaseConfig = {
+      apiKey: "AIzaSyAX5IOZavOmxtl-UoruF1Ojhil7GSkLBv0",
+      authDomain: "flight-sim-by-mg.firebaseapp.com",
+      projectId: "flight-sim-by-mg",
+      storageBucket: "flight-sim-by-mg.firebasestorage.app",
+      messagingSenderId: "758814539402",
+      appId: "1:758814539402:web:ed1640268bcc7ac44c3773",
+      measurementId: "G-57TXPFP89T"
+    };
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+  </script>
+  </head>
+  <body style="margin:0; padding:0; overflow:hidden;">
+    <iframe src="./simulator.html" style="width:100vw; height:100vh; border:none; display:block;" allow="geolocation"></iframe>
+  </body>
+</html>
