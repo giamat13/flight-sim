@@ -568,6 +568,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
     <div class="hud-item"><span class="hud-label">THR</span><span class="hud-value" id="hud-thr">50%</span></div>
     <div class="hud-item"><span class="hud-label">WIND</span><span class="hud-value hud-value-sm" id="hud-wind">CALM</span></div>
     <div class="hud-item"><span class="hud-label">REL</span><span class="hud-value hud-value-sm" id="hud-wind-rel">HW 0 / X 0</span></div>
+    <div class="hud-item" id="hud-turb-item" style="display:none"><span class="hud-label">TURB</span><span class="hud-value hud-value-sm" id="hud-turb">LIGHT</span></div>
     <div class="hud-item"><span class="hud-label">FPS</span><span class="hud-value hud-value-sm" id="hud-fps">—</span></div>
   </div>
 </div>
@@ -2032,6 +2033,8 @@ const hudAoa = document.getElementById('hud-aoa');
 const hudG = document.getElementById('hud-g');
 const hudWind = document.getElementById('hud-wind');
 const hudWindRel = document.getElementById('hud-wind-rel');
+const hudTurbItem = document.getElementById('hud-turb-item');
+const hudTurb = document.getElementById('hud-turb');
 const stallWarn = document.getElementById('stall-warn');
 const overspeedWarn = document.getElementById('overspeed-warn');
 const terrainWarn = document.getElementById('terrain-warn');
@@ -2274,8 +2277,9 @@ function updateAudio(rpm, speed) {
   // Airframe rumble + wind hiss: track airspeed, fade out in the thin air up high
   const altM = state.altitude * FT_TO_M;
   const densityFactor = Math.exp(-Math.max(0, altM) / 9200);
-  const rumble = Math.max(0, (speed - 40) / 320) * 0.16 * densityFactor;
-  audio.rumbleGain.gain.setTargetAtTime(Math.min(0.16, rumble) * vWind, t, 0.25);
+  let rumble = Math.max(0, (speed - 40) / 320) * 0.16 * densityFactor;
+  rumble += env.turbulence.intensity * 0.18;   // turbulence adds its own airframe shake, even at low speed
+  audio.rumbleGain.gain.setTargetAtTime(Math.min(0.32, rumble) * vWind, t, 0.1);
   if (audio.windHissGain) {
     const hiss = Math.max(0, (speed - 150) / 450) * 0.11 * densityFactor;
     audio.windHissGain.gain.setTargetAtTime(Math.min(0.11, hiss) * vWind, t, 0.3);
@@ -2751,7 +2755,8 @@ let env = {
   timeOverride: false,   // true when user has manually set time of day
   season: 'auto',        // 'auto'|'spring'|'summer'|'autumn'|'winter'
   wind: { speedKts: 0, fromDeg: 0, toDeg: 0, n: 0, e: 0 },
-  windState: { active: false, baseSpeedKts: 0, baseFromDeg: 0, speedKts: 0, fromDeg: 0, targetSpeedKts: 0, targetFromDeg: 0, timer: 0 }
+  windState: { active: false, baseSpeedKts: 0, baseFromDeg: 0, speedKts: 0, fromDeg: 0, targetSpeedKts: 0, targetFromDeg: 0, timer: 0 },
+  turbulence: { intensity: 0, target: 0, phase: Math.random() * 1000 }
 };
 let frameDt = 0.016;
 let wxParticles = [];
@@ -2871,13 +2876,15 @@ function fetchRealWeather(lat, lon, isFirst) {
     });
 }
 
-// Called from update() every frame — triggers re-fetch every 60 seconds
+// Called from update() every frame — triggers re-fetch every 60 seconds,
+// always centered on the aircraft's CURRENT position so weather stays live
+// as the player flies across the map (not stuck at the departure point).
 function tickRealWeather(dt) {
-  if (!realWeatherActive || realWeatherLat == null) return;
+  if (!realWeatherActive) return;
   realWeatherTimer -= dt;
   if (realWeatherTimer <= 0) {
     realWeatherTimer = 60;
-    fetchRealWeather(realWeatherLat, realWeatherLon, false);
+    fetchRealWeather(state.lat, state.lon, false);
   }
 }
 
@@ -3002,6 +3009,34 @@ function updateWind(dt) {
   const dirDelta = normDeg(ws.targetFromDeg - ws.fromDeg);
   ws.fromDeg = wrap360(ws.fromDeg + dirDelta * k);
   updateWindVector();
+}
+
+// Smooth pseudo-random noise: layered sines at incommensurate frequencies give a
+// continuous, organic bump rather than per-frame white-noise flicker.
+function turbNoise(phase, offset) {
+  const p = phase + offset;
+  return Math.sin(p * 1.7) * 0.5 + Math.sin(p * 4.3 + 1.3) * 0.3 + Math.sin(p * 9.1 + 2.7) * 0.2;
+}
+
+// Turbulence intensity (0..1) driven entirely by the live weather/wind already
+// tracked at the aircraft's current position: stronger wind + low-altitude
+// (mechanical, over terrain) or wet/snowy weather (convective) both add chop.
+function updateTurbulence(dt) {
+  const t = env.turbulence;
+  const wind = getWindVector();
+  const windKts = wind.speedKts || 0;
+
+  const aglFt = state.onGround ? 9999 : Math.max(0, state.altitude - (state.terrainHeightFt || 0));
+  const lowLevel = Math.max(0, 1 - aglFt / 3000);           // mechanical turbulence below ~3000ft AGL
+  const windFactor = Math.min(1, windKts / 35);             // saturates around 35kt+
+
+  const wxBump = { clear: 0, clouds: 0.08, fog: 0.05, rain: 0.22, snow: 0.16 }[env.weather] || 0;
+
+  t.target = state.onGround ? 0 : Math.min(1, windFactor * (0.35 + 0.65 * lowLevel) + wxBump);
+
+  const k = 1 - Math.exp(-dt * 0.5);
+  t.intensity += (t.target - t.intensity) * k;
+  t.phase += dt * (1 + t.intensity * 1.5);
 }
 
 function initWeatherParticles() {
@@ -8510,6 +8545,7 @@ function update(dt) {
   dt = Math.min(dt, 0.05);
 
   updateWind(dt);
+  updateTurbulence(dt);
   updateTraffic(dt);
   updateMultiplayer(dt);
   tickRealWeather(dt);
@@ -8795,6 +8831,19 @@ function update(dt) {
   // angle of attack: nose vs. velocity vector, wrapped then clamped for the lift model
   let aoaDeg = Math.max(-30, Math.min(30, normDeg(theta - gamma + AC.incidence)));
 
+  // ---- Turbulence buffeting ----
+  // Gusts perturb the local angle of attack (felt as vertical bumps through lift)
+  // and add a small independent yaw kick, scaled by the live turbulence intensity.
+  const turb = env.turbulence.intensity;
+  let turbYawRate = 0;                                  // rad/s, folded into dPsi below
+  if (turb > 0.002) {
+    const ph = env.turbulence.phase;
+    aoaDeg = Math.max(-30, Math.min(30, aoaDeg + turbNoise(ph, 0) * turb * 4));
+    const turbRollDegPerSec = turbNoise(ph, 7.3) * turb * 9;
+    state.bank = normDeg(state.bank + turbRollDegPerSec * dt);
+    turbYawRate = turbNoise(ph, 15.1) * turb * 4 * DEG;
+  }
+
   // Lift coefficient — flaps raise both CL and CL_max (more lift at lower speed)
   const clMax = AC.CL_max + flapCL * 0.5;
   let CL, stalled = false;
@@ -8820,7 +8869,7 @@ function update(dt) {
   // Translational + rotational EOM
   const dV = (T - D - W * Math.sin(gam)) / m;
   let dGam = (L * Math.cos(phi) - W * Math.cos(gam)) / (m * Vsafe);
-  let dPsi = (L * Math.sin(phi)) / (m * Vsafe);
+  let dPsi = (L * Math.sin(phi)) / (m * Vsafe) + turbYawRate;
   // Feel multiplier: pitch changes translate to flight path faster (MSFS-like responsiveness).
   // The equilibrium (dGam=0 at 1g level flight) is unchanged; only transient response speeds up.
   dGam *= 2.0;
@@ -11425,6 +11474,19 @@ function render() {
       hudWindRel.textContent = relText;
       hudWindRel.style.color = crosswind > 15 ? '#ffaa00' : '#00FF41';
       hudWindRel.title = 'TRACK ' + String(Math.round(windTrack)).padStart(3, '0') + '°';
+    }
+  }
+
+  // Turbulence readout — only shown once it's actually noticeable
+  if (hudTurbItem && hudTurb) {
+    const ti = env.turbulence.intensity;
+    if (ti > 0.05) {
+      hudTurbItem.style.display = '';
+      if (ti < 0.35) { hudTurb.textContent = 'LIGHT'; hudTurb.style.color = '#00FF41'; }
+      else if (ti < 0.7) { hudTurb.textContent = 'MODERATE'; hudTurb.style.color = '#ffaa00'; }
+      else { hudTurb.textContent = 'SEVERE'; hudTurb.style.color = '#ff2020'; }
+    } else {
+      hudTurbItem.style.display = 'none';
     }
   }
 
