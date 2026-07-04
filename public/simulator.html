@@ -2100,7 +2100,11 @@ let state = {
   wingBreakSide: 0,    // +1 = right wing, -1 = left wing
   // Fuel (kg)
   fuel: 800,
-  fuelMax: 800
+  fuelMax: 800,
+  // Altimeter barometric (Kollsman) setting, inHg — pilot-adjustable, offsets the
+  // displayed altitude away from true altitude just like a real altimeter.
+  baro: 29.92,
+  turnRate: 0   // heading rate, deg/s (for the turn coordinator gauge)
 };
 
 function resetState() {
@@ -2135,6 +2139,8 @@ function resetState() {
   state.onGround = true;
   state.groundTimer = 0;
   state.pitch = 2.5;
+  state.baro = 29.92;
+  state.turnRate = 0;
   terrainWarn.style.display = 'none';
   const lp = document.getElementById('landing-panel'); if (lp) lp.style.display = 'none';
   const rw = document.getElementById('rotate-warn');   if (rw) rw.style.display = 'none';
@@ -2431,9 +2437,9 @@ function updateMechSounds(dt) {
 // ===================== Keys =====================
 // Index keys by e.code (PHYSICAL key position) instead of e.key, so controls
 // work regardless of keyboard language/layout (Hebrew, AZERTY, etc.).
-const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1, KeyA:1,
+const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1, KeyA:1, KeyH:1,
   BracketLeft:1, BracketRight:1, Semicolon:1, Quote:1, Comma:1, Period:1,
-  ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1, F3:1 };
+  ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1, F3:1, Minus:1, Equal:1 };
 const keys = {};
 window.addEventListener('keydown', e => {
   // Virtual keyboard navigation (when open) takes priority
@@ -2496,6 +2502,7 @@ window.addEventListener('keydown', e => {
     }
     if (code === 'KeyF') cycleFlaps();
     if (code === 'KeyG') toggleGear();
+    if (code === 'KeyH' && cockpitPanelOn()) rcSyncGyro();
     if (code === 'KeyP') togglePause();
     if (e.key === 'Escape') { togglePause(); e.preventDefault(); return; }
   }
@@ -2760,6 +2767,7 @@ let env = {
 };
 let frameDt = 0.016;
 let wxParticles = [];
+let wsDroplets = [];   // windshield rain (cockpit-view only) — clings to glass, unlike falling wxParticles
 
 // Real-weather state
 let realWeatherActive = false;
@@ -3076,6 +3084,53 @@ function drawWeather() {
       if (p.y > H) { p.y = -2; p.x = Math.random() * W; }
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.3); ctx.fill();
     }
+  }
+  ctx.restore();
+}
+
+// Windshield rain: droplets that cling to the glass and creep down under airflow,
+// distinct from the falling wxParticles streaks (which read as rain in the world).
+// Only relevant with the cockpit window frame up, so it lives outside initWeatherParticles
+// and is (re)seeded lazily the first time it's actually drawn.
+function drawWindshieldRain() {
+  if (env.weather !== 'rain' || !cockpitFrameOn()) return;
+  const dt = Math.min(frameDt, 0.05);
+  if (wsDroplets.length === 0 || wsDroplets._w !== W || wsDroplets._h !== H) {
+    wsDroplets = [];
+    wsDroplets._w = W; wsDroplets._h = H;
+    const marginX = W * 0.16; // stay clear of the A-pillars
+    for (let i = 0; i < 34; i++) {
+      wsDroplets.push({
+        x: marginX + Math.random() * (W - marginX * 2),
+        y: Math.random() * H,
+        r: 1.5 + Math.random() * 3.2,
+        vy: 14 + Math.random() * 34,
+        wob: Math.random() * 10,
+        trail: 0
+      });
+    }
+  }
+  const speedKick = Math.min(1.8, (state.speed || 0) / 140); // faster airflow streaks the drops more
+  ctx.save();
+  for (const d of wsDroplets) {
+    d.wob += dt;
+    d.trail = d.r * (2.2 + speedKick * 3.5);
+    d.y += (d.vy + speedKick * 40) * dt;
+    d.x += Math.sin(d.wob * 0.6) * 3 * dt;
+    if (d.y - d.trail > H) {
+      d.y = -d.trail;
+      d.x = W * 0.16 + Math.random() * (W * 0.68);
+    }
+    const grd = ctx.createLinearGradient(d.x, d.y - d.trail, d.x, d.y + d.r);
+    grd.addColorStop(0, 'rgba(200,215,230,0)');
+    grd.addColorStop(1, 'rgba(200,215,230,0.28)');
+    ctx.strokeStyle = grd;
+    ctx.lineWidth = Math.max(1, d.r * 0.6);
+    ctx.beginPath(); ctx.moveTo(d.x, d.y - d.trail); ctx.lineTo(d.x, d.y); ctx.stroke();
+    ctx.beginPath(); ctx.fillStyle = 'rgba(210,224,238,0.35)';
+    ctx.arc(d.x, d.y, d.r, 0, RC_TAU); ctx.fill();
+    ctx.beginPath(); ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.arc(d.x - d.r * 0.3, d.y - d.r * 0.3, d.r * 0.35, 0, RC_TAU); ctx.fill();
   }
   ctx.restore();
 }
@@ -5967,12 +6022,19 @@ function updateCamera() {
 
   // Airframe buffet shake while stalled.
   const buf = state.stall ? (Math.random() - 0.5) : 0;
+  // Turbulence camera jitter: fast, punchy noise on top of the (smoother) physical
+  // attitude bumps already produced by gusts, felt only from the pilot's eye point.
+  const turbAmt = (env.turbulence && env.turbulence.intensity) || 0;
+  const turbPh = performance.now() * 0.001;
+  const turbYawJit   = turbAmt > 0.01 ? turbNoise(turbPh * 11, 3.1)  * turbAmt * 0.9 : 0;
+  const turbPitchJit = turbAmt > 0.01 ? turbNoise(turbPh * 13, 8.4)  * turbAmt * 0.7 : 0;
+  const turbBankJit  = turbAmt > 0.01 ? turbNoise(turbPh * 9,  17.2) * turbAmt * 1.1 : 0;
 
   if (cameraMode === 0) {
     // Cockpit: the camera IS the aircraft, looking out the nose. Hide the model.
     THREEJS.aircraft.visible = false;
     cam.position.copy(acPos);
-    setCamOrient(cam, state.heading + lookYawOff, state.pitch + buf * 1.2 + lookPitchOff, state.bank + buf * 2.2);
+    setCamOrient(cam, state.heading + lookYawOff + turbYawJit, state.pitch + buf * 1.2 + lookPitchOff + turbPitchJit, state.bank + buf * 2.2 + turbBankJit);
   } else {
     // Chase: a stable third-person rig behind the aircraft. The left stick visibly
     // banks/pitches the (real, lit) model; the right stick orbits the camera, which
@@ -8599,6 +8661,10 @@ function update(dt) {
   // First-flight tutorial watches the raw pilot inputs to advance its lessons.
   TUT.tick(dt, { pitchIn: pitchIn, rollIn: rollIn, thrIn: thrIn });
 
+  // Altimeter Kollsman (barometric) knob — held keys wind it like a real setting knob.
+  if (keys['Minus']) state.baro = Math.max(28.00, state.baro - 0.6 * dt);
+  if (keys['Equal']) state.baro = Math.min(31.50, state.baro + 0.6 * dt);
+
   // ---- Autopilot ----
   const apOut = apControl(dt);
   let apFlying = false;
@@ -8844,6 +8910,13 @@ function update(dt) {
     turbYawRate = turbNoise(ph, 15.1) * turb * 4 * DEG;
   }
 
+  // Slip/skid ball (turn-coordinator gauge): gust-driven sideslip plus a momentary
+  // adverse-yaw kick opposite the current aileron input, eased toward centered.
+  {
+    const slipTarget = turbNoise(env.turbulence.phase, 22.7) * turb * 0.7 - rollIn * 0.25;
+    rcSlip += (slipTarget - rcSlip) * Math.min(1, dt * 3);
+  }
+
   // Lift coefficient — flaps raise both CL and CL_max (more lift at lower speed)
   const clMax = AC.CL_max + flapCL * 0.5;
   let CL, stalled = false;
@@ -8879,6 +8952,7 @@ function update(dt) {
   V += dV * dt;
   V = Math.max(0, Math.min(AC.Vne * 1.15, V));
   gamma = normDeg(gamma + (dGam * dt) / DEG);          // full circle for loops
+  state.turnRate = dPsi / DEG;                          // deg/s, for the turn-coordinator gauge
   state.heading += (dPsi * dt) / DEG;
   if (state.heading < 0) state.heading += 360;
   if (state.heading >= 360) state.heading -= 360;
@@ -10742,6 +10816,33 @@ function drawTraffic() {
 // offscreen canvases and only needles / rotating cards are redrawn per frame.
 const RC_TAU = Math.PI * 2;
 const RC = { layout: null, layoutKey: '', bg: null, faces: {}, lift: 0 };
+// Needle lag: real steam gauges don't jump straight to the sensed value — they ease
+// toward it, each at its own mechanical time constant. Smoothed once per frame.
+RC.disp = { spd: 0, alt: 0, vs: 0, hdg: null, init: false };
+let rcSlip = 0;          // turn-coordinator slip/skid ball, -1 (left) .. +1 (right)
+let rcHdgDrift = 0;      // slow directional-gyro precession error (deg), needs periodic sync
+let rcHdgSyncT = 0;      // seconds since the gyro was last synced to the (assumed-true) heading
+function rcUpdateLag(dt) {
+  const d = RC.disp;
+  if (!d.init) { d.init = true; d.spd = state.speed || 0; d.alt = rcIndicatedAlt(); d.vs = state.vs || 0; d.hdg = state.heading || 0; }
+  const ease = function (cur, target, tau) { return cur + (target - cur) * (1 - Math.exp(-dt / tau)); };
+  d.spd = ease(d.spd, state.speed || 0, 0.35);
+  d.alt = ease(d.alt, rcIndicatedAlt(), 0.6);
+  d.vs  = ease(d.vs, state.vs || 0, 1.1);
+  // Heading gyro: slight rotational inertia plus a very slow free precession drift
+  // that keeps growing until the pilot re-syncs it (real vacuum DGs need this too).
+  // normDeg wraps to (-180, 180], not a compass range, so drift/diff use it (shortest
+  // signed delta) while the indicated heading itself is kept in wrap360's [0, 360).
+  if (!state.onGround) rcHdgSyncT += dt;
+  rcHdgDrift = normDeg(rcHdgDrift + Math.sin(rcHdgSyncT * 0.013) * 0.55 * dt);
+  const target = wrap360((state.heading || 0) + rcHdgDrift);
+  const diff = normDeg(target - d.hdg);
+  d.hdg = wrap360(d.hdg + diff * Math.min(1, dt / 0.25));
+}
+function rcSyncGyro() { rcHdgDrift = 0; rcHdgSyncT = 0; }
+function rcIndicatedAlt() {
+  return (state.altitude || 0) - (29.92 - (state.baro || 29.92)) * 1000;
+}
 
 function rcComputeLayout() {
   const key = W + 'x' + H;
@@ -10940,9 +11041,6 @@ function rcFaceALT(D) {
     }
   }
   rcDialLabel(g, D, 'ALTITUDE', '100 FT');
-  g.fillStyle = 'rgba(230,232,235,0.4)';
-  g.font = '600 ' + Math.max(5, D * 0.045) + 'px Arial, sans-serif';
-  g.fillText('29.92', r + fr * 0.5, r + fr * 0.02);
   RC.faces[key] = c;
   return c;
 }
@@ -10980,34 +11078,71 @@ function rcFaceVSI(D) {
   return c;
 }
 
-// ── RPM (with amber throttle bug drawn per frame) ──
-const RC_RPM_SWEEP = 270 * DEG, RC_RPM_START = 135 * DEG;
-function rcRpmAng(pct) { return RC_RPM_START + Math.min(1.1, Math.max(0, pct / 100)) / 1.1 * RC_RPM_SWEEP; }
-function rcFaceRPM(D) {
-  const key = 'rpm' + D;
+// ── Turn coordinator: miniature airplane banks with turn rate, slip ball rides
+//    in a curved tube below it. Standard-rate (3°/s, a 2-minute turn) is marked
+//    by dots either side of centre — wingtip-to-dot means the turn is coordinated
+//    at the textbook rate. ──
+const RC_TC_STD_DEG_S = 3;
+function rcTcAngle(turnRateDegPerSec) {
+  const norm = Math.max(-1.6, Math.min(1.6, turnRateDegPerSec / RC_TC_STD_DEG_S));
+  return norm * (28 * DEG);
+}
+function rcFaceTC(D) {
+  const key = 'tc' + D;
   if (RC.faces[key]) return RC.faces[key];
   const c = rcCanvas(D, D), g = c.getContext('2d');
   rcDrawBezel(g, D);
   const r = D / 2, fr = r * 0.9;
-  g.strokeStyle = '#1fae4b'; g.lineWidth = Math.max(2, D * 0.035);
-  g.beginPath(); g.arc(r, r, fr * 0.87, rcRpmAng(40), rcRpmAng(95)); g.stroke();
-  g.strokeStyle = '#e33';
-  g.beginPath(); g.arc(r, r, fr * 0.87, rcRpmAng(100), rcRpmAng(110)); g.stroke();
+  // Standard-rate reference dots, left and right
+  [-1, 1].forEach(function (side) {
+    const ang = -Math.PI / 2 + side * rcTcAngle(RC_TC_STD_DEG_S);
+    g.fillStyle = 'rgba(235,237,240,0.9)';
+    g.beginPath(); g.arc(r + Math.cos(ang) * fr * 0.62, r + Math.sin(ang) * fr * 0.62, Math.max(1.5, D * 0.018), 0, RC_TAU); g.fill();
+  });
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (let p = 0; p <= 110; p += 5) {
-    const major = p % 20 === 0;
-    const ang = rcRpmAng(p);
-    rcTick(g, r, r, ang, major ? fr * 0.76 : fr * 0.84, fr * 0.94,
-      major ? Math.max(1.5, D * 0.014) : 1, 'rgba(235,237,240,' + (major ? 0.95 : 0.5) + ')');
-    if (major) {
-      g.fillStyle = '#e9ebee';
-      g.font = '600 ' + Math.max(7, D * 0.075) + 'px Arial, sans-serif';
-      g.fillText(String(p), r + Math.cos(ang) * fr * 0.6, r + Math.sin(ang) * fr * 0.6);
-    }
-  }
-  rcDialLabel(g, D, 'RPM', 'PERCENT');
+  g.fillStyle = 'rgba(235,237,240,0.85)';
+  g.font = '700 ' + Math.max(7, fr * 0.16) + 'px Arial, sans-serif';
+  g.fillText('L', r - fr * 0.66, r - fr * 0.1);
+  g.fillText('R', r + fr * 0.66, r - fr * 0.1);
+  // Slip tube trough, fixed (does not rotate)
+  const tubeY = r + fr * 0.5, tubeHalfW = fr * 0.42, tubeR = fr * 0.1;
+  g.strokeStyle = 'rgba(200,204,210,0.55)'; g.lineWidth = Math.max(1.5, D * 0.016);
+  g.beginPath();
+  g.moveTo(r - tubeHalfW, tubeY - tubeR * 0.3);
+  g.quadraticCurveTo(r, tubeY + tubeR, r + tubeHalfW, tubeY - tubeR * 0.3);
+  g.stroke();
+  // Centered reference marks either side of the ball's resting spot
+  g.strokeStyle = 'rgba(235,237,240,0.8)'; g.lineWidth = Math.max(1.5, D * 0.016);
+  [-1, 1].forEach(function (side) {
+    const x = r + side * fr * 0.16;
+    g.beginPath(); g.moveTo(x, tubeY + tubeR * 0.55); g.lineTo(x, tubeY + tubeR * 1.3); g.stroke();
+  });
+  rcDialLabel(g, D, 'TURN COORDINATOR', '2 MIN');
   RC.faces[key] = c;
   return c;
+}
+function rcDrawTC(cx, cy, D) {
+  ctx.drawImage(rcFaceTC(D), cx - D / 2, cy - D / 2);
+  const fr = D / 2 * 0.9;
+  const tiltAng = rcTcAngle(state.turnRate || 0);
+  // Miniature airplane, rear view, banking with the turn rate
+  ctx.save();
+  ctx.translate(cx, cy - fr * 0.08); ctx.rotate(tiltAng);
+  ctx.strokeStyle = '#ff9a1f'; ctx.fillStyle = '#ff9a1f';
+  ctx.lineWidth = Math.max(2, D * 0.022);
+  ctx.beginPath(); ctx.moveTo(-fr * 0.5, 0); ctx.lineTo(fr * 0.5, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, fr * 0.03); ctx.lineTo(0, -fr * 0.22); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, Math.max(2, D * 0.022), 0, RC_TAU); ctx.fill();
+  ctx.restore();
+  // Slip ball, offset horizontally within the tube by rcSlip (-1..1)
+  const tubeY = cy + fr * 0.5, tubeHalfW = fr * 0.42, tubeR = fr * 0.1;
+  const s = Math.max(-1, Math.min(1, rcSlip));
+  const bx = cx + s * tubeHalfW * 0.72;
+  const by = tubeY + tubeR * (1 - (s * s) * 0.3);
+  ctx.fillStyle = '#101214';
+  ctx.beginPath(); ctx.arc(bx, by, Math.max(3, D * 0.055), 0, RC_TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(210,214,220,0.7)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(bx, by, Math.max(3, D * 0.055), 0, RC_TAU); ctx.stroke();
 }
 
 // ── Heading gyro: rotating compass card (cached), fixed lubber + plane ──
@@ -11259,29 +11394,36 @@ function rcDrawLampStrip(L) {
   });
 }
 
+// Backlighting: 0 at day, up to ~0.85 at full night — matches the dayAmt curve used
+// elsewhere for headlights/sky so the panel dims in step with the rest of the world.
+function rcNightAmt() {
+  return (env.time === 'night') ? 0.82 : (env.time === 'dawn' || env.time === 'dusk') ? 0.38 : 0;
+}
+
 function drawCockpitPanel() {
   const L = rcComputeLayout();
   if (RC.lift !== L.PH) {
     RC.lift = L.PH;
     document.documentElement.style.setProperty('--rc-lift', (L.PH + 8) + 'px');
   }
+  rcUpdateLag(Math.min(frameDt || 0.016, 0.05));
   ctx.drawImage(rcPanelBg(L), 0, L.top);
 
   const D = L.D, fr = D / 2 * 0.9;
   const cs = L.centers;
-  const alt = Math.max(0, state.altitude || 0);
+  const alt = Math.max(0, RC.disp.alt || 0);
   const maxV = rcAsiMax();
 
   // 1 — Airspeed
   ctx.drawImage(rcFaceASI(D), cs[0].x - D / 2, cs[0].y - D / 2);
-  rcNeedle(cs[0].x, cs[0].y, rcAsiAng(state.speed || 0, maxV), fr * 0.82, fr * 0.2, Math.max(1.5, D * 0.022), '#f2f4f6');
+  rcNeedle(cs[0].x, cs[0].y, rcAsiAng(RC.disp.spd || 0, maxV), fr * 0.82, fr * 0.2, Math.max(1.5, D * 0.022), '#f2f4f6');
   ctx.drawImage(rcGlass(D), cs[0].x - D / 2, cs[0].y - D / 2);
 
   // 2 — Attitude
   rcDrawAI(cs[1].x, cs[1].y, D);
   ctx.drawImage(rcGlass(D), cs[1].x - D / 2, cs[1].y - D / 2);
 
-  // 3 — Altimeter (10000 / 1000 / 100 ft needles)
+  // 3 — Altimeter (10000 / 1000 / 100 ft needles) + Kollsman (barometric) window
   ctx.drawImage(rcFaceALT(D), cs[2].x - D / 2, cs[2].y - D / 2);
   const a10k = -Math.PI / 2 + ((alt % 100000) / 100000) * RC_TAU;
   const a1k  = -Math.PI / 2 + ((alt % 10000)  / 10000)  * RC_TAU;
@@ -11301,22 +11443,27 @@ function drawCockpitPanel() {
   ctx.fillStyle = '#e9ebee'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = '600 ' + Math.max(7, fr * 0.19) + 'px Arial, sans-serif';
   ctx.fillText(Math.round(alt).toLocaleString('en-US') + ' FT', cs[2].x, cs[2].y + fr * 0.42);
+  ctx.fillStyle = 'rgba(230,232,235,0.55)';
+  ctx.font = '600 ' + Math.max(5, fr * 0.14) + 'px Arial, sans-serif';
+  ctx.fillText((state.baro || 29.92).toFixed(2), cs[2].x + fr * 0.5, cs[2].y + fr * 0.02);
   ctx.drawImage(rcGlass(D), cs[2].x - D / 2, cs[2].y - D / 2);
 
-  // 4 — Heading gyro (bottom-middle, the standard six-pack position)
+  // 4 — Heading gyro (bottom-middle, the standard six-pack position). Driven by the
+  // damped/drifting indicated heading, not raw state — a real DG needs re-syncing (H).
   {
     const cx = cs[4].x, cy = cs[4].y;
+    const dispHdg = RC.disp.hdg == null ? (state.heading || 0) : RC.disp.hdg;
     const key = 'hdgbez' + D;
     if (!RC.faces[key]) { const c2 = rcCanvas(D, D); rcDrawBezel(c2.getContext('2d'), D); RC.faces[key] = c2; }
     ctx.drawImage(RC.faces[key], cx - D / 2, cy - D / 2);
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(-(state.heading || 0) * DEG);
+    ctx.rotate(-dispHdg * DEG);
     ctx.drawImage(rcHdgCard(D), -D / 2, -D / 2);
     ctx.restore();
-    // AP heading bug
+    // AP heading bug (relative to the indicated card, same as a pilot flying the gauge would see)
     if (ap.on) {
-      const bug = ((ap.targetHdg - state.heading) - 90) * DEG;
+      const bug = ((ap.targetHdg - dispHdg) - 90) * DEG;
       ctx.save();
       ctx.translate(cx, cy); ctx.rotate(bug);
       ctx.fillStyle = '#ffb020';
@@ -11340,37 +11487,34 @@ function drawCockpitPanel() {
     ctx.strokeRect(cx - fr * 0.28, cy - fr * 0.74, fr * 0.56, fr * 0.24);
     ctx.fillStyle = '#e9ebee'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = '600 ' + Math.max(7, fr * 0.2) + 'px Arial, sans-serif';
-    const hdg = Math.round(state.heading || 0) % 360;
+    const hdg = Math.round(dispHdg) % 360;
     ctx.fillText((hdg === 0 ? 360 : hdg).toString().padStart(3, '0') + '°', cx, cy - fr * 0.62);
     ctx.drawImage(rcGlass(D), cx - D / 2, cy - D / 2);
   }
 
   // 5 — Vertical speed (bottom-right, the standard six-pack position)
   ctx.drawImage(rcFaceVSI(D), cs[5].x - D / 2, cs[5].y - D / 2);
-  rcNeedle(cs[5].x, cs[5].y, rcVsiAng(state.vs || 0), fr * 0.82, fr * 0.2, Math.max(1.5, D * 0.022), '#f2f4f6');
+  rcNeedle(cs[5].x, cs[5].y, rcVsiAng(RC.disp.vs || 0), fr * 0.82, fr * 0.2, Math.max(1.5, D * 0.022), '#f2f4f6');
   ctx.drawImage(rcGlass(D), cs[5].x - D / 2, cs[5].y - D / 2);
 
-  // 6 — RPM + amber throttle bug on the rim (bottom-left, in the turn-coordinator slot)
-  ctx.drawImage(rcFaceRPM(D), cs[3].x - D / 2, cs[3].y - D / 2);
-  {
-    const bugA = rcRpmAng(state.throttle || 0);
-    ctx.save();
-    ctx.translate(cs[3].x, cs[3].y); ctx.rotate(bugA);
-    ctx.fillStyle = '#ffb020';
-    ctx.beginPath();
-    ctx.moveTo(fr * 0.99, 0); ctx.lineTo(fr * 1.12, -fr * 0.06); ctx.lineTo(fr * 1.12, fr * 0.06);
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
-    ctx.fillStyle = 'rgba(230,232,235,0.6)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = '600 ' + Math.max(6, fr * 0.17) + 'px Arial, sans-serif';
-    ctx.fillText('THR ' + Math.round(state.throttle || 0) + '%', cs[3].x, cs[3].y + fr * 0.45);
-  }
-  rcNeedle(cs[3].x, cs[3].y, rcRpmAng(state.rpm || 0), fr * 0.82, fr * 0.2, Math.max(1.5, D * 0.022), '#f2f4f6');
+  // 6 — Turn coordinator + slip ball (bottom-left, its real six-pack slot)
+  rcDrawTC(cs[3].x, cs[3].y, D);
+  ctx.fillStyle = 'rgba(230,232,235,0.6)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '600 ' + Math.max(6, fr * 0.15) + 'px Arial, sans-serif';
+  ctx.fillText('THR ' + Math.round(state.throttle || 0) + '  RPM ' + Math.round(state.rpm || 0), cs[3].x, cs[3].y + fr * 0.72);
   ctx.drawImage(rcGlass(D), cs[3].x - D / 2, cs[3].y - D / 2);
 
   // Annunciators
   if (L.sideAnn) rcDrawAnnColumn(L);
   else rcDrawLampStrip(L);
+
+  // Night backlighting: dim the whole panel with a warm, low wash — instrument
+  // lighting rather than daylight glareshield reflections.
+  const nightAmt = rcNightAmt();
+  if (nightAmt > 0.02) {
+    ctx.fillStyle = 'rgba(18,8,4,' + (nightAmt * 0.5).toFixed(3) + ')';
+    ctx.fillRect(0, L.top, W, L.PH);
+  }
 }
 
 function render() {
@@ -11405,6 +11549,8 @@ function render() {
     drawAHI();
     drawCompass();
   }
+
+  drawWindshieldRain(); // droplets clinging to the cockpit glass — closest layer, drawn last
 
   document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : 'CHASE';
 
