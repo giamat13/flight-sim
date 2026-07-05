@@ -2127,7 +2127,12 @@ let state = {
   // displayed altitude away from true altitude just like a real altimeter.
   baro: 29.92,
   turnRate: 0,  // heading rate, deg/s (for the turn coordinator gauge)
-  spoiler: 0    // speedbrake / spoiler deployment 0..1 (EICAS flight-controls page)
+  spoiler: 0,   // speedbrake / spoiler deployment 0..1 (EICAS flight-controls page)
+  // Live stick position, -1..1 — settled each physics tick AFTER autopilot
+  // override/stall-protection, so the renderer can deflect the visible
+  // elevator/aileron/rudder surfaces exactly as commanded, every frame.
+  ctrlPitch: 0,
+  ctrlRoll: 0
 };
 
 function resetState() {
@@ -4757,6 +4762,11 @@ let ROTATION_KTS = AC.rotationKts;   // ground-roll takeoff rotation speed (knot
 function applyAircraftType(key) {
   const def = AIRCRAFT_DEFS[key] || AIRCRAFT_DEFS.classic;
   selectedAircraftKey = key;
+  // Object.assign only overwrites keys present in `def` — clear the optional
+  // per-aircraft keys first, or switching to a type that omits one (e.g. no
+  // playerModelUrl) would keep rendering the PREVIOUS aircraft's GLTF/rig config.
+  delete AC.playerModelUrl; delete AC.playerModelDims; delete AC.modelYOffset; delete AC.modelAxes;
+  delete AC.flapCfg; delete AC.gearNodes; delete AC.aileronCfg; delete AC.elevatorCfg; delete AC.rudderCfg;
   Object.assign(AC, AC_PHYS, def);
   AC.fixedGear = !!def.fixedGear; // reset explicitly — Object.assign won't clear a stale flag from the previous aircraft
   if (AC.fixedGear) state.gearDown = true;
@@ -5946,13 +5956,21 @@ function buildAircraftMesh(flaps, gear) {
       // Vertical offset: modelYOffset from JSON corrects the model above ground.
       clone.position.y = AC.modelYOffset || 0;
       ac.add(clone);
-      // Gear: auto-detected (or JSON gearNodes). Flaps: manual hinge rigs from JSON.
-      const flapInfo = setupFlapRigs(clone, AC.flapCfg);
+      // Every surface is auto-detected (name match, then geometry fallback);
+      // per-aircraft *Cfg.nodes in AC only override a bad guess. Gear stays
+      // on its own proven auto-detector.
+      const flapInfo     = setupControlSurfaceRigs(clone, dims, AC.flapCfg,     FLAP_NAME_RE,     geomTestFlap);
+      const aileronInfo  = setupControlSurfaceRigs(clone, dims, AC.aileronCfg,  AILERON_NAME_RE,  geomTestAileron);
+      const elevatorInfo = setupControlSurfaceRigs(clone, dims, AC.elevatorCfg, ELEVATOR_NAME_RE, geomTestElevator);
+      const rudderInfo   = setupControlSurfaceRigs(clone, dims, AC.rudderCfg,   RUDDER_NAME_RE,   geomTestRudder);
       const gearMeshes = scanGear(clone, dims.span, AC.gearNodes);
       const flapLevel = flaps / 3;   // state.flaps is 0..3
-      applyFlapState(flapInfo, flapLevel);
+      applyControlSurfaceState(flapInfo, flapLevel, false);
+      applyControlSurfaceState(aileronInfo, state.ctrlRoll, true);
+      applyControlSurfaceState(elevatorInfo, -state.ctrlPitch, false);
+      applyControlSurfaceState(rudderInfo, -state.ctrlRoll * 0.4, false);
       applyGearState(gearMeshes, gear);
-      THREEJS.acGltfParts = { flaps: flapInfo, gear: gearMeshes };
+      THREEJS.acGltfParts = { flaps: flapInfo, aileron: aileronInfo, elevator: elevatorInfo, rudder: rudderInfo, gear: gearMeshes };
       THREEJS.acFlaps = flaps; THREEJS.acGear = gear; THREEJS.acGltf = true;
       return;
     }
@@ -5962,7 +5980,7 @@ function buildAircraftMesh(flaps, gear) {
   }
 
   const builder = AIRCRAFT_MODEL_BUILDERS[selectedAircraftKey] || buildAirplaneMesh;
-  const mesh = builder(flaps, gear);
+  const mesh = builder(flaps, gear, state.ctrlPitch, state.ctrlRoll);
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide });
   ac.add(new THREE.Mesh(geomFromFaces(mesh.verts, mesh.faces), mat));
   const addLight = function (vi, color) {
@@ -6057,13 +6075,20 @@ function updateCamera() {
   if (_pmReady && !THREEJS.acGltf) {
     // GLTF model just finished loading — do a full build now.
     buildAircraftMesh(state.flaps, state.gearDown);
-  } else if (THREEJS.acGltf && THREEJS.acGltfParts && (_flapChanged || _gearChanged)) {
-    // GLTF already loaded — animate parts in-place, no rebuild needed.
-    if (_flapChanged) applyFlapState(THREEJS.acGltfParts.flaps, state.flaps / 3);
+  } else if (THREEJS.acGltf && THREEJS.acGltfParts) {
+    // GLTF already loaded — animate parts in-place, no rebuild needed. Flaps/
+    // gear only move on discrete state change; elevator/aileron/rudder track
+    // the live stick continuously, every frame.
+    if (_flapChanged) applyControlSurfaceState(THREEJS.acGltfParts.flaps, state.flaps / 3, false);
     if (_gearChanged) applyGearState(THREEJS.acGltfParts.gear, state.gearDown);
-    THREEJS.acFlaps = state.flaps; THREEJS.acGear = state.gearDown;
-  } else if (!THREEJS.acGltf && (_flapChanged || _gearChanged)) {
-    // Procedural mesh — rebuild geometry (flaps/gear are baked into the mesh).
+    applyControlSurfaceState(THREEJS.acGltfParts.aileron, state.ctrlRoll, true);
+    applyControlSurfaceState(THREEJS.acGltfParts.elevator, -state.ctrlPitch, false);
+    applyControlSurfaceState(THREEJS.acGltfParts.rudder, -state.ctrlRoll * 0.4, false);
+    if (_flapChanged || _gearChanged) { THREEJS.acFlaps = state.flaps; THREEJS.acGear = state.gearDown; }
+  } else if (!THREEJS.acGltf) {
+    // Procedural mesh — flaps/gear/elevator/aileron/rudder are all baked into
+    // the geometry, so it's rebuilt every frame to track the live stick (not
+    // just on the rarer discrete flap/gear change).
     buildAircraftMesh(state.flaps, state.gearDown);
   }
 
@@ -6836,44 +6861,87 @@ function scanGear(pivotClone, spanM, gearNodes) {
   return gear;
 }
 
-// Build hinge rigs for flaps, selected MANUALLY by name via JSON `flapCfg.nodes`.
-// Each listed flap mesh is reparented under a pivot group placed at its forward
-// edge (the real hinge line) so it rotates trailing-edge-down instead of swinging
-// about the model origin. Returns { rigs, maxRad, sign }.
-function setupFlapRigs(pivotClone, flapCfg) {
-  const out = { rigs: [], maxRad: 0, sign: 1 };
-  if (!flapCfg || !flapCfg.nodes || !flapCfg.nodes.length) return out;
-  out.maxRad = (flapCfg.maxDeg != null ? flapCfg.maxDeg : 40) * DEG;
-  out.sign   = (flapCfg.sign != null ? flapCfg.sign : 1);
-
+// Build hinge rigs for a control surface (flap/aileron/elevator/rudder). An
+// explicit `cfg.nodes` list (hand-picked GLB node names, JSON-configured per
+// aircraft) always wins. Otherwise the surface is AUTO-DETECTED: first by a
+// name regex (most real GLB exports use a recognisable naming convention —
+// this alone covers the majority of models with zero per-aircraft config),
+// then, only if nothing matched, by a geometric fallback keyed on position in
+// the pivot-local frame (+X right wing, +Y up, -Z nose, +Z tail). A model
+// that fails both just doesn't animate that surface — no crash, no per-model
+// authoring required. Each matched mesh is reparented under a pivot group at
+// its forward edge (the hinge line) so it rotates trailing-edge-something
+// instead of swinging about the model origin. Returns { rigs, maxRad, sign }
+// where each rig is { group, side } (side: -1 left / 0 center / +1 right).
+function setupControlSurfaceRigs(pivotClone, dims, cfg, nameRe, geomTest) {
+  const out = { rigs: [], maxRad: (cfg && cfg.maxDeg != null ? cfg.maxDeg : 20) * DEG, sign: (cfg && cfg.sign != null ? cfg.sign : 1) };
   pivotClone.updateMatrixWorld(true);
   const pivotInv = _tmpMat4C.copy(pivotClone.matrixWorld).invert();
-  const want = {}; flapCfg.nodes.forEach(function(n){ want[n] = true; });
-  const meshes = [];
-  pivotClone.traverse(function(o){ if (o.isMesh && want[o.name]) meshes.push(o); });
-
   const box = new THREE.Box3(), center = new THREE.Vector3();
+  const spanM = dims.span || 30;
+
+  let meshes = [];
+  if (cfg && cfg.nodes && cfg.nodes.length) {
+    const want = {}; cfg.nodes.forEach(function (n) { want[n] = true; });
+    pivotClone.traverse(function (o) { if (o.isMesh && want[o.name]) meshes.push(o); });
+  } else {
+    pivotClone.traverse(function (o) { if (o.isMesh && nameRe.test(o.name || '')) meshes.push(o); });
+    if (!meshes.length && geomTest) {
+      pivotClone.traverse(function (o) {
+        if (!o.isMesh) return;
+        _meshBoxInPivot(o, pivotInv, box);
+        if (box.isEmpty()) return;
+        box.getCenter(center);
+        if (geomTest(center, box, dims)) meshes.push(o);
+      });
+    }
+  }
+
   for (let i = 0; i < meshes.length; i++) {
     const mesh = meshes[i];
     _meshBoxInPivot(mesh, pivotInv, box);
     if (box.isEmpty()) continue;
     box.getCenter(center);
     const rig = new THREE.Group();
-    // Hinge at the flap's forward edge (min Z = toward nose), spanwise across X.
+    // Hinge at the surface's forward edge (min Z = toward nose), spanwise across X.
     rig.position.set(center.x, center.y, box.min.z);
     pivotClone.add(rig);
     _reparentPreserving(mesh, rig);
-    out.rigs.push(rig);
+    out.rigs.push({ group: rig, side: center.x < -0.05 * spanM ? -1 : (center.x > 0.05 * spanM ? 1 : 0) });
   }
   return out;
 }
 
-// Rotate every flap rig around the spanwise (X) hinge by flapLevel × maxDeg.
-function applyFlapState(flapInfo, flapLevel) {
-  if (!flapInfo || !flapInfo.rigs) return;
-  const ang = flapInfo.sign * flapLevel * flapInfo.maxRad;
-  for (let i = 0; i < flapInfo.rigs.length; i++) flapInfo.rigs[i].rotation.x = ang;
+// Rotate rigs around their spanwise (X) hinge by `level` (-1..1) × maxDeg.
+// `differential` (ailerons) makes left/right rigs deflect opposite ways.
+function applyControlSurfaceState(info, level, differential) {
+  if (!info || !info.rigs) return;
+  const ang = info.sign * level * info.maxRad;
+  for (let i = 0; i < info.rigs.length; i++) {
+    const r = info.rigs[i];
+    r.group.rotation.x = differential ? -ang * (r.side || 1) : ang;
+  }
 }
+
+// Geometric fallbacks — approximate, used only when no name match was found.
+function _wingFrac(center, dims) { return Math.abs(center.x) / ((dims.span || 30) / 2); }
+function _tailFrac(center, dims) { return center.z / ((dims.len || dims.span || 30) / 2); }
+function geomTestFlap(center, box, dims) {
+  return Math.abs(center.y) < 0.18 * dims.span && _wingFrac(center, dims) > 0.08 && _wingFrac(center, dims) < 0.55 && _tailFrac(center, dims) < 0.35;
+}
+function geomTestAileron(center, box, dims) {
+  return Math.abs(center.y) < 0.18 * dims.span && _wingFrac(center, dims) >= 0.55 && _tailFrac(center, dims) < 0.35;
+}
+function geomTestElevator(center, box, dims) {
+  return _tailFrac(center, dims) > 0.25 && Math.abs(center.y) < 0.12 * dims.span && _wingFrac(center, dims) < 0.9;
+}
+function geomTestRudder(center, box, dims) {
+  return _tailFrac(center, dims) > 0.25 && _wingFrac(center, dims) < 0.06 && Math.abs(center.y) >= 0.05 * dims.span;
+}
+const FLAP_NAME_RE = /flap(?!.*(?:aile|elev|rud))/i;
+const AILERON_NAME_RE = /aileron|(?:^|[_\s])ail(?:[_\s]|$)/i;
+const ELEVATOR_NAME_RE = /elevator|(?:^|[_\s])elev(?:[_\s]|$)/i;
+const RUDDER_NAME_RE = /rudder|(?:^|[_\s])rud(?:[_\s]|$)/i;
 
 // Show gear meshes when gearDown; hide when retracted.
 function applyGearState(gearMeshes, gearDown) {
@@ -9422,6 +9490,12 @@ function update(dt) {
     }
   }
 
+  // Stash the settled stick position for the renderer — read every frame to
+  // deflect the visible elevator/aileron/rudder surfaces (physics above only
+  // needed the raw pitchIn/rollIn to integrate attitude).
+  state.ctrlPitch = pitchIn;
+  state.ctrlRoll = rollIn;
+
   // Refresh manual-nav HUD each frame so distance/ETA stay live.
   if (!ap.on && navLastDest) navUpdateHud();
 
@@ -10370,7 +10444,9 @@ AIRCRAFT_MODEL_BUILDERS.spitfire = function() {
   return {verts,faces,lwTip,rwTip};
 };
 
-function buildAirplaneMesh(flapsLevel, gearDown) {
+function buildAirplaneMesh(flapsLevel, gearDown, ctrlPitch, ctrlRoll) {
+  ctrlPitch = ctrlPitch || 0;   // live elevator stick, -1..1 (nose-up positive)
+  ctrlRoll = ctrlRoll || 0;     // live aileron stick, -1..1 (roll-right positive)
   const verts = [];
   const faces = [];
   const sides = 6;
@@ -10509,6 +10585,62 @@ function buildAirplaneMesh(flapsLevel, gearDown) {
   const vCol = [0.30, 0.37, 0.43];
   faces.push({ v: [vBLE, vTLE, vTTE, vBTE], c: vCol });
   faces.push({ v: [vBLE, vBTE, vTTE, vTLE], c: [vCol[0]*0.75, vCol[1]*0.75, vCol[2]*0.75] });
+
+  // Ailerons, elevator, rudder — small trailing-edge panels, always present
+  // (unlike the flaps above, which only appear when deployed), continuously
+  // deflected from the live stick. Flush with their parent surface at zero
+  // input (angle 0 -> panel just extends the chord aft); as the angle grows
+  // the free edge swings up/down (or sideways, for the rudder).
+  function addHingedPanel(yA, yB, zHinge, len, thick, angle, col) {
+    const dz = Math.cos(angle) * len, dy = Math.sin(angle) * len;
+    const i0 = verts.length; verts.push([yA,  thick, zHinge]);
+    const i1 = verts.length; verts.push([yB,  thick, zHinge]);
+    const i2 = verts.length; verts.push([yB,  thick + dy, zHinge - dz]);
+    const i3 = verts.length; verts.push([yA,  thick + dy, zHinge - dz]);
+    const i4 = verts.length; verts.push([yA, -thick, zHinge]);
+    const i5 = verts.length; verts.push([yB, -thick, zHinge]);
+    const i6 = verts.length; verts.push([yB, -thick + dy, zHinge - dz]);
+    const i7 = verts.length; verts.push([yA, -thick + dy, zHinge - dz]);
+    faces.push({ v: [i0, i1, i2, i3], c: col });
+    faces.push({ v: [i4, i7, i6, i5], c: [col[0]*0.65, col[1]*0.65, col[2]*0.65] });
+    faces.push({ v: [i0, i3, i7, i4], c: [col[0]*0.7,  col[1]*0.7,  col[2]*0.7 ] });
+    faces.push({ v: [i1, i5, i6, i2], c: [col[0]*0.7,  col[1]*0.7,  col[2]*0.7 ] });
+    faces.push({ v: [i3, i2, i6, i7], c: [col[0]*0.85, col[1]*0.85, col[2]*0.85] });
+  }
+  // Wing trailing-edge Z at spanwise offset yAbs (linear taper matching addWing's root/tip TE line).
+  function wingTE_Z(yAbs) { const t = (yAbs - 0.35) / (3.0 - 0.35); return -0.4 + t * (-0.8 - -0.4); }
+
+  // Ailerons — outboard trailing-edge panels, deflecting opposite each other
+  // with roll input (right stick -> right aileron up, left aileron down).
+  const aileronMaxRad = 18 * DEG;
+  [-1, 1].forEach(function (side) {
+    const angle = -side * ctrlRoll * aileronMaxRad;
+    addHingedPanel(side * 1.7, side * 2.85, wingTE_Z(2.25), 0.32, 0.03, angle, wCol);
+  });
+
+  // Elevator — horizontal-stabilizer trailing-edge panel, pitch driven
+  // (stick back / nose-up -> trailing edge up).
+  const elevatorMaxRad = 22 * DEG;
+  [-1, 1].forEach(function (side) {
+    const angle = ctrlPitch * elevatorMaxRad;
+    addHingedPanel(side * 0.15, side * 1.1, -2.55, 0.22, 0.02, angle, wCol);
+  });
+
+  // Rudder — vertical-stabilizer trailing-edge panel. This sim has no
+  // dedicated yaw pedal, so a small opposite-aileron deflection stands in for
+  // the coordinated-turn rudder input pilots naturally apply with roll.
+  {
+    const rudderMaxRad = 16 * DEG;
+    const angle = -ctrlRoll * rudderMaxRad * 0.4;
+    const dz = Math.cos(angle) * 0.2, dx = Math.sin(angle) * 0.2;
+    const zHinge = -2.55;
+    const i0 = verts.length; verts.push([0, 0.05, zHinge]);
+    const i1 = verts.length; verts.push([0, 0.6, zHinge]);
+    const i2 = verts.length; verts.push([dx, 0.6, zHinge - dz]);
+    const i3 = verts.length; verts.push([dx, 0.05, zHinge - dz]);
+    faces.push({ v: [i0, i1, i2, i3], c: vCol });
+    faces.push({ v: [i3, i2, i1, i0], c: [vCol[0]*0.75, vCol[1]*0.75, vCol[2]*0.75] });
+  }
 
   // Cockpit canopy
   const cF = verts.length; verts.push([0, 0.15, 1.5]);
