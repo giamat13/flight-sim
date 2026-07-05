@@ -2573,6 +2573,7 @@ function cycleFlaps() {
 function toggleGear() {
   if (!TUT.allows('gear')) return;  // locked until the tutorial's gear lesson
   if (state.gearBroken) return;     // wheels are gone — nothing left to toggle
+  if (AC.fixedGear) return;         // real aircraft — gear is fixed, cannot retract
   if (state.onGround) return;       // can't raise gear while rolling on the ground
   if (state.altitude < 100) return; // can't retract below 100 ft
   state.gearDown = !state.gearDown;
@@ -3920,6 +3921,7 @@ const AIRCRAFT_DEFS = {
     playerModelDims: { span: 11.0, len: 8.6 },  // metres — C182 ≈ C172 (high-wing single engine)
     modelAxes: { nose: '+z', up: '+y' },
     modelYOffset: 1.0,
+    fixedGear: true,    // real 172 has fixed tricycle gear — cannot retract
   },
   boeing747: {
     label: 'BOEING 747-400',
@@ -4121,6 +4123,7 @@ const AIRCRAFT_DEFS = {
     playerModelDims: { span: 15.88, len: 12.67 },
     modelAxes: { nose: '+z', up: '+y' },
     modelYOffset: 1.0,
+    fixedGear: true,    // real Caravan has fixed tricycle gear — cannot retract
   },
 
   b52: {
@@ -4194,9 +4197,38 @@ const AIRCRAFT_DEFS = {
     fuelMax: 18000,
     rotationKts: 175,
     cruiseKts: 290,
+    playerModelUrl: 'https://raw.githubusercontent.com/Flightradar24/fr24-3d-models/master/models/b773.glb',
     playerModelDims: { span: 64.8, len: 73.9 },
     modelYOffset: 6,
     radarNm: 40,
+    // Gear/flaps auto-detected — no per-node config available for this model yet.
+  },
+
+  boeing767: {
+    label: 'BOEING 767-300ER',
+    desc: 'Wide-body twin-aisle airliner',
+    strengths: 'The workhorse widebody — versatile enough for both transatlantic routes and cargo conversions',
+    difficulty: 3,
+    m: 172000,          // kg — MTOW 767-300ER
+    S: 283.3,           // m² — reference wing area
+    CL_a: 4.9,
+    CL_max: 2.5,
+    aStall: 13,
+    Cd0: 0.019,
+    k: 0.036,
+    incidence: 1.8,
+    Tmax: 534000,       // N — 2× CF6-80C2 / PW4060 class at ~267 kN each
+    Vne: 180,           // m/s — VMO 360 KIAS
+    fuelFlowIdle: 0.30,
+    fuelFlowMax: 6.5,
+    fuelMax: 9000,
+    rotationKts: 155,
+    cruiseKts: 290,
+    playerModelUrl: 'https://raw.githubusercontent.com/Flightradar24/fr24-3d-models/master/models/b763.glb',
+    playerModelDims: { span: 47.6, len: 54.9 },
+    modelYOffset: 4,
+    radarNm: 40,
+    // Gear/flaps auto-detected — no per-node config available for this model yet.
   },
 
   airbusA350: {
@@ -4272,8 +4304,10 @@ const AIRCRAFT_DEFS = {
     rotationKts: 195,
     cruiseKts: 285,
     radarNm: 40,
+    playerModelUrl: 'https://raw.githubusercontent.com/Flightradar24/fr24-3d-models/master/models/an225.gltf',
     playerModelDims: { span: 88.4, len: 84.0 },
     modelYOffset: 8,
+    // Gear/flaps auto-detected — no per-node config available for this model yet.
   },
 
   p51mustang: {
@@ -4354,6 +4388,7 @@ const AIRCRAFT_DEFS = {
     playerModelDims: { span: 10.97, len: 7.34 },
     modelAxes: { nose: '+z', up: '+y' },
     modelYOffset: 0.8,
+    fixedGear: true,    // real Cherokee has fixed tricycle gear — cannot retract
   },
 
   embraerE175: {
@@ -4668,6 +4703,7 @@ const AIRCRAFT_DEFS = {
     radarNm: 20,
     playerModelDims: { span: 19.81, len: 15.77 },
     modelYOffset: 1.8,
+    fixedGear: true,    // real Twin Otter has fixed tricycle gear — cannot retract
   },
 };
 
@@ -4722,6 +4758,8 @@ function applyAircraftType(key) {
   const def = AIRCRAFT_DEFS[key] || AIRCRAFT_DEFS.classic;
   selectedAircraftKey = key;
   Object.assign(AC, AC_PHYS, def);
+  AC.fixedGear = !!def.fixedGear; // reset explicitly — Object.assign won't clear a stale flag from the previous aircraft
+  if (AC.fixedGear) state.gearDown = true;
   VNE_KTS = AC.Vne / 0.514444;
   ROTATION_KTS = def.rotationKts || 100;
   document.querySelectorAll('.ac-btn').forEach(function(b) {
@@ -7640,7 +7678,7 @@ function apTakeoffControl(dt) {
   if (ap.toPhase === 3) {
     thrCmd = 1;
     // Raise gear
-    if (state.gearDown && agl > 100) state.gearDown = false;
+    if (state.gearDown && !AC.fixedGear && agl > 100) state.gearDown = false;
     // Retract flaps progressively as we accelerate
     if (state.speed > 170 && state.flaps > 1) state.flaps = 1;
     if (state.speed > 190 && state.flaps > 0) state.flaps = 0;
@@ -7661,7 +7699,7 @@ function apTakeoffControl(dt) {
   // Phase 4: level off, switch to cruise
   if (ap.toPhase === 4) {
     if (state.flaps > 0) state.flaps = 0;
-    if (state.gearDown) state.gearDown = false;
+    if (state.gearDown && !AC.fixedGear) state.gearDown = false;
     ap.mode = 'cruise';
     ap.targetAlt = state.altitude;
     ap.targetSpd = state.speed;
@@ -8667,7 +8705,7 @@ function clampNavSpd(v) { return Math.max(stallSpeedKts() + 15, Math.min(VNE_KTS
 function navProtectGear(out, aglFt) {
   if (!state.onGround && state.gearDown && !state.gearBroken) {
     if (out && state.speed > NAV_GEAR_BRAKE_KTS) out.brakeCmd = true;
-    if (state.speed > NAV_GEAR_PANIC_KTS) state.gearDown = false; // safe at any height; flare is slow so this won't fire there
+    if (!AC.fixedGear && state.speed > NAV_GEAR_PANIC_KTS) state.gearDown = false; // safe at any height; flare is slow so this won't fire there
   }
   return out;
 }
@@ -8758,7 +8796,7 @@ function navEngage(dest) {
   if (!state.onGround && state.engineState === 'off' && state.fuel > 0) handleEngineKey();
   // If we're handed a fast aircraft with the gear hanging out, tuck it away now so
   // it's never exposed to an over-speed even for a frame.
-  if (!state.onGround && state.gearDown && !state.gearBroken && state.speed > NAV_GEAR_DOWN_KTS) state.gearDown = false;
+  if (!state.onGround && state.gearDown && !state.gearBroken && !AC.fixedGear && state.speed > NAV_GEAR_DOWN_KTS) state.gearDown = false;
   navRecomputePlan();
   updateApPanel();
   navUpdateHud();
@@ -8874,7 +8912,7 @@ function apNavTakeoff(dt) {
   ap.targetAlt = Math.max(ap.nav.activeGroundFt, terrainHeightAtM(state.lat, state.lon) / FT_TO_M) + 4000;
   const out = apTakeoffControl(dt);
   // Retract gear as soon as we're safely airborne (100 ft AGL), independent of phase.
-  if (!state.onGround && !state.gearBroken) {
+  if (!state.onGround && !state.gearBroken && !AC.fixedGear) {
     const aglFt = Math.max(0, state.altitude - (state.terrainHeightFt || 0));
     if (state.gearDown && aglFt > 100) state.gearDown = false;
   }
@@ -8912,7 +8950,7 @@ function apNavControl(dt) {
   // which is unreliable during the climb-out). The flare is naturally safe: there
   // the speed is ~120 kt, far below the panic threshold, so this never fires then.
   // The cruise/descent logic re-deploys once it's slow enough to be safe.
-  if (!state.onGround && state.gearDown && !state.gearBroken &&
+  if (!state.onGround && state.gearDown && !state.gearBroken && !AC.fixedGear &&
       state.speed > NAV_GEAR_PANIC_KTS) {
     state.gearDown = false;
   }
@@ -8934,7 +8972,7 @@ function apNavControl(dt) {
     // height/speed, so do it the moment we're airborne — never gate this on AGL,
     // or a high climb-out can accelerate past the gear limit with the wheels still
     // down (which is exactly how they got torn off on the climb-out).
-    if (!state.onGround && state.gearDown && !state.gearBroken) state.gearDown = false;
+    if (!state.onGround && state.gearDown && !state.gearBroken && !AC.fixedGear) state.gearDown = false;
     if (state.flaps > 0 && state.speed > NAV_FLAPS_KTS) state.flaps = 0;
     navSetCruiseAlt(dt, db);
     ap.targetSpd = clampNavSpd(ap.nav.plan ? ap.nav.plan.cruiseSpd : 250);
@@ -13614,7 +13652,7 @@ function beginFlight(loc) {
       state.gamma = 0;
       state.vs = 0;
       state.onGround = false;
-      state.gearDown = false;
+      state.gearDown = !!AC.fixedGear;
       state.engineState = 'running';
       state.rpm = 100;
       state.pitch = 2.5;
@@ -13765,7 +13803,7 @@ function beginFlightNearFriend(fr) {
     state.speed = Math.max(120, sp.speed || 0);
     state.throttle = 62; state.thrustPct = 62;
     state.gamma = 0; state.vs = 0;
-    state.onGround = false; state.gearDown = false;
+    state.onGround = false; state.gearDown = !!AC.fixedGear;
     state.engineState = 'running'; state.rpm = 100; state.pitch = 2.5;
     spawnResolved = true;
   } else {
@@ -13822,7 +13860,7 @@ function beginLiveWatchFor(tgt) {
   state.lat = tgt.lat; state.lon = tgt.lon; state.heading = tgt.heading || 90;
   state.altitude = Math.max(0, tgt.altitude || 0) + 50;
   state.speed = Math.max(40, tgt.speed || 0);
-  state.onGround = false; state.gearDown = false;
+  state.onGround = false; state.gearDown = !!AC.fixedGear;
   state.engineState = 'running'; state.rpm = 100; state.throttle = 60; state.thrustPct = 60;
   setGeoOrigin(tgt.lat, tgt.lon);
   resetWorld();
