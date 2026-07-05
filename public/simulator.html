@@ -1178,7 +1178,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
           </div>
           <div class="stp-toggle-row" style="max-width:340px">
             <span class="stp-toggle-label">INVERT PITCH (KEYBOARD &amp; STICK)</span>
-            <label class="stp-toggle"><input type="checkbox" id="stp-invert-pitch" checked><span class="stp-toggle-track"></span></label>
+            <label class="stp-toggle"><input type="checkbox" id="stp-invert-pitch"><span class="stp-toggle-track"></span></label>
           </div>
         </div>
 
@@ -9423,8 +9423,8 @@ function update(dt) {
 
   // MSFS keyboard convention — UP arrow / stick back = NOSE UP.
   let pitchIn = 0;
-  if (keys['ArrowUp']) pitchIn += 1;
-  if (keys['ArrowDown']) pitchIn -= 1;
+  if (keys['ArrowUp']) pitchIn -= 1;
+  if (keys['ArrowDown']) pitchIn += 1;
   let rollIn = 0;
   if (keys['ArrowRight']) rollIn += 1;
   if (keys['ArrowLeft']) rollIn -= 1;
@@ -14248,7 +14248,7 @@ function applyVolSettings() {
 
   // ── CONTROLS TAB — sensitivity & invert pitch ──────────────────────────────
   window._ctrlSensitivity  = 1;
-  window._ctrlInvertPitch  = true;
+  window._ctrlInvertPitch  = false;
   (function () {
     const slider = document.getElementById('stp-sens-slider');
     const valEl  = document.getElementById('stp-sens-val');
@@ -14350,9 +14350,9 @@ function applyVolSettings() {
     try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); } catch(e){ s = null; }
     if (!s) return;
 
-    // Invert-pitch default flipped to ON — migrate settings saved before that
+    // Invert-pitch default flipped to OFF — migrate settings saved before that
     // change so they pick up the new default instead of being stuck on the old one.
-    if (!s.invertPitchMigrated) { s.invertPitch = true; s.invertPitchMigrated = true; }
+    if (!s.invertPitchMigrated) { s.invertPitch = false; s.invertPitchMigrated = true; }
 
     // Toggles
     const applyToggle = function(cbId, val, onFn) {
