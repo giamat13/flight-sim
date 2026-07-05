@@ -92,6 +92,9 @@ body.rc-panel #coord-display{display:none}
 body.hide-keyhint #controls-hint{display:none !important}
 body.hide-pausebtn #flight-btns{display:none !important}
 body.hide-viewlabel #cam-label{display:none !important}
+body.hide-viewlabel #fps-counter{right:16px}
+body.cam-cockpit #fps-counter{top:auto;bottom:16px}
+body.hide-controllerlabel #gp-indicator{display:none !important}
 body.rc-panel #traffic-info{bottom:calc(var(--rc-lift,240px) + 8px) !important}
 body.rc-panel #ap-panel{bottom:calc(var(--rc-lift,240px) + 14px)}
 body.rc-panel #vjoy-wrap{bottom:calc(var(--rc-lift,240px) + 12px)}
@@ -1103,6 +1106,10 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
               <span class="stp-toggle-label">VIEW LABEL (COCKPIT/CHASE)</span>
               <label class="stp-toggle"><input type="checkbox" id="stp-viewlabel" checked><span class="stp-toggle-track"></span></label>
             </div>
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">CONTROLLER LABEL</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-controllerlabel" checked><span class="stp-toggle-track"></span></label>
+            </div>
           </div>
         </div>
 
@@ -1171,7 +1178,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
           </div>
           <div class="stp-toggle-row" style="max-width:340px">
             <span class="stp-toggle-label">INVERT PITCH (KEYBOARD &amp; STICK)</span>
-            <label class="stp-toggle"><input type="checkbox" id="stp-invert-pitch"><span class="stp-toggle-track"></span></label>
+            <label class="stp-toggle"><input type="checkbox" id="stp-invert-pitch" checked><span class="stp-toggle-track"></span></label>
           </div>
         </div>
 
@@ -12360,6 +12367,7 @@ function render() {
   drawAvionics();       // ND (traffic+weather+course) + EICAS, always on — plus master warning & caution
 
   document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : 'CHASE';
+  document.body.classList.toggle('cam-cockpit', cameraMode === 0);
 
   // Coordinates display
   const coordEl = document.getElementById('coord-display');
@@ -13999,6 +14007,7 @@ function applyVolSettings() {
   wireToggle('stp-keyhint',   function (on) { document.body.classList.toggle('hide-keyhint',  !on); _saveSettings(); });
   wireToggle('stp-pausebtn',  function (on) { document.body.classList.toggle('hide-pausebtn', !on); _saveSettings(); });
   wireToggle('stp-viewlabel', function (on) { document.body.classList.toggle('hide-viewlabel', !on); _saveSettings(); });
+  wireToggle('stp-controllerlabel', function (on) { document.body.classList.toggle('hide-controllerlabel', !on); _saveSettings(); });
 
   // ── Realistic cockpit (1=analog panel, 2=window frame, 3=hide markers) ──
   // No master switch: each toggle is independent, and turning all three off
@@ -14069,7 +14078,7 @@ function applyVolSettings() {
 
   // ── CONTROLS TAB — sensitivity & invert pitch ──────────────────────────────
   window._ctrlSensitivity  = 1;
-  window._ctrlInvertPitch  = false;
+  window._ctrlInvertPitch  = true;
   (function () {
     const slider = document.getElementById('stp-sens-slider');
     const valEl  = document.getElementById('stp-sens-val');
@@ -14143,6 +14152,7 @@ function applyVolSettings() {
       keyHint:     get('stp-keyhint'),
       pauseBtn:    get('stp-pausebtn'),
       viewLabel:   get('stp-viewlabel'),
+      controllerLabel: get('stp-controllerlabel'),
       rcPanel:     cockpit.panel,
       rcFrame:     cockpit.frame,
       rcMarkers:   cockpit.hideMarkers,
@@ -14151,6 +14161,7 @@ function applyVolSettings() {
       rdRing:      rdSlider ? rdSlider.value : '8',
       sensitivity: sensSlider ? sensSlider.value : '100',
       invertPitch: get('stp-invert-pitch'),
+      invertPitchMigrated: true,
       volMaster:   volSettings.master,
       volEngine:   volSettings.engine,
       volWind:     volSettings.wind,
@@ -14169,6 +14180,10 @@ function applyVolSettings() {
     try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); } catch(e){ s = null; }
     if (!s) return;
 
+    // Invert-pitch default flipped to ON — migrate settings saved before that
+    // change so they pick up the new default instead of being stuck on the old one.
+    if (!s.invertPitchMigrated) { s.invertPitch = true; s.invertPitchMigrated = true; }
+
     // Toggles
     const applyToggle = function(cbId, val, onFn) {
       const cb = document.getElementById(cbId);
@@ -14182,6 +14197,7 @@ function applyVolSettings() {
     applyToggle('stp-keyhint',   s.keyHint,   function(on){ document.body.classList.toggle('hide-keyhint',  !on); });
     applyToggle('stp-pausebtn',  s.pauseBtn,  function(on){ document.body.classList.toggle('hide-pausebtn', !on); });
     applyToggle('stp-viewlabel', s.viewLabel, function(on){ document.body.classList.toggle('hide-viewlabel', !on); });
+    applyToggle('stp-controllerlabel', s.controllerLabel, function(on){ document.body.classList.toggle('hide-controllerlabel', !on); });
     applyToggle('stp-rc-panel',   s.rcPanel,   function(on){ cockpit.panel = on; });
     applyToggle('stp-rc-frame',   s.rcFrame,   function(on){ cockpit.frame = on; });
     applyToggle('stp-rc-markers', s.rcMarkers, function(on){ cockpit.hideMarkers = on; });
@@ -14238,6 +14254,8 @@ function applyVolSettings() {
     applyVolSettings();
     syncVolSliders();
 
+    if (s.invertPitchMigrated) _saveSettings(); // persist the one-time invert-pitch migration
+
     // Time / season
     if (s.timeOverride) { env.timeOverride = true; env.time = s.timeOverride; applyEnvironment(false); }
     if (s.season) { env.season = s.season; }
@@ -14265,7 +14283,7 @@ function applyVolSettings() {
     if (rdSlider) rdSlider.addEventListener('input', _saveSettings);
     // Patch toggles
     ['stp-scanlines','stp-vignette','stp-hud','stp-minimap','stp-fps-counter',
-     'stp-keyhint','stp-pausebtn','stp-viewlabel',
+     'stp-keyhint','stp-pausebtn','stp-viewlabel','stp-controllerlabel',
      'stp-rc-panel','stp-rc-frame','stp-rc-markers'].forEach(function(id){
       const cb = document.getElementById(id); if (cb) cb.addEventListener('change', _saveSettings);
     });
@@ -14943,9 +14961,11 @@ function setPaused(p) {
   if (p) {
     pauseItems = pauseMenu ? Array.prototype.slice.call(pauseMenu.querySelectorAll('.sm-btn')) : [];
     setPauseFocus(0);
+    if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(function(){});
   } else {
     lastTime = performance.now();            // avoid a dt spike on resume
     try { window.focus(); } catch (e) {}
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(function(){});
   }
 }
 function togglePause() { if (chosen && simReady) setPaused(!paused); }
