@@ -5288,8 +5288,9 @@ async function initThree() {
     _v: new THREE.Vector3(), _cs: new THREE.Vector3(), _acPos: new THREE.Vector3()
   };
 
-  // eiffelTower is null until the model is downloaded on-demand in updateLandmarks().
-  THREEJS.eiffelTower = null;
+  // Landmark groups (Eiffel Tower, Colosseum, etc.) are created lazily, keyed by
+  // id, once each GLB is downloaded on-demand in updateLandmarks().
+  THREEJS.landmarkObjs = {};
 
   // ── Render settings (set by the VIDEO settings panel) ───────────────────
   // These can be called at any time after THREEJS is initialised.
@@ -5352,21 +5353,26 @@ function resetWorld() {
 // True when the aircraft is inside any building's footprint and below its roof —
 // i.e. it flew into a building. Cheap point-in-box test against the cached boxes.
 function buildingCollision() {
-  return eiffelCollision();
+  return landmarksCollision();
 }
 
-// Tapered-cylinder collision for the Eiffel Tower.
-// Only active once the GLB has been placed in the scene (within LANDMARK_LOAD_KM).
-function eiffelCollision() {
-  if (!THREEJS || !THREEJS.eiffelTower) return false;
-  const altM    = state.altitude * FT_TO_M;
-  const groundM = meshGroundHeightM(EIFFEL_LAT, EIFFEL_LON);
-  if (altM < groundM || altM > groundM + EIFFEL_REAL_HEIGHT_M) return false;
-  const horizM  = distFromPlayerM(EIFFEL_LAT, EIFFEL_LON);
-  // Radius tapers from 72 m at base (wide lattice legs) to 4 m at spire.
-  const frac   = (altM - groundM) / EIFFEL_REAL_HEIGHT_M;  // 0 = base, 1 = top
-  const radius = 72 * (1 - frac) + 4;
-  return horizM < radius;
+// Tapered-cylinder collision, checked against every landmark in LANDMARKS.
+// Only active once a landmark's GLB has been placed in the scene (within LANDMARK_LOAD_KM).
+function landmarksCollision() {
+  if (!THREEJS || !THREEJS.landmarkObjs) return false;
+  const altM = state.altitude * FT_TO_M;
+  for (let i = 0; i < LANDMARKS.length; i++) {
+    const lm = LANDMARKS[i];
+    if (!THREEJS.landmarkObjs[lm.id]) continue; // not loaded/placed yet
+    const groundM = meshGroundHeightM(lm.lat, lm.lon);
+    if (altM < groundM || altM > groundM + lm.heightM) continue;
+    const horizM = distFromPlayerM(lm.lat, lm.lon);
+    // Radius tapers linearly from radiusBase (ground) to radiusTop (roof/spire).
+    const frac   = (altM - groundM) / lm.heightM;  // 0 = base, 1 = top
+    const radius = lm.radiusBase * (1 - frac) + lm.radiusTop * frac;
+    if (horizM < radius) return true;
+  }
+  return false;
 }
 
 // ===================== Ground tiles (imagery draped over elevation) =====================
@@ -5626,13 +5632,52 @@ function updateBuildings() {
 }
 
 // ===================== Landmarks — on-demand GLB loading (like traffic models) =====================
-// Eiffel Tower coords (WGS-84) and real height.
-const EIFFEL_LAT = 48.8584, EIFFEL_LON = 2.2945;
-const EIFFEL_REAL_HEIGHT_M = 330;
-// "SM - EIffel Tower" by Scott Marshall, hosted on poly.pizza (CC Attribution, CORS open).
-const EIFFEL_GLB_URL = 'https://static.poly.pizza/95771d85-7ef5-4bbb-8d22-4baa2820396b.glb';
 // Only start the download when the camera is within this distance.
 const LANDMARK_LOAD_KM = 100;
+
+// World-famous landmarks, placed at their real WGS-84 coordinates.
+// Each entry: real height (m, tallest dimension the model is scaled to), a CORS-open
+// GLB URL, and a tapered-cylinder collision radius (base→top, in metres) used as a
+// cheap arcade approximation of the building's footprint.
+const LANDMARKS = [
+  {
+    id: 'eiffel', name: 'Eiffel Tower',
+    lat: 48.8584, lon: 2.2945, heightM: 330,
+    // "SM - EIffel Tower" by Scott Marshall, hosted on poly.pizza (CC Attribution, CORS open).
+    url: 'https://static.poly.pizza/95771d85-7ef5-4bbb-8d22-4baa2820396b.glb',
+    radiusBase: 72, radiusTop: 4   // wide lattice legs tapering to the spire
+  },
+  {
+    id: 'colosseum', name: 'Colosseum',
+    lat: 41.8902, lon: 12.4922, heightM: 48,
+    // "Colosseum" by CreativeTrio, hosted on poly.pizza (CC0, CORS open).
+    url: 'https://static.poly.pizza/1e7ca762-a0f2-4a13-8049-71a99e9aa33b.glb',
+    radiusBase: 85, radiusTop: 85  // squat oval amphitheatre — near-constant radius
+  },
+  {
+    id: 'liberty', name: 'Statue of Liberty',
+    lat: 40.6892, lon: -74.0445, heightM: 93,
+    // "Lady Liberty" by Anna M, hosted on poly.pizza (CC Attribution, CORS open).
+    url: 'https://static.poly.pizza/934e3216-3a6e-4e3d-b8fa-b1dd041bbb11.glb',
+    radiusBase: 14, radiusTop: 4    // stone pedestal narrowing to the statue
+  },
+  {
+    id: 'pyramid', name: 'Great Pyramid of Giza',
+    lat: 29.9792, lon: 31.1342, heightM: 138,
+    // "Pyramid" by Poly by Google, hosted on poly.pizza (CC Attribution, CORS open).
+    url: 'https://static.poly.pizza/e388ae1f-f495-4904-8e76-278a608fac58.glb',
+    radiusBase: 115, radiusTop: 2   // true cone shape, base to apex
+  },
+  {
+    id: 'greatwall', name: 'Great Wall of China (Badaling)',
+    lat: 40.4319, lon: 116.5704, heightM: 12,
+    // "Stone Wall Towers" by Quaternius, hosted on poly.pizza (CC0, CORS open).
+    // The wall stretches thousands of km, so this places a representative
+    // fortified-wall-with-towers segment at the famous Badaling section.
+    url: 'https://static.poly.pizza/477a4219-6c5a-4228-b0a5-f0ab12fabf76.glb',
+    radiusBase: 55, radiusTop: 55
+  }
+];
 
 // Per-URL cache, same concept as trafficModelCache.
 // { status: 'loading'|'ready'|'failed', obj: THREE.Group|null }
@@ -5668,34 +5713,41 @@ function ensureLandmarkModel(url, realHeightM) {
 // Called every frame from updateCamera().  Mirrors updateTrafficModels():
 // • if too far  → don't download, hide the group
 // • if in range → ensure the GLB is loading/loaded, position the group
+// Runs once per entry in LANDMARKS (Eiffel Tower, Colosseum, Statue of Liberty, etc).
 function updateLandmarks() {
   if (!THREEJS) return;
+  if (!THREEJS.landmarkObjs) THREEJS.landmarkObjs = {};
 
-  const groundM = meshGroundHeightM(EIFFEL_LAT, EIFFEL_LON);
-  const distM   = distCamToGeo(EIFFEL_LAT, EIFFEL_LON, groundM + EIFFEL_REAL_HEIGHT_M * 0.5);
+  for (let i = 0; i < LANDMARKS.length; i++) {
+    const lm = LANDMARKS[i];
+    const groundM = meshGroundHeightM(lm.lat, lm.lon);
+    const distM   = distCamToGeo(lm.lat, lm.lon, groundM + lm.heightM * 0.5);
+    const existing = THREEJS.landmarkObjs[lm.id];
 
-  // Out of range — hide existing group and skip load.
-  if (distM > LANDMARK_LOAD_KM * 1000) {
-    if (THREEJS.eiffelTower) THREEJS.eiffelTower.visible = false;
-    return;
+    // Out of range — hide existing group and skip load.
+    if (distM > LANDMARK_LOAD_KM * 1000) {
+      if (existing) existing.visible = false;
+      continue;
+    }
+
+    // Start (or poll) the download.
+    const rec = ensureLandmarkModel(lm.url, lm.heightM);
+    if (!rec || rec.status !== 'ready' || !rec.obj) continue; // still loading
+
+    // First time the model is ready: add it to the scene.
+    let g = existing;
+    if (!g) {
+      g = new THREE.Group();
+      g.add(rec.obj.clone(true));   // clone shares geometry/material (cheap, same as traffic)
+      g.userData.isLandmark = true;
+      THREEJS.landmarkGroup.add(g);
+      THREEJS.landmarkObjs[lm.id] = g;
+    }
+
+    // Reposition every frame (geoOrigin shifts as the world re-anchors).
+    g.visible = true;
+    g.position.copy(enuVec(lm.lat, lm.lon, groundM));
   }
-
-  // Start (or poll) the download.
-  const rec = ensureLandmarkModel(EIFFEL_GLB_URL, EIFFEL_REAL_HEIGHT_M);
-  if (!rec || rec.status !== 'ready' || !rec.obj) return; // still loading
-
-  // First time the model is ready: add it to the scene.
-  if (!THREEJS.eiffelTower) {
-    const g = new THREE.Group();
-    g.add(rec.obj.clone(true));   // clone shares geometry/material (cheap, same as traffic)
-    g.userData.isLandmark = true;
-    THREEJS.landmarkGroup.add(g);
-    THREEJS.eiffelTower = g;
-  }
-
-  // Reposition every frame (geoOrigin shifts as the world re-anchors).
-  THREEJS.eiffelTower.visible = true;
-  THREEJS.eiffelTower.position.copy(enuVec(EIFFEL_LAT, EIFFEL_LON, groundM));
 }
 
 // ===================== Procedural scatter — real GLB trees & houses (seeded) =====================
