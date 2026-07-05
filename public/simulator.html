@@ -354,6 +354,17 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
 .stp-key-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px 20px}
 .stp-key-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:10px;letter-spacing:1px;opacity:0.85}
 .stp-key-action{opacity:0.7}
+.stp-camlist{display:flex;flex-direction:column;gap:6px}
+.stp-cam-row{display:flex;align-items:center;gap:10px;background:rgba(0,255,65,0.03);border:1px solid rgba(0,255,65,0.15);border-radius:5px;padding:7px 10px;transition:opacity .15s,border-color .15s}
+.stp-cam-row.stp-cam-off{opacity:0.45}
+.stp-cam-row input[type="checkbox"]{width:15px;height:15px;accent-color:#00FF41;cursor:pointer;flex-shrink:0}
+.stp-cam-order{width:18px;text-align:center;font-size:11px;font-weight:700;color:#00FF41;opacity:0.7;flex-shrink:0}
+.stp-cam-row.stp-cam-off .stp-cam-order{opacity:0.25}
+.stp-cam-name{flex:1;font-size:11px;letter-spacing:1.5px}
+.stp-cam-moves{display:flex;gap:4px;flex-shrink:0}
+.stp-cam-move{cursor:pointer;background:rgba(0,255,65,0.06);border:1px solid rgba(0,255,65,0.25);color:#00FF41;font-family:inherit;font-size:11px;line-height:1;width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.stp-cam-move:hover{background:rgba(0,255,65,0.18);border-color:#00FF41}
+.stp-cam-move:disabled{opacity:0.2;cursor:default;pointer-events:none}
 .stp-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 6px;background:rgba(0,255,65,0.08);border:1px solid rgba(0,255,65,0.35);border-radius:4px;font-size:9px;letter-spacing:0.5px;color:#00FF41;box-shadow:0 1px 0 rgba(0,255,65,0.25)}
 @media (max-width:640px){
   .stp-shell{flex-direction:column}
@@ -1192,6 +1203,15 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
         </div>
 
         <div class="stp-card">
+          <div class="stp-card-head"><span class="stp-card-icon">🎥</span><span class="stp-card-title">CAMERA VIEWS (C KEY)</span></div>
+          <div class="stp-hint" style="margin-bottom:2px">Choose which views the <span class="stp-kbd" style="padding:1px 5px">C</span> key cycles through, and in what order. Unchecked views are skipped entirely.</div>
+          <div id="stp-camlist" class="stp-camlist"></div>
+          <div class="stp-row" style="margin-top:2px">
+            <button class="stp-btn" id="stp-cam-reset">↺ RESET TO DEFAULT</button>
+          </div>
+        </div>
+
+        <div class="stp-card">
           <div class="stp-card-head"><span class="stp-card-icon">⌨</span><span class="stp-card-title">KEYBOARD REFERENCE</span></div>
           <div class="stp-key-grid">
             <div class="stp-key-row"><span class="stp-key-action">Pitch</span><span><span class="stp-kbd">↑</span> <span class="stp-kbd">↓</span></span></div>
@@ -1202,7 +1222,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
             <div class="stp-key-row"><span class="stp-key-action">Flaps</span><span class="stp-kbd">F</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Gear</span><span class="stp-kbd">G</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Speedbrake / spoiler</span><span class="stp-kbd">V</span></div>
-            <div class="stp-key-row"><span class="stp-key-action">Camera view</span><span class="stp-kbd">C</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Camera view (customizable ↑)</span><span class="stp-kbd">C</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Autopilot (hold=nav map)</span><span class="stp-kbd">A</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Pause</span><span class="stp-kbd">P</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Reset flight</span><span class="stp-kbd">R</span></div>
@@ -4833,22 +4853,31 @@ function stallSpeedKts() {
 }
 
 let lastTime = performance.now();
-// 0=cockpit, 1=chase, 2=slew, 3=orbit, 4=tower, 5=wing, 6=nose (default: 3rd-person so you see the plane)
+// 0=cockpit, 1=chase, 2=slew, 3=orbit, 4=tower, 5=wing, 6=nose, 7=topdown, 8=drone
+// (default: 3rd-person so you see the plane)
 let cameraMode = 1;
-// "Grounded" views cycled with C (cockpit/chase/tower/wing/nose). ORBIT (3) and
-// SLEW (2) are reached only through X — see cycleFreeCam().
-const CAM_BASE_MODES = [0, 1, 4, 5, 6];
+// "Grounded" views cycled with C (cockpit/chase/tower/wing/nose/topdown/drone). ORBIT (3)
+// and SLEW (2) are reached only through X — see cycleFreeCam(). The set + order actually
+// cycled through is configurable in Settings → CONTROLS → CAMERA VIEWS; CAM_BASE_MODES holds
+// the live (possibly user-customized) list, seeded from CAM_BASE_MODES_DEFAULT.
+const CAM_ALL_MODES = [0, 1, 4, 5, 6, 7, 8];
+const CAM_BASE_MODES_DEFAULT = [1, 0, 5, 8]; // CHASE, COCKPIT, WING, DRONE — new suggested default
+let CAM_BASE_MODES = CAM_BASE_MODES_DEFAULT.slice();
 function camModeLabel(m) {
   return m === 0 ? 'COCKPIT' : m === 2 ? 'SLEW' : m === 3 ? 'ORBIT' :
-         m === 4 ? 'TOWER' : m === 5 ? 'WING' : m === 6 ? 'NOSE' : 'CHASE';
+         m === 4 ? 'TOWER' : m === 5 ? 'WING' : m === 6 ? 'NOSE' :
+         m === 7 ? 'TOP-DOWN' : m === 8 ? 'DRONE' : 'CHASE';
 }
-// Cycle the "grounded" camera views with C: cockpit -> chase -> tower -> wing -> nose -> ...
+// Cycle the "grounded" camera views with C: whatever subset/order is enabled in Settings.
 function cycleBaseCamMode() {
+  if (!CAM_BASE_MODES.length) return;
   const i = CAM_BASE_MODES.indexOf(cameraMode);
   cameraMode = CAM_BASE_MODES[(i + 1 + CAM_BASE_MODES.length) % CAM_BASE_MODES.length];
   if (cameraMode === 4) { towerPos = null; showToast('TOWER CAM'); }
   else if (cameraMode === 5) showToast('WING VIEW');
   else if (cameraMode === 6) showToast('NOSE VIEW');
+  else if (cameraMode === 7) showToast('TOP-DOWN VIEW');
+  else if (cameraMode === 8) { dronePos = null; showToast('DRONE CAM'); }
 }
 
 // ===================== Free camera: ORBIT + SLEW =====================
@@ -4869,6 +4898,7 @@ const SLEW_BOOST_MULT = 4;   // Shift held
 const ORBIT_LOOK_RATE = 75;  // deg/sec
 let towerPos = null;         // THREE.Vector3 — fixed ground anchor for TOWER mode
 const TOWER_REACQUIRE_DIST = 900; // m — beyond this, TOWER picks a fresh spot ahead of the aircraft
+let dronePos = null;         // THREE.Vector3 — smoothed high-altitude follow point for DRONE mode
 
 // ===================== Active pause (freeze without opening the menu) =====================
 // Stops the flight clock in place — instantly, no menu, no fade to the map —
@@ -6316,6 +6346,29 @@ function updateCamera() {
     const noseDist = Math.max(6, (acDimsForCam.len || 15) * 0.55);
     cam.position.set(acPos.x + headingDirX(state.heading) * noseDist, acPos.y + 0.6, acPos.z + headingDirZ(state.heading) * noseDist);
     cam.lookAt(acPos.x, acPos.y + 0.8, acPos.z);
+  } else if (cameraMode === 7) {
+    // Top-down: bird's-eye, directly above the aircraft looking straight down,
+    // rotated so "up" on screen matches the current heading.
+    THREEJS.aircraft.visible = !spectate.active;
+    const topDist = Math.max(60, (acDimsForCam.len || 15) * 5);
+    cam.position.set(acPos.x, acPos.y + topDist, acPos.z);
+    setCamOrient(cam, state.heading, -90, 0);
+  } else if (cameraMode === 8) {
+    // Drone: a high, slightly-lagging chase cam — further back and higher than
+    // TOWER, drifting smoothly to stay roughly above/behind the aircraft rather
+    // than snapping to it, for a cinematic "chase drone" feel.
+    THREEJS.aircraft.visible = !spectate.active;
+    const back = 90, up = 55;
+    const targetX = acPos.x - headingDirX(state.heading) * back;
+    const targetY = acPos.y + up;
+    const targetZ = acPos.z - headingDirZ(state.heading) * back;
+    if (!dronePos) dronePos = new THREE.Vector3(targetX, targetY, targetZ);
+    const lag = Math.min(1, (frameDt || 0.016) * 1.4);
+    dronePos.x += (targetX - dronePos.x) * lag;
+    dronePos.y += (targetY - dronePos.y) * lag;
+    dronePos.z += (targetZ - dronePos.z) * lag;
+    cam.position.copy(dronePos);
+    cam.lookAt(acPos.x, acPos.y, acPos.z);
   } else {
     // Chase: a stable third-person rig behind the aircraft. The left stick visibly
     // banks/pitches the (real, lit) model; the right stick orbits the camera, which
@@ -14267,6 +14320,7 @@ function applyVolSettings() {
     updateStpButtons();
     syncToggleStates();
     syncVolSliders();
+    if (typeof renderCamList === 'function') renderCamList();
     if (!fromPause && startMenu) startMenu.style.display = 'none';
     if (fromPause && pauseMenu)  pauseMenu.style.display  = 'none';
     settingsPanel.style.display = 'flex';
@@ -14406,6 +14460,92 @@ function applyVolSettings() {
     applyCockpitDom();
   });
   wireToggle('stp-rc-markers', function (on) { cockpit.hideMarkers = on; });
+
+  // ── Camera views (C key): which base views are in the cycle, and in what order ──
+  // State model: camCfg is a full ordered list of ALL modes (enabled first, in the
+  // order the user wants them cycled, followed by the disabled ones in their last
+  // known order) — this way re-enabling a view drops it back where it was.
+  let camCfg = CAM_ALL_MODES.map(function (m) { return { mode: m, on: CAM_BASE_MODES_DEFAULT.indexOf(m) !== -1 }; });
+  // Keep enabled ones first, in CAM_BASE_MODES_DEFAULT's order, for the initial render.
+  camCfg.sort(function (a, b) {
+    const ao = CAM_BASE_MODES_DEFAULT.indexOf(a.mode), bo = CAM_BASE_MODES_DEFAULT.indexOf(b.mode);
+    if (a.on && b.on) return ao - bo;
+    if (a.on !== b.on) return a.on ? -1 : 1;
+    return 0;
+  });
+
+  function applyCamCfg() {
+    CAM_BASE_MODES = camCfg.filter(function (c) { return c.on; }).map(function (c) { return c.mode; });
+    // If the active camera got disabled, hop to the first still-enabled view.
+    if (CAM_ALL_MODES.indexOf(cameraMode) !== -1 && CAM_BASE_MODES.indexOf(cameraMode) === -1 && CAM_BASE_MODES.length) {
+      cameraMode = CAM_BASE_MODES[0];
+    }
+  }
+
+  function renderCamList() {
+    const list = document.getElementById('stp-camlist');
+    if (!list) return;
+    list.innerHTML = '';
+    let enabledIdx = 0;
+    camCfg.forEach(function (entry, i) {
+      const row = document.createElement('div');
+      row.className = 'stp-cam-row' + (entry.on ? '' : ' stp-cam-off');
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = entry.on;
+      cb.addEventListener('change', function () {
+        entry.on = cb.checked;
+        applyCamCfg(); renderCamList(); _saveSettings();
+      });
+
+      const order = document.createElement('span');
+      order.className = 'stp-cam-order';
+      if (entry.on) { enabledIdx++; order.textContent = enabledIdx; }
+      else order.textContent = '–';
+
+      const name = document.createElement('span');
+      name.className = 'stp-cam-name';
+      name.textContent = camModeLabel(entry.mode);
+
+      const moves = document.createElement('div');
+      moves.className = 'stp-cam-moves';
+      const up = document.createElement('button');
+      up.type = 'button'; up.className = 'stp-cam-move'; up.textContent = '↑';
+      up.disabled = i === 0;
+      up.addEventListener('click', function () {
+        if (i === 0) return;
+        const tmp = camCfg[i - 1]; camCfg[i - 1] = camCfg[i]; camCfg[i] = tmp;
+        applyCamCfg(); renderCamList(); _saveSettings();
+      });
+      const down = document.createElement('button');
+      down.type = 'button'; down.className = 'stp-cam-move'; down.textContent = '↓';
+      down.disabled = i === camCfg.length - 1;
+      down.addEventListener('click', function () {
+        if (i === camCfg.length - 1) return;
+        const tmp = camCfg[i + 1]; camCfg[i + 1] = camCfg[i]; camCfg[i] = tmp;
+        applyCamCfg(); renderCamList(); _saveSettings();
+      });
+      moves.appendChild(up); moves.appendChild(down);
+
+      row.appendChild(cb); row.appendChild(order); row.appendChild(name); row.appendChild(moves);
+      list.appendChild(row);
+    });
+  }
+
+  document.getElementById('stp-cam-reset') && document.getElementById('stp-cam-reset').addEventListener('click', function () {
+    camCfg = CAM_ALL_MODES.map(function (m) { return { mode: m, on: CAM_BASE_MODES_DEFAULT.indexOf(m) !== -1 }; });
+    camCfg.sort(function (a, b) {
+      const ao = CAM_BASE_MODES_DEFAULT.indexOf(a.mode), bo = CAM_BASE_MODES_DEFAULT.indexOf(b.mode);
+      if (a.on && b.on) return ao - bo;
+      if (a.on !== b.on) return a.on ? -1 : 1;
+      return 0;
+    });
+    applyCamCfg(); renderCamList(); _saveSettings();
+  });
+
+  applyCamCfg();
+  renderCamList();
 
   // ── Render distance slider ─────────────────────────────────────────────────
   (function () {
@@ -14550,7 +14690,8 @@ function applyVolSettings() {
       volWind:     volSettings.wind,
       volAlarms:   volSettings.alarms,
       timeOverride: env.timeOverride ? env.time : null,
-      season:      env.season
+      season:      env.season,
+      camCfg:      camCfg.map(function (c) { return { mode: c.mode, on: c.on }; })
     };
   }
 
@@ -14642,6 +14783,21 @@ function applyVolSettings() {
     // Time / season
     if (s.timeOverride) { env.timeOverride = true; env.time = s.timeOverride; applyEnvironment(false); }
     if (s.season) { env.season = s.season; }
+
+    // Camera views (C key): restore saved order/enabled set. Any mode that didn't
+    // exist yet when the save was made (e.g. a newly added view) is appended at the
+    // end, disabled, so old saves don't silently lose new features but also don't
+    // suddenly change the user's cycle without them opting in.
+    if (Array.isArray(s.camCfg) && s.camCfg.length && typeof camCfg !== 'undefined') {
+      const restored = s.camCfg.filter(function (c) { return CAM_ALL_MODES.indexOf(c.mode) !== -1; });
+      const known = restored.map(function (c) { return c.mode; });
+      CAM_ALL_MODES.forEach(function (m) {
+        if (known.indexOf(m) === -1) restored.push({ mode: m, on: false });
+      });
+      camCfg = restored;
+      if (typeof applyCamCfg === 'function') applyCamCfg();
+      if (typeof renderCamList === 'function') renderCamList();
+    }
   }
 
   // Auto-save whenever any setting changes (piggyback existing events)
