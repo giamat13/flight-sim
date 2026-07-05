@@ -89,6 +89,9 @@ body.rc-panel #minimap{bottom:calc(var(--rc-lift,240px) + 10px)}
 #minimap.rc-radar-docked #mm-label{color:rgba(230,232,235,0.55);text-shadow:none}
 body.rc-panel #loc-label{bottom:calc(var(--rc-lift,240px) + 6px)}
 body.rc-panel #coord-display{display:none}
+/* Cockpit-panel mode: dock the country readout onto the panel with the other labels
+   (above the location name) instead of floating on the windscreen glass — realism rule. */
+body.rc-panel #country-chip{top:auto;left:50%;right:auto;bottom:calc(var(--rc-lift,240px) + 24px);transform:translateX(-50%);background:rgba(0,0,0,0.34);border-color:rgba(0,255,65,0.26);box-shadow:none}
 body.hide-keyhint #controls-hint{display:none !important}
 body.hide-pausebtn #flight-btns{display:none !important}
 body.hide-viewlabel #cam-label{display:none !important}
