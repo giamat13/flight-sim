@@ -520,6 +520,19 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
 /* Offline indicator */
 #offline-indicator{position:fixed;bottom:44px;right:16px;z-index:25;pointer-events:none;display:none;color:#ffaa00;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;background:rgba(60,30,0,0.85);border:1px solid rgba(255,170,0,0.55);border-radius:4px;padding:3px 9px}
 
+/* ===== Country display =====
+   #country-chip is a small, always-on readout of the country the aircraft is
+   currently over. #country-banner is a larger, transient announcement shown when
+   crossing into a new country (and once at flight start). Both use flagcdn.com PNGs. */
+#country-chip{position:fixed;top:14px;left:14px;z-index:24;pointer-events:none;display:none;align-items:center;gap:7px;color:rgba(0,255,65,0.75);font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;background:rgba(0,20,5,0.72);border:1px solid rgba(0,255,65,0.35);border-radius:5px;padding:4px 9px 4px 6px;box-shadow:0 0 12px rgba(0,255,65,0.08)}
+#country-chip img{width:22px;height:auto;display:block;border:1px solid rgba(0,255,65,0.35);border-radius:2px;image-rendering:auto}
+#country-chip .cc-name{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+#country-banner{position:fixed;top:64px;left:50%;transform:translateX(-50%) translateY(-14px);z-index:24;pointer-events:none;display:none;opacity:0;transition:opacity .5s ease,transform .5s ease;flex-direction:column;align-items:center;gap:8px;text-align:center}
+#country-banner.cb-show{opacity:1;transform:translateX(-50%) translateY(0)}
+#country-banner img{width:120px;height:auto;display:block;border:1px solid rgba(0,255,65,0.5);border-radius:4px;box-shadow:0 0 24px rgba(0,0,0,0.6)}
+#country-banner .cb-sub{color:rgba(0,255,65,0.55);font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:3px}
+#country-banner .cb-name{color:#00FF41;font-size:22px;font-family:'JetBrains Mono',monospace;letter-spacing:4px;text-shadow:0 0 12px rgba(0,255,65,0.4)}
+
 </style>
 </head>
 <body>
@@ -723,6 +736,12 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
           <div class="nm-dl-step-detail" id="nm-dld-traffic">—</div>
           <div class="nm-dl-step-subbar"><div class="nm-dl-step-fill" id="nm-dlf-traffic"></div></div>
         </div>
+        <div class="nm-dl-step-row" id="nm-dlr-borders">
+          <div class="nm-dl-step-icon" id="nm-dli-borders">⏸</div>
+          <div class="nm-dl-step-label">Country name, flag &amp; borders</div>
+          <div class="nm-dl-step-detail" id="nm-dld-borders">—</div>
+          <div class="nm-dl-step-subbar"><div class="nm-dl-step-fill" id="nm-dlf-borders"></div></div>
+        </div>
       </div>
     </div>
     <!-- Step 3: done -->
@@ -776,6 +795,14 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
   <button class="fb-btn" id="fb-pause" title="Pause (P)">⏸</button>
 </div>
 <div id="loc-label">GRAND CANYON, AZ</div>
+<!-- Always-on current-country readout (flag + name) -->
+<div id="country-chip"><img id="country-chip-flag" crossorigin="anonymous" alt=""><span class="cc-name" id="country-chip-name"></span></div>
+<!-- Transient announcement shown when entering a new country / at flight start -->
+<div id="country-banner">
+  <img id="country-banner-flag" crossorigin="anonymous" alt="">
+  <div class="cb-sub" id="country-banner-sub">NOW ENTERING</div>
+  <div class="cb-name" id="country-banner-name"></div>
+</div>
 <div id="controls-hint">
   E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>C CAMERA · R RESET<br>F3+A RELOAD RENDER<br><span style="opacity:0.7">🎮 GAMEPAD READY</span>
 </div>
@@ -1200,6 +1227,15 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
             <span class="stp-toggle-label">INVERT PITCH (KEYBOARD &amp; STICK)</span>
             <label class="stp-toggle"><input type="checkbox" id="stp-invert-pitch"><span class="stp-toggle-track"></span></label>
           </div>
+        </div>
+
+        <div class="stp-card">
+          <div class="stp-card-head"><span class="stp-card-icon">🛫</span><span class="stp-card-title">DEPARTURE</span></div>
+          <div class="stp-toggle-row" style="max-width:360px">
+            <span class="stp-toggle-label">SKIP RUNWAY SEARCH (SPAWN EXACTLY HERE)</span>
+            <label class="stp-toggle"><input type="checkbox" id="stp-skip-runway"><span class="stp-toggle-track"></span></label>
+          </div>
+          <div class="stp-hint">Normally the sim relocates you to the nearest runway or a flat clearing before takeoff. Turn this ON to spawn and take off at the EXACT point you chose, with no search. Default OFF.</div>
         </div>
 
         <div class="stp-card">
@@ -1899,6 +1935,51 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sources.length) tryNext(0); else onDone(0);
   }
 
+  // Pre-fetch the country name, flag and border polygon for the area center so the
+  // current-country readout resolves fully OFFLINE after a download (point-in-polygon
+  // on the saved borders, plus the flag image cached for display).
+  function prefetchBorders(bbox, onDone) {
+    const lat = ((bbox.minLat + bbox.maxLat) / 2).toFixed(4);
+    const lon = ((bbox.minLon + bbox.maxLon) / 2).toFixed(4);
+    const url = 'https://nominatim.openstreetmap.org/reverse?format=json&zoom=3&addressdetails=1' +
+      '&polygon_geojson=1&polygon_threshold=0.008&lat=' + lat + '&lon=' + lon;
+    fetch(url, { headers: { 'Accept': 'application/json' } })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        const a = d && d.address;
+        if (!a || !a.country_code) { onDone(false, 'unavailable'); return; }
+        const code = a.country_code.toLowerCase();
+        const name = a.country || code.toUpperCase();
+        // geojson → array of rings [[[lon,lat],…],…]
+        const rings = [];
+        const g = d.geojson;
+        if (g && g.coordinates) {
+          if (g.type === 'Polygon') g.coordinates.forEach(function(ring){ rings.push(ring); });
+          else if (g.type === 'MultiPolygon') g.coordinates.forEach(function(poly){ poly.forEach(function(ring){ rings.push(ring); }); });
+        }
+        try {
+          const store = JSON.parse(localStorage.getItem(COUNTRY_BORDERS_KEY) || '{}');
+          store[code] = { name: name, rings: rings, savedAt: Date.now() };
+          localStorage.setItem(COUNTRY_BORDERS_KEY, JSON.stringify(store));
+        } catch(e){}
+        try {
+          const grid = JSON.parse(localStorage.getItem(COUNTRY_CACHE_KEY) || '{}');
+          grid[(+lat).toFixed(1) + ',' + (+lon).toFixed(1)] = { code: code, name: name };
+          localStorage.setItem(COUNTRY_CACHE_KEY, JSON.stringify(grid));
+        } catch(e){}
+        // Cache both flag sizes into the app cache so they render with no network.
+        if ('caches' in window) {
+          caches.open('flight-sim-app-v1').then(function(cache){
+            [FLAG_BASE_SM + code + '.png', FLAG_BASE + code + '.png'].forEach(function(u){
+              fetch(u, { mode: 'cors' }).then(function(r){ if (r && r.ok) cache.put(u, r); }).catch(function(){});
+            });
+          }).catch(function(){});
+        }
+        onDone(true, name + (rings.length ? ' + borders' : ''));
+      })
+      .catch(function(){ onDone(false, 'unavailable'); });
+  }
+
   // UI element refs for the new progress screen
   const stepName     = document.getElementById('nm-dl-step-name');
   const stepProgress = document.getElementById('nm-dl-step-progress');
@@ -2003,17 +2084,19 @@ document.addEventListener('DOMContentLoaded', function() {
         setStep('tiles', '✓', total + ' tiles cached', 100);
         setOverall(total, total, 0, 3);
 
-        // Phase 2: airports + weather + traffic (parallel)
+        // Phase 2: airports + weather + traffic + borders (parallel)
         setStep('airports', '⬇', 'fetching…', 0);
         setStep('weather',  '⬇', 'fetching…', 0);
         setStep('traffic',  '⬇', 'fetching…', 0);
+        setStep('borders',  '⬇', 'fetching…', 0);
 
+        const EXTRA_TOTAL = 4;
         let extraDone = 0;
         function extraTick(id, icon, detail) {
           extraDone++;
           setStep(id, icon, detail, 100);
-          setOverall(total, total, extraDone, 3);
-          if (extraDone < 3) return;
+          setOverall(total, total, extraDone, EXTRA_TOTAL);
+          if (extraDone < EXTRA_TOTAL) return;
           // All done — measure actual cache size then save area record
           const area = {
             id: areaId, name: name,
@@ -2032,7 +2115,7 @@ document.addEventListener('DOMContentLoaded', function() {
           if (doneTitle) doneTitle.textContent = '"' + name + '" SAVED ✓';
           const sizeLabel = urls._estBytes ? '  ·  ~' + formatBytes(urls._estBytes) : '';
           if (doneSummary) doneSummary.textContent =
-            total + ' map tiles' + sizeLabel + '  ·  airports  ·  7-day weather  ·  traffic';
+            total + ' map tiles' + sizeLabel + '  ·  airports  ·  7-day weather  ·  traffic  ·  country borders';
         }
 
         prefetchAirports(bbox, function(found) {
@@ -2043,6 +2126,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         snapshotTraffic(bbox, areaId, function(count) {
           extraTick('traffic', count > 0 ? '✓' : '⚠', count > 0 ? count + ' aircraft' : 'none in area');
+        });
+        prefetchBorders(bbox, function(ok, detail) {
+          extraTick('borders', ok ? '✓' : '⚠', detail || (ok ? 'saved' : 'unavailable'));
         });
       }
     );
@@ -2067,6 +2153,181 @@ document.addEventListener('DOMContentLoaded', function() {
 
 setTimeout(updateOfflineIndicator, 800);
 // ===================== End Offline Map =====================
+
+// ===================== Country detection & display =====================
+// Reverse-geocodes the aircraft position (Nominatim) to name the country we are
+// flying over. Results are cached per ~11 km grid cell in localStorage, and the
+// offline map download can save country border polygons — so after a download the
+// current country still resolves with NO network (point-in-polygon on the borders).
+//
+// UI surfaces:
+//   • #country-chip   — small, ALWAYS-ON readout (flag + name), top-left.
+//   • #country-banner — large transient "NOW ENTERING <country>" shown on a country
+//                       change and once at flight start.
+const COUNTRY_CACHE_KEY   = 'flight-sim-country-cache';
+const COUNTRY_BORDERS_KEY = 'flight-sim-offline-borders';
+const FLAG_BASE    = 'https://flagcdn.com/w160/';   // <cc>.png — banner
+const FLAG_BASE_SM = 'https://flagcdn.com/w40/';    // <cc>.png — chip
+
+// "Fishland" — a private in-joke of the התשובה (HaTeshuva) podcast fanbase: within a
+// 100 m radius of Tuval St 20 (the Bursa / diamond-exchange district, Ramat Gan) the
+// sim proudly reports the sovereign State of Fishland instead of Israel.
+const FISHLAND = { lat: 32.0874945, lon: 34.8034430, radiusM: 100, name: 'מדינת פישלנד' };
+
+let _countryGrid = {};
+try { _countryGrid = JSON.parse(localStorage.getItem(COUNTRY_CACHE_KEY) || '{}'); } catch (e) {}
+function _countryGridKey(lat, lon) { return lat.toFixed(1) + ',' + lon.toFixed(1); }
+function _saveCountryGrid() {
+  try {
+    const keys = Object.keys(_countryGrid);
+    if (keys.length > 4000) keys.slice(0, keys.length - 4000).forEach(function (k) { delete _countryGrid[k]; });
+    localStorage.setItem(COUNTRY_CACHE_KEY, JSON.stringify(_countryGrid));
+  } catch (e) {}
+}
+
+// Metres between two lat/lon (equirectangular — accurate at the 100 m easter-egg scale).
+function _metresBetween(la1, lo1, la2, lo2) {
+  const dLat = (la2 - la1) * M_PER_DEG_LAT;
+  const dLon = (lo2 - lo1) * M_PER_DEG_LAT * Math.cos((la1 + la2) * 0.5 * Math.PI / 180);
+  return Math.hypot(dLat, dLon);
+}
+
+// Even-odd point-in-polygon across all rings of a (multi)polygon. rings: [[[lon,lat],…],…].
+function _pointInRings(x, y, rings) {
+  let inside = false;
+  for (let p = 0; p < rings.length; p++) {
+    const ring = rings[p];
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// Offline country lookup: test saved border polygons. Returns {code,name} or null.
+function _countryFromSavedBorders(lat, lon) {
+  let store;
+  try { store = JSON.parse(localStorage.getItem(COUNTRY_BORDERS_KEY) || '{}'); } catch (e) { return null; }
+  for (const code in store) {
+    const rec = store[code];
+    if (rec && rec.rings && rec.rings.length && _pointInRings(lon, lat, rec.rings))
+      return { code: code, name: rec.name || code.toUpperCase() };
+  }
+  return null;
+}
+
+// Resolve the country at (lat,lon) → cb({code,name}) or cb(null).
+function detectCountry(lat, lon, cb) {
+  // Fishland easter egg wins over everything else.
+  if (_metresBetween(lat, lon, FISHLAND.lat, FISHLAND.lon) <= FISHLAND.radiusM) {
+    cb({ code: '_fishland', name: FISHLAND.name }); return;
+  }
+  const gk = _countryGridKey(lat, lon);
+  if (_countryGrid[gk]) { cb(_countryGrid[gk]); return; }
+
+  // Offline / fast path: saved border polygons (populated by a map download).
+  const off = _countryFromSavedBorders(lat, lon);
+  if (off) { _countryGrid[gk] = off; _saveCountryGrid(); cb(off); return; }
+
+  if (!navigator.onLine) { cb(null); return; }
+  const url = 'https://nominatim.openstreetmap.org/reverse?format=json&zoom=3&addressdetails=1&lat=' +
+    lat.toFixed(4) + '&lon=' + lon.toFixed(4);
+  fetch(url, { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      const a = d && d.address;
+      if (!a || !a.country_code) { cb(null); return; }
+      const rec = { code: a.country_code.toLowerCase(), name: a.country || a.country_code.toUpperCase() };
+      _countryGrid[gk] = rec; _saveCountryGrid();
+      cb(rec);
+    })
+    .catch(function () { cb(null); });
+}
+
+const _ccChip     = document.getElementById('country-chip');
+const _ccChipFlag = document.getElementById('country-chip-flag');
+const _ccChipName = document.getElementById('country-chip-name');
+const _cbBanner   = document.getElementById('country-banner');
+const _cbFlag     = document.getElementById('country-banner-flag');
+const _cbName     = document.getElementById('country-banner-name');
+const _cbSub      = document.getElementById('country-banner-sub');
+
+let _curCountry = null;          // {code,name} currently displayed
+let _countryTimer = 0;           // seconds until next reverse-geocode poll
+let _countryReqInFlight = false;
+let _bannerHideTimer = 0;
+
+function _flagUrl(code, small) {
+  if (!code || code[0] === '_') return null;   // synthetic (Fishland) → no real flag
+  return (small ? FLAG_BASE_SM : FLAG_BASE) + code + '.png';
+}
+
+function setCountryChip(rec) {
+  if (!_ccChip) return;
+  if (!rec) { _ccChip.style.display = 'none'; return; }
+  const url = _flagUrl(rec.code, true);
+  if (url && _ccChipFlag) { _ccChipFlag.src = url; _ccChipFlag.style.display = 'block'; }
+  else if (_ccChipFlag) { _ccChipFlag.style.display = 'none'; }
+  if (_ccChipName) _ccChipName.textContent = rec.name;
+  _ccChip.style.display = 'flex';
+}
+
+function announceCountry(rec) {
+  setCountryChip(rec);
+  // Realism rule (see cockpit section): never splash a big banner onto the
+  // windscreen in cockpit view. The small chip stays as the permanent readout.
+  if (typeof cockpitFrameOn === 'function' && cockpitFrameOn()) return;
+  if (!_cbBanner || !rec) return;
+  const url = _flagUrl(rec.code, false);
+  if (url && _cbFlag) { _cbFlag.src = url; _cbFlag.style.display = 'block'; }
+  else if (_cbFlag) { _cbFlag.style.display = 'none'; }
+  if (_cbName) _cbName.textContent = rec.name;
+  if (_cbSub) _cbSub.textContent = (rec.code === '_fishland') ? 'YOU HAVE ENTERED' : 'NOW ENTERING';
+  _cbBanner.style.display = 'flex';
+  void _cbBanner.offsetWidth;            // reflow so the fade-in transition fires
+  _cbBanner.classList.add('cb-show');
+  clearTimeout(_bannerHideTimer);
+  _bannerHideTimer = setTimeout(function () {
+    _cbBanner.classList.remove('cb-show');
+    setTimeout(function () { _cbBanner.style.display = 'none'; }, 600);
+  }, 5000);
+}
+
+// Poll position → detect country; announce on change. Called every frame from update().
+function updateCountry(dt) {
+  if (typeof PROC !== 'undefined' && PROC.active) { setCountryChip(null); return; }  // seeded worlds have no real country
+  // Fishland is checked every frame so even a fast low pass over Tuval 20 catches it.
+  const nearFish = _metresBetween(state.lat, state.lon, FISHLAND.lat, FISHLAND.lon) <= FISHLAND.radiusM;
+  if (nearFish) {
+    if (!_curCountry || _curCountry.code !== '_fishland') {
+      _curCountry = { code: '_fishland', name: FISHLAND.name };
+      announceCountry(_curCountry);
+    }
+    _countryTimer = 4;
+    return;
+  }
+  _countryTimer -= dt;
+  if (_countryTimer > 0 || _countryReqInFlight) return;
+  _countryTimer = 4;   // poll every 4 s
+  _countryReqInFlight = true;
+  detectCountry(state.lat, state.lon, function (rec) {
+    _countryReqInFlight = false;
+    if (!rec) return;
+    if (!_curCountry || _curCountry.code !== rec.code) { _curCountry = rec; announceCountry(rec); }
+    else setCountryChip(rec);
+  });
+}
+
+// Clear country tracking at the start of a new flight so the first country is
+// always announced fresh (shows the country name at flight start, not only on crossing).
+function resetCountryDisplay() {
+  _curCountry = null; _countryTimer = 0; _countryReqInFlight = false;
+  clearTimeout(_bannerHideTimer);
+  if (_ccChip) _ccChip.style.display = 'none';
+  if (_cbBanner) { _cbBanner.classList.remove('cb-show'); _cbBanner.style.display = 'none'; }
+}
+// ===================== End Country detection =====================
 
 const canvas = document.getElementById('sim-canvas');
 const ctx = canvas.getContext('2d');
@@ -4911,6 +5172,14 @@ let activePause = false;
 // (3) hide world markers (airport icons/boundaries, traffic symbols & labels).
 // There is no master on/off switch — 1+2 default ON, 3 defaults OFF, and turning
 // all three off is equivalent to disabling realistic cockpit mode entirely.
+//
+// REALISM RULE (read before adding anything to the cockpit view): in cockpit mode
+// (cameraMode === 0) everything must look like it would to a real pilot. Do NOT
+// paint arcade-style HUD overlays, banners, labels, icons or pop-ups directly onto
+// the windscreen / canopy glass — a real cockpit window is just glass. Anything
+// informational belongs on the analog instrument panel (or a physically plausible
+// HUD projector), never floating on the window. New on-screen widgets (e.g. the
+// country banner) should gate on the camera mode / cockpit flags accordingly.
 const cockpit = { panel: true, frame: true, hideMarkers: false };
 function cockpitPanelOn()    { return cockpit.panel && cameraMode === 0; }
 function cockpitFrameOn()    { return cockpit.frame && cameraMode === 0; }
@@ -9706,6 +9975,7 @@ function update(dt) {
   checkTerrainBeep(dt);
   updateAvionics(dt);      // GPWS · TCAS · EICAS systems · live WX radar (all on real-world data)
   tickFlightStats(dt);
+  updateCountry(dt);       // reverse-geocode current position; announce country changes
 
   // ---- Pilot inputs (elevator / aileron / throttle) ----
   // Control authority scales with airspeed (sluggish when slow, like a real wing).
@@ -14072,6 +14342,7 @@ function beginFlight(loc) {
   START.thr = 0;
   resetState();
   startFlightStats(loc);
+  resetCountryDisplay();   // announce the departure country fresh at flight start
 
   const locLabel = document.getElementById('loc-label');
   if (locLabel) locLabel.textContent = loc.name || '';
@@ -14129,6 +14400,16 @@ function beginFlight(loc) {
     procPreloadModels();          // start downloading trees/houses/airport for this seed
     procSetupAirport();           // site the seed's airport + register it for map/refuel
     sampleGroundFt(loc.lat, loc.lon, function (ft) { spawnAt(ft * FT_TO_M); });
+  } else if (window._skipRunwaySearch) {
+  // "Skip runway search" setting (default OFF): spawn and take off at the EXACT
+  // point the pilot chose — no relocation to a runway or flat clearing.
+  if (loadingEl) { const s = loadingEl.querySelector('.l-sub'); if (s) s.textContent = 'SPAWNING AT CHOSEN POINT…'; }
+  START.lat = loc.lat; START.lon = loc.lon; START.hdg = (loc.hdg != null) ? loc.hdg : 90;
+  state.lat = loc.lat; state.lon = loc.lon; state.heading = START.hdg;
+  setGeoOrigin(loc.lat, loc.lon);
+  resetWorld();
+  if (THREEJS) THREEJS._menuPreview = false;
+  sampleGroundFt(loc.lat, loc.lon, function (ft) { spawnAt(ft * FT_TO_M); });
   } else {
   // Find an open/flat clearing first (never spawn stuck inside a built-up block),
   // anchor the local ENU world there, then resolve the ground elevation.
@@ -14513,6 +14794,10 @@ function applyVolSettings() {
   });
   wireToggle('stp-rc-markers', function (on) { cockpit.hideMarkers = on; });
 
+  // Departure: skip the runway/flat-spot search and spawn exactly at the chosen point.
+  window._skipRunwaySearch = window._skipRunwaySearch || false;
+  wireToggle('stp-skip-runway', function (on) { window._skipRunwaySearch = on; _saveSettings(); });
+
   // ── Camera views (C key): which base views are in the cycle, and in what order ──
   // State model: camCfg is a full ordered list of ALL modes (enabled first, in the
   // order the user wants them cycled, followed by the disabled ones in their last
@@ -14737,6 +15022,7 @@ function applyVolSettings() {
       sensitivity: sensSlider ? sensSlider.value : '100',
       invertPitch: get('stp-invert-pitch'),
       invertPitchMigrated: true,
+      skipRunway:  get('stp-skip-runway'),
       volMaster:   volSettings.master,
       volEngine:   volSettings.engine,
       volWind:     volSettings.wind,
@@ -14821,6 +15107,7 @@ function applyVolSettings() {
       if (slider) { slider.value = s.sensitivity; slider.dispatchEvent(new Event('input')); }
     }
     applyToggle('stp-invert-pitch', s.invertPitch, function(on){ window._ctrlInvertPitch = on; });
+    applyToggle('stp-skip-runway',  s.skipRunway,  function(on){ window._skipRunwaySearch = on; });
 
     // Volume
     if (s.volMaster !== undefined) volSettings.master = s.volMaster;
@@ -14875,7 +15162,7 @@ function applyVolSettings() {
     // Patch toggles
     ['stp-scanlines','stp-vignette','stp-hud','stp-minimap','stp-fps-counter',
      'stp-keyhint','stp-pausebtn','stp-viewlabel','stp-controllerlabel',
-     'stp-rc-panel','stp-rc-frame','stp-rc-markers'].forEach(function(id){
+     'stp-rc-panel','stp-rc-frame','stp-rc-markers','stp-skip-runway','stp-invert-pitch'].forEach(function(id){
       const cb = document.getElementById(id); if (cb) cb.addEventListener('change', _saveSettings);
     });
   }
