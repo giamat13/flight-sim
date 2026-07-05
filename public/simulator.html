@@ -2184,8 +2184,8 @@ function resetState() {
   const rw = document.getElementById('rotate-warn');   if (rw) rw.style.display = 'none';
   if (typeof initTraffic === 'function') initTraffic();
   resetMechSoundTrackers();
-  if (cameraMode === 2) { cameraMode = slewPrevCameraMode === 0 ? 0 : 1; document.body.classList.remove('slew-mode'); }
-  slewPos = null;
+  if (cameraMode === 2 || cameraMode === 3) { cameraMode = slewPrevCameraMode; document.body.classList.remove('slew-mode'); }
+  slewPos = null; towerPos = null;
   activePause = false;
   const apBadge = document.getElementById('active-pause-badge');
   if (apBadge) apBadge.style.display = 'none';
@@ -2484,6 +2484,10 @@ const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, Key
   KeyX:1, KeyK:1, KeyZ:1, KeyD:1,
   BracketLeft:1, BracketRight:1, Semicolon:1, Quote:1, Comma:1, Period:1,
   ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1, F3:1, Minus:1, Equal:1 };
+// Keys read continuously (via keys[]) by ORBIT/SLEW — arrows always (look),
+// WASD/Z/Shift only matter once SLEW actually detaches and can move.
+const FREE_CAM_CODES = { ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1,
+  KeyW:1, KeyA:1, KeyS:1, KeyD:1, KeyZ:1, ShiftLeft:1, ShiftRight:1 };
 const keys = {};
 window.addEventListener('keydown', e => {
   // Virtual keyboard navigation (when open) takes priority
@@ -2503,14 +2507,27 @@ window.addEventListener('keydown', e => {
   // (for replays) the playback transport stay live.
   if (spectate.active) {
     if (e.key === 'Escape') { returnToMenu(); e.preventDefault(); return; }
-    if (e.code === 'KeyC') { cameraMode = (cameraMode + 1) % 2; e.preventDefault(); return; }
-    if (spectate.replay && replayPlay) {
-      if (e.code === 'Space')      { replayTogglePause(); e.preventDefault(); return; }
-      if (e.code === 'ArrowLeft')  { replaySeek(-5000);   e.preventDefault(); return; }
-      if (e.code === 'ArrowRight') { replaySeek(5000);    e.preventDefault(); return; }
-      if (e.code === 'ArrowDown')  { replayCycleSpeed(-1);e.preventDefault(); return; }
-      if (e.code === 'ArrowUp')    { replayCycleSpeed(1); e.preventDefault(); return; }
+    if (spectate.replay) {
+      // Replays use the exact same camera model as live flight: C cycles
+      // cockpit/chase/tower/wing/nose, X cycles orbit/slew — see cycleFreeCam().
+      if (e.code === 'KeyC' && cameraMode !== 2 && cameraMode !== 3) { cycleBaseCamMode(); e.preventDefault(); return; }
+      if (e.code === 'KeyX') { cycleFreeCam(); e.preventDefault(); return; }
+      const freeLook = (cameraMode === 2 || cameraMode === 3);
+      if (replayPlay) {
+        if (e.code === 'Space')      { replayTogglePause(); e.preventDefault(); return; }
+        if (!freeLook) {
+          if (e.code === 'ArrowLeft')  { replaySeek(-5000);   e.preventDefault(); return; }
+          if (e.code === 'ArrowRight') { replaySeek(5000);    e.preventDefault(); return; }
+          if (e.code === 'ArrowDown')  { replayCycleSpeed(-1);e.preventDefault(); return; }
+          if (e.code === 'ArrowUp')    { replayCycleSpeed(1); e.preventDefault(); return; }
+        }
+      }
+      // While orbiting/slewing, arrows (look) and WASD/Z/Shift (slew move) are
+      // read continuously via keys[] — the same free-camera controls live flight uses.
+      if (freeLook && FREE_CAM_CODES[e.code]) { keys[e.code] = true; e.preventDefault(); }
+      return;
     }
+    if (e.code === 'KeyC') { cameraMode = (cameraMode + 1) % 2; e.preventDefault(); return; }
     return;
   }
   // Advanced AP destination picker: arrows pan, +/- zoom, Enter fly, Esc cancel.
@@ -2530,13 +2547,13 @@ window.addEventListener('keydown', e => {
   keys[code] = true;
   if (!wasDown) {
     // edge-triggered actions
-    if (code === 'KeyC' && TUT.allows('camera') && cameraMode !== 2) cameraMode = (cameraMode + 1) % 2;
+    if (code === 'KeyC' && TUT.allows('camera') && cameraMode !== 2 && cameraMode !== 3) cycleBaseCamMode();
     // F3+A (Minecraft-style) reloads the render of loaded tiles without re-downloading;
     // A alone toggles the autopilot. While slewing, A/D are the free-camera strafe
     // keys instead, so skip the autopilot toggle.
     if (code === 'KeyA' && cameraMode !== 2) { if (keys['F3']) reloadRender(); else onApButtonPress(); }
     if (code === 'KeyE') handleEngineKey();
-    if (code === 'KeyX' && TUT.allows('camera')) toggleSlewMode();
+    if (code === 'KeyX' && TUT.allows('camera')) cycleFreeCam();
     if (code === 'KeyK') toggleActivePause();
     // AP knob shortcuts (only when AP is on)
     if (ap.on) {
@@ -2798,8 +2815,11 @@ function initTouchControls() {
   wireTap(document.getElementById('tc-eng'), handleEngineKey);
   wireTap(document.getElementById('tc-flap'), cycleFlaps);
   wireTap(document.getElementById('tc-gear'), toggleGear);
-  wireTap(document.getElementById('tc-cam'), function () { cameraMode = (cameraMode + 1) % 2; });
-  wireTap(document.getElementById('tc-slew'), function () { toggleSlewMode(); });
+  wireTap(document.getElementById('tc-cam'), function () {
+    if (spectate.active && !spectate.replay) { cameraMode = (cameraMode + 1) % 2; return; }
+    if (cameraMode !== 2 && cameraMode !== 3) cycleBaseCamMode();
+  });
+  wireTap(document.getElementById('tc-slew'), function () { cycleFreeCam(); });
   wireTap(document.getElementById('tc-apause'), function () { toggleActivePause(); });
   wireTap(document.getElementById('tc-ap'), onApButtonPress);
   initVirtualJoystick();
@@ -3277,7 +3297,7 @@ function readGamepad() {
 
   // Edge-triggered button actions (full parity with keyboard)
   const camNow = pressed(3);                       // Y -> camera
-  if (camNow && !gpPrev.cam && TUT.allows('camera')) cameraMode = (cameraMode + 1) % 2;
+  if (camNow && !gpPrev.cam && TUT.allows('camera') && cameraMode !== 2 && cameraMode !== 3) cycleBaseCamMode();
   gpPrev.cam = camNow;
   const engNow = pressed(1);                       // B -> engine
   if (engNow && !gpPrev.eng) handleEngineKey();
@@ -4813,19 +4833,42 @@ function stallSpeedKts() {
 }
 
 let lastTime = performance.now();
-let cameraMode = 1; // 0=cockpit, 1=chase, 2=slew (default: 3rd-person so you see the plane)
+// 0=cockpit, 1=chase, 2=slew, 3=orbit, 4=tower, 5=wing, 6=nose (default: 3rd-person so you see the plane)
+let cameraMode = 1;
+// "Grounded" views cycled with C (cockpit/chase/tower/wing/nose). ORBIT (3) and
+// SLEW (2) are reached only through X — see cycleFreeCam().
+const CAM_BASE_MODES = [0, 1, 4, 5, 6];
+function camModeLabel(m) {
+  return m === 0 ? 'COCKPIT' : m === 2 ? 'SLEW' : m === 3 ? 'ORBIT' :
+         m === 4 ? 'TOWER' : m === 5 ? 'WING' : m === 6 ? 'NOSE' : 'CHASE';
+}
+// Cycle the "grounded" camera views with C: cockpit -> chase -> tower -> wing -> nose -> ...
+function cycleBaseCamMode() {
+  const i = CAM_BASE_MODES.indexOf(cameraMode);
+  cameraMode = CAM_BASE_MODES[(i + 1 + CAM_BASE_MODES.length) % CAM_BASE_MODES.length];
+  if (cameraMode === 4) { towerPos = null; showToast('TOWER CAM'); }
+  else if (cameraMode === 5) showToast('WING VIEW');
+  else if (cameraMode === 6) showToast('NOSE VIEW');
+}
 
-// ===================== Slew mode (free external camera) =====================
-// Detaches the camera from the aircraft so the pilot can float around it in
-// real time — cinematic shots, close inspection, walk-arounds — while the
-// flight itself keeps running in the background (controlled by trim/autopilot,
-// since keyboard input while slewing drives the camera, not the stick).
-let slewPrevCameraMode = 1;  // camera mode to restore when slew is turned off
-let slewPos = null;          // THREE.Vector3, world ENU metres
-let slewYaw = 0, slewPitch = 0; // degrees
+// ===================== Free camera: ORBIT + SLEW =====================
+// X cycles through two "free look" stages before returning to whichever base
+// view (cockpit/chase/tower/wing/nose) was active beforehand:
+//   base -> ORBIT (still tracks the aircraft; arrows look anywhere around it)
+//        -> SLEW  (fully detached; arrows look, WASD/Space/Z move away from it)
+//        -> back to base
+// The flight itself keeps running in the background the whole time (controlled
+// by trim/autopilot, since keyboard input in these modes drives the camera).
+let slewPrevCameraMode = 1;  // base camera mode to restore when ORBIT/SLEW ends
+let slewPos = null;          // THREE.Vector3, world ENU metres (SLEW position)
+let slewYaw = 0, slewPitch = 0; // degrees (SLEW look angle)
+let orbitYaw = 0, orbitPitch = -12; // degrees (ORBIT look angle, relative to the aircraft)
 const SLEW_LOOK_RATE = 75;   // deg/sec
 const SLEW_BASE_SPEED = 30;  // m/s
 const SLEW_BOOST_MULT = 4;   // Shift held
+const ORBIT_LOOK_RATE = 75;  // deg/sec
+let towerPos = null;         // THREE.Vector3 — fixed ground anchor for TOWER mode
+const TOWER_REACQUIRE_DIST = 900; // m — beyond this, TOWER picks a fresh spot ahead of the aircraft
 
 // ===================== Active pause (freeze without opening the menu) =====================
 // Stops the flight clock in place — instantly, no menu, no fade to the map —
@@ -6080,24 +6123,28 @@ const FT_TO_M = 0.3048;
 const KTS_TO_MPS = 0.514444;
 const M_PER_DEG_LAT = 111320;
 
-// Turn slew mode on/off. Turning it on captures the camera's current position/
-// facing as the starting point for free flight; turning it off restores
-// whichever camera mode (cockpit/chase) was active beforehand.
-function toggleSlewMode() {
-  if (!(chosen && simReady) || !THREEJS || spectate.active) return;
+// Cycle X through ORBIT -> SLEW -> back to base (cockpit/chase/tower/wing/nose).
+// See the "Free camera: ORBIT + SLEW" comment above for the full stage order.
+function cycleFreeCam() {
+  if (!(chosen && simReady) || !THREEJS || (spectate.active && !spectate.replay)) return;
   if (cameraMode === 2) {
-    cameraMode = (slewPrevCameraMode === 0) ? 0 : 1;
+    // SLEW -> back to whichever base view we started from
+    cameraMode = slewPrevCameraMode;
     camFollowHeading = null; // let chase view re-settle behind the tail
-    showToast('SLEW OFF');
-  } else {
-    slewPrevCameraMode = cameraMode;
-    const cam = THREEJS.camera;
-    slewPos = cam.position.clone();
-    const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-    slewYaw = wrap360(Math.atan2(d.x, -d.z) / DEG);
-    slewPitch = Math.asin(Math.max(-1, Math.min(1, d.y))) / DEG;
+    showToast(camModeLabel(cameraMode));
+  } else if (cameraMode === 3) {
+    // ORBIT -> SLEW: hand the current look angle to the free-fly camera and detach it
+    slewPos = THREEJS.camera.position.clone();
+    slewYaw = orbitYaw; slewPitch = orbitPitch;
     cameraMode = 2;
     showToast('SLEW MODE — ARROWS LOOK · WASD MOVE · SPACE/Z UP-DOWN');
+  } else {
+    // base -> ORBIT: keep tracking the aircraft, but look anywhere around it
+    slewPrevCameraMode = cameraMode;
+    orbitYaw = wrap360(state.heading + 180);
+    orbitPitch = -12;
+    cameraMode = 3;
+    showToast('ORBIT MODE — ARROWS LOOK AROUND THE AIRCRAFT');
   }
   document.body.classList.toggle('slew-mode', cameraMode === 2);
 }
@@ -6125,6 +6172,17 @@ function updateSlewCamera(dt) {
   if (keys['KeyZ']) mv.y -= 1;
   if (_vjoy.active) { mv.addScaledVector(fwd, _vjoy.pitch); mv.addScaledVector(right, _vjoy.roll); } // touch joystick
   if (mv.lengthSq() > 0) { mv.normalize(); slewPos.addScaledVector(mv, spd * dt); }
+}
+
+// Reads the look keys every frame for ORBIT mode (independent of the physics
+// step, so it keeps working during Active Pause) — the aircraft keeps flying
+// itself (trim/autopilot) while the pilot freely looks around it.
+function updateOrbitCamera(dt) {
+  if (cameraMode !== 3 || paused) return;
+  if (keys['ArrowUp'])    orbitPitch = Math.min(89,  orbitPitch + ORBIT_LOOK_RATE * dt);
+  if (keys['ArrowDown'])  orbitPitch = Math.max(-89, orbitPitch - ORBIT_LOOK_RATE * dt);
+  if (keys['ArrowLeft'])  orbitYaw = wrap360(orbitYaw - ORBIT_LOOK_RATE * dt);
+  if (keys['ArrowRight']) orbitYaw = wrap360(orbitYaw + ORBIT_LOOK_RATE * dt);
 }
 
 // Drives the Three.js camera from the flight model, orients + lights the aircraft
@@ -6205,6 +6263,10 @@ function updateCamera() {
   const turbPitchJit = turbAmt > 0.01 ? turbNoise(turbPh * 13, 8.4)  * turbAmt * 0.7 : 0;
   const turbBankJit  = turbAmt > 0.01 ? turbNoise(turbPh * 9,  17.2) * turbAmt * 1.1 : 0;
 
+  // Aircraft dimensions used to scale the external views: our own selected
+  // aircraft normally, but the watched/replayed plane's real dims while spectating.
+  const acDimsForCam = (spectate.active && spectate._camDims) ? spectate._camDims : (AC.playerModelDims || { span: 12, len: 15 });
+
   if (cameraMode === 0) {
     // Cockpit: the camera IS the aircraft, looking out the nose. Hide the model.
     THREEJS.aircraft.visible = false;
@@ -6217,6 +6279,43 @@ function updateCamera() {
     if (!slewPos) { slewPos = acPos.clone(); slewYaw = state.heading; slewPitch = 0; }
     cam.position.copy(slewPos);
     setCamOrient(cam, slewYaw, slewPitch, 0);
+  } else if (cameraMode === 3) {
+    // Orbit: fixed distance from the aircraft, but the look direction is fully
+    // free (arrow keys) — the plane keeps flying itself while the pilot looks
+    // wherever they like, without springing back like the chase-view look does.
+    THREEJS.aircraft.visible = !spectate.active;
+    const dist = Math.max(20, (acDimsForCam.len || 15) * 2.2);
+    const yawR = orbitYaw * DEG, pitchR = orbitPitch * DEG;
+    const dirX = Math.sin(yawR) * Math.cos(pitchR), dirY = Math.sin(pitchR), dirZ = -Math.cos(yawR) * Math.cos(pitchR);
+    cam.position.set(acPos.x - dirX * dist, acPos.y - dirY * dist + 3, acPos.z - dirZ * dist);
+    cam.lookAt(acPos.x, acPos.y + 2, acPos.z);
+  } else if (cameraMode === 4) {
+    // Tower: a fixed ground-level spotter camera. Re-anchors itself a little
+    // ahead of the flight path whenever it's (re)entered or the plane strays
+    // too far to make a good shot.
+    THREEJS.aircraft.visible = !spectate.active;
+    if (!towerPos || towerPos.distanceTo(acPos) > TOWER_REACQUIRE_DIST) {
+      const groundY = terrainHeightAtM(state.lat, state.lon) + 6; // stand a little above the ground
+      const aheadM = 260, sideM = 90 * (Math.random() < 0.5 ? -1 : 1);
+      const px = acPos.x + headingDirX(state.heading) * aheadM + headingDirX(state.heading + 90) * sideM;
+      const pz = acPos.z + headingDirZ(state.heading) * aheadM + headingDirZ(state.heading + 90) * sideM;
+      towerPos = new THREE.Vector3(px, groundY, pz);
+    }
+    cam.position.copy(towerPos);
+    cam.lookAt(acPos.x, acPos.y, acPos.z);
+  } else if (cameraMode === 5) {
+    // Wing: parked just off the wingtip, looking across at the fuselage.
+    THREEJS.aircraft.visible = !spectate.active;
+    const sideDist = Math.max(7, (acDimsForCam.span || 12) * 0.62);
+    const rightHdg = state.heading + 90;
+    cam.position.set(acPos.x + headingDirX(rightHdg) * sideDist, acPos.y - 0.5, acPos.z + headingDirZ(rightHdg) * sideDist);
+    cam.lookAt(acPos.x, acPos.y, acPos.z);
+  } else if (cameraMode === 6) {
+    // Nose: out ahead of the nose/propeller, looking back at the aircraft.
+    THREEJS.aircraft.visible = !spectate.active;
+    const noseDist = Math.max(6, (acDimsForCam.len || 15) * 0.55);
+    cam.position.set(acPos.x + headingDirX(state.heading) * noseDist, acPos.y + 0.6, acPos.z + headingDirZ(state.heading) * noseDist);
+    cam.lookAt(acPos.x, acPos.y + 0.8, acPos.z);
   } else {
     // Chase: a stable third-person rig behind the aircraft. The left stick visibly
     // banks/pitches the (real, lit) model; the right stick orbits the camera, which
@@ -9414,20 +9513,33 @@ function spectatorFollow(dt) {
 // ADS-B plane, or a synthetic replay target). state.pitch/bank/altitude are used
 // only to aim/place the camera; the real target attitude/gauges flow into the HUD
 // via spectate.hudOverride. Shared by spectatorFollow() and replayFollow().
-function applySpectateTarget(tgt, dt) {
+function applySpectateTarget(tgt, dt, trueAttitude) {
   const len = (tgt.acDims && tgt.acDims.len) || 40;
-  const D   = Math.max(70, len * 1.9);   // chase distance behind the plane (m)
-  const upM = Math.max(10, len * 0.28);  // ride a little above it
-  const hr  = tgt.heading * DEG;
-  const cosLat = Math.cos(tgt.lat * DEG) || 1e-6;
+  spectate._camDims = tgt.acDims || null; // aircraft dims for scaling ORBIT/TOWER/WING/NOSE while spectating
   const tgtAltM = Math.max(0, tgt.altitude || 0) * FT_TO_M;
 
-  state.lat = tgt.lat - (Math.cos(hr) * D) / M_PER_DEG_LAT;
-  state.lon = tgt.lon - (Math.sin(hr) * D) / (M_PER_DEG_LAT * cosLat);
-  state.altitude = (tgtAltM + upM) / FT_TO_M;
-  state.heading = tgt.heading;
-  state.pitch = -(Math.atan2(upM, D) / DEG);   // tilt down so the plane stays centred — camera only
-  state.bank = 0;
+  if (trueAttitude) {
+    // Replays: "state" IS the real recorded aircraft, so cockpit/chase/orbit/
+    // slew/tower/wing/nose all work unmodified, off the real position/attitude —
+    // exactly like live flight.
+    state.lat = tgt.lat; state.lon = tgt.lon;
+    state.altitude = tgt.altitude;
+    state.heading = tgt.heading; state.pitch = tgt.pitch; state.bank = tgt.bank;
+  } else {
+    // Live-watch: there's no interior model to sit in, so bake a fixed
+    // chase-style vantage directly into "state" instead — this is purely the
+    // camera position, not the target's real attitude.
+    const D   = Math.max(70, len * 1.9);   // chase distance behind the plane (m)
+    const upM = Math.max(10, len * 0.28);  // ride a little above it
+    const hr  = tgt.heading * DEG;
+    const cosLat = Math.cos(tgt.lat * DEG) || 1e-6;
+    state.lat = tgt.lat - (Math.cos(hr) * D) / M_PER_DEG_LAT;
+    state.lon = tgt.lon - (Math.sin(hr) * D) / (M_PER_DEG_LAT * cosLat);
+    state.altitude = (tgtAltM + upM) / FT_TO_M;
+    state.heading = tgt.heading;
+    state.pitch = -(Math.atan2(upM, D) / DEG);   // tilt down so the plane stays centred — camera only
+    state.bank = 0;
+  }
   state.onGround = false; state.terrainHit = false;
   lookYawOff = 0; lookPitchOff = 0;
 
@@ -9514,9 +9626,10 @@ function update(dt) {
   }
 
   // MSFS keyboard convention — UP arrow / stick back = NOSE UP.
-  // While slewing, the arrow/WASD keys drive the free camera instead (see
-  // updateSlewCamera) — the aircraft keeps its last trim/throttle/attitude.
-  const slewing = cameraMode === 2;
+  // While slewing or orbiting, the arrow/WASD keys drive the free camera instead
+  // (see updateSlewCamera/updateOrbitCamera) — the aircraft keeps its last
+  // trim/throttle/attitude and flies itself.
+  const slewing = cameraMode === 2 || cameraMode === 3;
   let pitchIn = 0;
   if (!slewing && keys['ArrowUp']) pitchIn -= 1;
   if (!slewing && keys['ArrowDown']) pitchIn += 1;
@@ -12595,9 +12708,10 @@ function rcDrawPlacard(L) {
 }
 
 function render() {
-  // Free-fly camera movement, if slewing — runs every frame independent of the
-  // physics step so it keeps working during Active Pause.
+  // Free-fly camera movement, if slewing/orbiting — runs every frame independent
+  // of the physics step so it keeps working during Active Pause.
   updateSlewCamera(frameDt || 0.016);
+  updateOrbitCamera(frameDt || 0.016);
   // Update + render the Three.js world first (terrain, buildings, aircraft, camera),
   // then draw the 2D HUD overlay on top of it.
   updateCamera();
@@ -12634,7 +12748,7 @@ function render() {
 
   drawAvionics();       // ND (traffic+weather+course) + EICAS, always on — plus master warning & caution
 
-  document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : cameraMode === 2 ? 'SLEW' : 'CHASE';
+  document.getElementById('cam-label').textContent = camModeLabel(cameraMode);
   document.body.classList.toggle('cam-cockpit', cameraMode === 0);
   document.body.classList.toggle('slew-mode', cameraMode === 2);
 
@@ -13633,7 +13747,7 @@ function replayFollow(dt) {
   if (atEnd) P.playheadMs = P.durationMs;
 
   const tgt = replaySampleAt(P.playheadMs);
-  applySpectateTarget(tgt, dt);
+  applySpectateTarget(tgt, dt, true); // true = drive the camera off the real recorded attitude, exactly like live flight
   // Make the replayed plane a real scene object (same path live traffic uses), so
   // updateTrafficModels() orients it with the recorded pitch/bank — you see the
   // nose rise and fall and the wings bank, from cockpit-chase or (C) chase view.
@@ -13648,7 +13762,7 @@ function replayFollow(dt) {
       const remain = Math.max(0, Math.round((P.durationMs - P.playheadMs) / 1000));
       spectate.banner.textContent = 'REPLAY ▸ ' + P.meta.callsign + '  ·  ' + (P.meta.aircraft || '??') +
         '  ·  ' + Math.round(tgt.altitude) + 'ft  ·  ' + Math.round(tgt.speed) + 'kt  ·  -' + remain + 's  ·  ' +
-        P.speed + '×' + (P.paused ? ' (paused)' : '') + '   (C cam · Esc exit)';
+        P.speed + '×' + (P.paused ? ' (paused)' : '') + '   (C cam · X free-cam · Esc exit)';
     }
   }
 
@@ -15274,7 +15388,7 @@ function returnToMenu() {
   const apBadge = document.getElementById('active-pause-badge');
   if (apBadge) apBadge.style.display = 'none';
   if (cameraMode === 2) document.body.classList.remove('slew-mode');
-  cameraMode = 1; slewPos = null;
+  cameraMode = 1; slewPos = null; towerPos = null;
   stopVideoCapture(true); // abort any in-progress screen recording without downloading
   if (spectate.replay) { replayPlay = null; hideReplayBar(); } // leaving a replay — drop its cursor + controls
   else finalizeFlightStats('quit');
