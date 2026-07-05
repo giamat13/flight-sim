@@ -1171,6 +1171,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
             <div class="stp-key-row"><span class="stp-key-action">Engine start/stop</span><span class="stp-kbd">E</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Flaps</span><span class="stp-kbd">F</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Gear</span><span class="stp-kbd">G</span></div>
+            <div class="stp-key-row"><span class="stp-key-action">Speedbrake / spoiler</span><span class="stp-kbd">V</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Camera view</span><span class="stp-kbd">C</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Autopilot (hold=nav map)</span><span class="stp-kbd">A</span></div>
             <div class="stp-key-row"><span class="stp-key-action">Pause</span><span class="stp-kbd">P</span></div>
@@ -2104,7 +2105,8 @@ let state = {
   // Altimeter barometric (Kollsman) setting, inHg — pilot-adjustable, offsets the
   // displayed altitude away from true altitude just like a real altimeter.
   baro: 29.92,
-  turnRate: 0   // heading rate, deg/s (for the turn coordinator gauge)
+  turnRate: 0,  // heading rate, deg/s (for the turn coordinator gauge)
+  spoiler: 0    // speedbrake / spoiler deployment 0..1 (EICAS flight-controls page)
 };
 
 function resetState() {
@@ -2141,6 +2143,7 @@ function resetState() {
   state.pitch = 2.5;
   state.baro = 29.92;
   state.turnRate = 0;
+  state.spoiler = 0;
   terrainWarn.style.display = 'none';
   const lp = document.getElementById('landing-panel'); if (lp) lp.style.display = 'none';
   const rw = document.getElementById('rotate-warn');   if (rw) rw.style.display = 'none';
@@ -2437,7 +2440,7 @@ function updateMechSounds(dt) {
 // ===================== Keys =====================
 // Index keys by e.code (PHYSICAL key position) instead of e.key, so controls
 // work regardless of keyboard language/layout (Hebrew, AZERTY, etc.).
-const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1, KeyA:1, KeyH:1,
+const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1, KeyA:1, KeyH:1, KeyV:1,
   BracketLeft:1, BracketRight:1, Semicolon:1, Quote:1, Comma:1, Period:1,
   ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1, F3:1, Minus:1, Equal:1 };
 const keys = {};
@@ -2502,6 +2505,9 @@ window.addEventListener('keydown', e => {
     }
     if (code === 'KeyF') cycleFlaps();
     if (code === 'KeyG') toggleGear();
+    if (code === 'KeyV') { // speedbrake / spoiler toggle (airborne)
+      if (!state.onGround) { state.spoiler = state.spoiler > 0.5 ? 0 : 1; showToast(state.spoiler > 0.5 ? 'SPEEDBRAKE DEPLOYED' : 'SPEEDBRAKE RETRACTED'); }
+    }
     if (code === 'KeyH' && cockpitPanelOn()) rcSyncGyro();
     if (code === 'KeyP') togglePause();
     if (e.key === 'Escape') { togglePause(); e.preventDefault(); return; }
@@ -3193,7 +3199,7 @@ let gpConnected = false;
 
 // Two versions of the on-screen control hint — keyboard vs. gamepad.
 const HINT_KEYBOARD =
-  'E ENGINE<br>F FLAPS · G GEAR<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="color:#ffe066">A·A NAV-TO-POINT</span><br><span style="color:rgba(127,208,255,0.6)">[/] HDG · ;/\' ALT · ,/. SPD</span><br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
+  'E ENGINE<br>F FLAPS · G GEAR · V SPEEDBRAKE<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="color:#ffe066">A·A NAV-TO-POINT</span><br><span style="color:rgba(127,208,255,0.6)">[/] HDG · ;/\' ALT · ,/. SPD</span><br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
 const HINT_GAMEPAD =
   '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br><span style="color:#ffe066">RB·RB NAV-TO-POINT</span><br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>Y CAMERA · ☰ PAUSE<br><span style="color:rgba(127,208,255,0.6)">AP: D-PAD HDG/ALT · R3+D-PAD SPD</span>';
 
@@ -7844,6 +7850,634 @@ function playTerrainBeep(count) {
   }
 }
 
+// ===================== Avionics suite (GPWS · TCAS · EICAS · NAV/ILS · WX radar) =====================
+// Every dynamic value here is driven by the SAME live real-world data the sim already streams:
+//   • GPWS/EGPWS envelopes run on the AWS terrain-elevation lookups (state.terrainHeightFt +
+//     terrainAheadMaxFt()).                        → real terrain
+//   • TCAS II resolves against the live ADS-B traffic[] feed.               → real aircraft
+//   • The pressurisation / electrical / hydraulic EICAS models derive from real altitude, real
+//     engine state and the standard atmosphere.
+//   • The weather radar samples live Open-Meteo precipitation on a grid ahead of the aircraft.
+// Two dedicated displays are always visible, just like real instruments — no
+// button "switches the screen": the ND (traffic + weather + course overlaid on
+// one scope) and EICAS (engine/systems). The aural warnings (Web Speech, tone
+// fallback) play regardless.
+
+// No page-select button — a real jet has no key that "switches the screen". The
+// ND (Navigation Display) permanently overlays traffic, weather and course data
+// on one compass scope, and EICAS is a second, separately permanent display.
+// Both are always up together, exactly like the real instruments they model.
+const avionics = {
+  gpws: true, tcas: true,
+  masterWarn: false, masterCaut: false, warnMsgs: [], cautMsgs: []
+};
+
+// ---- Aural callout engine (Web Speech, with a synthesized-tone fallback) ----
+let _avLastPhrase = '', _avLastPhraseAt = -9999;
+function avSpeak(text, opts) {
+  opts = opts || {};
+  const vol = (window._volAlarms !== undefined ? window._volAlarms : 1);
+  if (vol <= 0) return;
+  const now = performance.now();
+  if (text === _avLastPhrase && now - _avLastPhraseAt < (opts.gap || 1300)) return;
+  _avLastPhrase = text; _avLastPhraseAt = now;
+  try {
+    if ('speechSynthesis' in window && window.SpeechSynthesisUtterance) {
+      if (opts.priority) window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = opts.rate || 1.0; u.pitch = opts.pitch || 0.6;
+      u.volume = Math.min(1, vol);
+      window.speechSynthesis.speak(u);
+      return;
+    }
+  } catch (e) {}
+  playTone(720, 0.16, 0.3 * vol, 'square');
+  playTone(520, 0.16, 0.3 * vol, 'square', 0.18);
+}
+
+// Height above ground (radio altitude), ft — from the live AWS terrain elevation under the aircraft.
+function avAglFt() {
+  return state.onGround ? 0 : Math.max(0, state.altitude - (state.terrainHeightFt || 0));
+}
+
+// Standard-atmosphere pressure ratio (p/p0) at a pressure altitude in feet.
+function avPressRatio(altFt) {
+  const a = Math.max(-2000, Math.min(65000, altFt));
+  if (a < 36089) return Math.pow(1 - 6.87535e-6 * a, 5.2559);
+  return 0.223361 * Math.exp(-4.80637e-5 * (a - 36089));
+}
+function avPressToAltFt(ratio) {
+  // invert avPressRatio in the troposphere band (good enough for a cabin-altitude readout)
+  return (1 - Math.pow(Math.max(1e-4, ratio), 1 / 5.2559)) / 6.87535e-6;
+}
+
+// ---- EICAS / ECAM systems model (hydraulic · electrical · pneumatic · pressurisation) ----
+const eicas = {
+  hydA: 0, hydB: 0, hydStby: 0,    // psi
+  genV: 0, genA: 0, batV: 24.2, apuGen: false, onBattery: false, // electrical
+  bleedPsi: 0, packFlow: 0,        // pneumatic
+  cabinAlt: 0, cabinRate: 0, diffPsi: 0, cabinTarget: 0, // pressurisation
+  oatC: 15, tatC: 15               // temperatures
+};
+
+function updateEICAS(dt) {
+  if (state.spoiler === undefined) state.spoiler = 0;
+  const rpm = state.rpm || 0;                     // 0..100
+  const running = state.engineState === 'running';
+  const enginePwr = running ? Math.max(0, Math.min(1, rpm / 100)) : 0;
+
+  // Hydraulics: engine-driven pumps spool the green/blue systems; an electric standby pump
+  // keeps a trickle whenever the bus is alive. Targets in psi, gently chased.
+  const hydTgtA = 900 + enginePwr * 2100;         // ~3000 psi at full rpm
+  const hydTgtB = 850 + enginePwr * 2150;
+  const hydTgtS = (running || eicas.onBattery) ? 1400 + enginePwr * 900 : 0;
+  const k = Math.min(1, dt * 1.6);
+  eicas.hydA += (hydTgtA * (running ? 1 : 0) - eicas.hydA) * k;
+  eicas.hydB += (hydTgtB * (running ? 1 : 0) - eicas.hydB) * k;
+  eicas.hydStby += (hydTgtS - eicas.hydStby) * k;
+
+  // Electrical: the engine-driven generator comes online above idle; otherwise the ship runs
+  // on the battery bus (a fault worth annunciating).
+  const genOnline = running && rpm > 18;
+  eicas.onBattery = !genOnline;
+  const genVtgt = genOnline ? 27.5 + enginePwr * 0.9 : 0;
+  eicas.genV += (genVtgt - eicas.genV) * Math.min(1, dt * 3);
+  // Load (amps): lights/avionics baseline + gear/flap actuation transients.
+  let loadA = 90 + (state.gearDown ? 25 : 0) + (state.flaps > 0 ? 15 : 0) + (env.time === 'night' ? 40 : 10);
+  eicas.genA += ((genOnline ? loadA : 0) - eicas.genA) * Math.min(1, dt * 2);
+  // Battery slowly drains on the bus with no generator, recharges with one.
+  eicas.batV += ((genOnline ? 24.6 : 23.4) - eicas.batV) * Math.min(1, dt * 0.15);
+
+  // Pneumatics: engine bleed feeds the packs (and hence pressurisation).
+  eicas.bleedPsi += ((running ? 22 + enginePwr * 20 : 0) - eicas.bleedPsi) * Math.min(1, dt * 1.2);
+  eicas.packFlow += ((running ? 60 + enginePwr * 40 : 0) - eicas.packFlow) * Math.min(1, dt * 1.2);
+
+  // Pressurisation: schedule the cabin from sea level (to ~8000 ft cabin at 40 000 ft) whenever
+  // the packs are supplying air; without bleed the cabin climbs toward ambient.
+  const schedFt = Math.max(0, Math.min(8000, state.altitude * 0.205));
+  const packing = eicas.bleedPsi > 6;
+  eicas.cabinTarget = packing ? schedFt : state.altitude;
+  const prevCabin = eicas.cabinAlt;
+  const cabinK = Math.min(1, dt * (packing ? 0.12 : 0.5));
+  eicas.cabinAlt += (eicas.cabinTarget - eicas.cabinAlt) * cabinK;
+  eicas.cabinRate = dt > 0 ? (eicas.cabinAlt - prevCabin) / dt * 60 : 0; // ft/min
+  eicas.diffPsi = Math.max(0, (avPressRatio(eicas.cabinAlt) - avPressRatio(state.altitude)) * 14.696);
+
+  // Temperatures: ISA OAT with a ram-rise term for TAT.
+  eicas.oatC = 15 - 1.98 * (state.altitude / 1000);
+  const mach = (state.speed * KTS_TO_MPS) / 340;
+  eicas.tatC = eicas.oatC + (eicas.oatC + 273.15) * 0.2 * mach * mach;
+
+  // Speedbrake / spoilers: ground spoilers slam out on touchdown; in the air they follow the
+  // pilot's manual speedbrake command (V key) and bleed a little energy for tactile feedback.
+  if (state.onGround && state.speed > 40) state.spoiler = 1;
+  else if (state.onGround) state.spoiler = Math.max(0, state.spoiler - dt * 2);
+  if (!state.onGround && state.spoiler > 0.01 && state.speed > stallSpeedKts() + 8) {
+    state.speed = Math.max(stallSpeedKts() + 2, state.speed - dt * 7 * state.spoiler);
+  }
+}
+
+// ---- GPWS / EGPWS (classic modes 1–6, condensed to the aural set) ----
+const gpws = { prevAgl: null, maxAgl: 0, pullUp: false, terrain: false };
+const GPWS_CALLOUTS = [2500, 1000, 500, 400, 300, 200, 100, 50, 40, 30, 20, 10];
+function updateGPWS(dt) {
+  if (!avionics.gpws || state.terrainHit) { gpws.pullUp = false; gpws.terrain = false; return; }
+  const agl = avAglFt();
+  const vs = state.vs;                          // ft/min, negative = descending
+  const prev = gpws.prevAgl == null ? agl : gpws.prevAgl;
+  gpws.prevAgl = agl;
+
+  if (state.onGround) { gpws.maxAgl = 0; gpws.pullUp = false; gpws.terrain = false; return; }
+  gpws.maxAgl = Math.max(gpws.maxAgl, agl);
+
+  // Mode 6 — descending radio-altitude callouts ("one thousand" … "fifty" … "ten"), + minimums.
+  if (vs < -80) {
+    for (let i = 0; i < GPWS_CALLOUTS.length; i++) {
+      const h = GPWS_CALLOUTS[i];
+      if (prev > h && agl <= h && agl > h - 55) {
+        const say = h === 2500 ? 'two thousand five hundred' : h === 1000 ? 'one thousand' : String(h);
+        avSpeak(say, { pitch: 0.55, gap: 800 });
+        break;
+      }
+    }
+    if (prev > 200 && agl <= 200 && state.gearDown) avSpeak('minimums', { pitch: 0.55, gap: 4000 });
+  }
+
+  const V = Math.max(state.speed * KTS_TO_MPS, 1);
+  const lookM = Math.max(2500, Math.min(14000, V * 30));
+  const clearAhead = state.altitude - terrainAheadMaxFt(lookM);   // ft over terrain in our path
+  const sink = -vs;                              // ft/min while descending
+
+  let pullUp = false, caution = null;
+  if (agl < 2450) {
+    // Mode 1 — excessive descent rate close to the ground.
+    if (sink > 5000 - agl * 1.0) caution = 'sinkrate';
+    if (sink > 7000 - agl * 1.4 && agl < 1500) pullUp = true;
+    // Mode 2 — excessive closure to terrain ahead.
+    if (clearAhead < 900 && agl < 2000) caution = caution || 'terrain';
+    if (clearAhead < 450 && agl < 1200) pullUp = true;
+    // Mode 4 — unsafe terrain clearance in a non-landing configuration.
+    if (agl < 500 && !state.gearDown && clearAhead < 700) caution = caution || 'gear';
+    else if (agl < 245 && state.gearDown && state.flaps < 1 && clearAhead < 420) caution = caution || 'flaps';
+    // Mode 3 — altitude loss just after take-off.
+    if (gpws.maxAgl > 60 && gpws.maxAgl < 700 && agl < gpws.maxAgl - 70 && vs < -120 && state.gearDown)
+      caution = caution || 'dontsink';
+  }
+
+  gpws.pullUp = pullUp;
+  gpws.terrain = !pullUp && caution === 'terrain';
+  if (pullUp) {
+    avSpeak('pull up', { priority: true, pitch: 0.5, rate: 1.15, gap: 1100 });
+  } else if (caution === 'terrain')  avSpeak('terrain, terrain', { pitch: 0.55, gap: 1500 });
+  else if (caution === 'sinkrate')   avSpeak('sink rate', { pitch: 0.55, gap: 1600 });
+  else if (caution === 'gear')       avSpeak('too low, gear', { pitch: 0.55, gap: 1700 });
+  else if (caution === 'flaps')      avSpeak('too low, flaps', { pitch: 0.55, gap: 1700 });
+  else if (caution === 'dontsink')   avSpeak("don't sink", { pitch: 0.55, gap: 1700 });
+}
+
+// ---- TCAS II (traffic advisories + resolution advisories over the live ADS-B feed) ----
+const tcas = { threats: [], ra: null, prevRa: null, taActive: false };
+function updateTCAS(dt) {
+  tcas.threats = [];
+  if (!avionics.tcas || state.terrainHit) { tcas.ra = null; tcas.taActive = false; return; }
+  const agl = avAglFt();
+  const ownV = state.speed * KTS_TO_MPS;
+  const ownVn = Math.cos(state.heading * DEG) * ownV, ownVe = Math.sin(state.heading * DEG) * ownV;
+  const cosLat = Math.cos(state.lat * DEG);
+  let worst = 0, raSense = null;
+
+  for (let i = 0; i < traffic.length; i++) {
+    const t = traffic[i];
+    if (!t || t.phase === 'ground') continue;
+    const dN = (t.lat - state.lat) * M_PER_DEG_LAT;
+    const dE = (t.lon - state.lon) * (M_PER_DEG_LAT * cosLat);
+    const rangeM = Math.hypot(dN, dE);
+    const rangeNm = rangeM / 1852;
+    if (rangeNm > 6.5) continue;
+    const relAlt = t.altitude - state.altitude;   // ft, + = intruder above
+    if (Math.abs(relAlt) > 2700) continue;
+
+    // Relative velocity → closing speed along the line of sight → time to closest approach.
+    const tv = (t.speed || 0) * KTS_TO_MPS;
+    const rvN = Math.cos(t.heading * DEG) * tv - ownVn;
+    const rvE = Math.sin(t.heading * DEG) * tv - ownVe;
+    const closing = -(dN * rvN + dE * rvE) / Math.max(rangeM, 1); // m/s, + = closing
+    const tau = closing > 2 ? rangeM / closing : 999;
+
+    let level = 0; // 0 other · 1 proximate · 2 TA · 3 RA
+    if (rangeNm < 6 && Math.abs(relAlt) < 1200) level = 1;
+    if ((tau < 40 || (rangeNm < 3 && Math.abs(relAlt) < 850))) level = 2;
+    if ((tau < 25 || (rangeNm < 2.1 && Math.abs(relAlt) < 600))) level = 3;
+
+    // RA / aural inhibits near the ground (TCAS suppresses descend RAs low, all RAs very low).
+    if (agl < 1000 && level === 3) level = 2;
+    if (agl < 400 && level >= 2)  level = 1;
+
+    const brg = wrap360(Math.atan2(dE, dN) / DEG);
+    const trend = t.phase === 'climb' ? 1 : t.phase === 'descend' ? -1 : 0;
+    tcas.threats.push({ rangeNm, relAlt, brg, level, trend, closing });
+
+    if (level > worst) {
+      worst = level;
+      if (level === 3) raSense = relAlt >= 0 ? 'descend' : 'climb';
+    }
+  }
+
+  tcas.taActive = worst >= 2;
+  const newRa = worst === 3 ? raSense : null;
+  if (newRa && newRa !== tcas.prevRa) avSpeak(newRa + ', ' + newRa, { priority: true, pitch: 0.5, rate: 1.1, gap: 1400 });
+  else if (worst === 2 && tcas.prevRa == null) avSpeak('traffic, traffic', { pitch: 0.55, gap: 4000 });
+  else if (!newRa && tcas.prevRa) avSpeak('clear of conflict', { pitch: 0.6, gap: 3000 });
+  tcas.prevRa = newRa;
+  tcas.ra = newRa;
+}
+
+// ---- Live weather radar: sample Open-Meteo precipitation on a forward grid (one request) ----
+const avWx = { cells: [], at: -9999, lat: 0, lon: 0, fetching: false, status: 'STBY' };
+const AV_WX_RANGES = [1.5, 3, 4.5, 6];       // NM
+const AV_WX_BEARINGS = [-45, -30, -15, 0, 15, 30, 45]; // deg relative to track
+function avWxTick(dt) {
+  const now = performance.now() / 1000;
+  const movedNm = haversineNm(state.lat, state.lon, avWx.lat, avWx.lon);
+  if (avWx.fetching) return;
+  if (now - avWx.at < 55 && movedNm < 6) return;
+  avWx.fetching = true; avWx.at = now; avWx.lat = state.lat; avWx.lon = state.lon;
+  if (PROC.active) { avWx.cells = []; avWx.status = 'N/A (SEED)'; avWx.fetching = false; return; }
+
+  const lats = [], lons = [], meta = [];
+  const cosLat = Math.cos(state.lat * DEG);
+  for (let ri = 0; ri < AV_WX_RANGES.length; ri++) {
+    for (let bi = 0; bi < AV_WX_BEARINGS.length; bi++) {
+      const brg = state.heading + AV_WX_BEARINGS[bi];
+      const d = AV_WX_RANGES[ri] * 1852;
+      const n = Math.cos(brg * DEG) * d, e = Math.sin(brg * DEG) * d;
+      lats.push((state.lat + n / M_PER_DEG_LAT).toFixed(4));
+      lons.push((state.lon + e / (M_PER_DEG_LAT * cosLat)).toFixed(4));
+      meta.push({ brg: brg, distNm: AV_WX_RANGES[ri] });
+    }
+  }
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') +
+    '&longitude=' + lons.join(',') + '&current=precipitation&timezone=auto';
+  avWx.status = 'FETCHING…';
+  fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+    const arr = Array.isArray(j) ? j : [j];
+    const cells = [];
+    for (let i = 0; i < arr.length && i < meta.length; i++) {
+      const mm = (arr[i] && arr[i].current && typeof arr[i].current.precipitation === 'number')
+        ? arr[i].current.precipitation : 0;
+      if (mm > 0.05) cells.push({ brg: meta[i].brg, distNm: meta[i].distNm, mmh: mm });
+    }
+    avWx.cells = cells;
+    avWx.status = 'LIVE · ' + cells.length + ' CELL' + (cells.length === 1 ? '' : 'S');
+    avWx.fetching = false;
+  }).catch(function () { avWx.status = 'NO DATA'; avWx.fetching = false; });
+}
+
+// ---- Master avionics update: run the systems, aggregate master warning / caution ----
+function updateAvionics(dt) {
+  updateEICAS(dt);
+  updateGPWS(dt);
+  updateTCAS(dt);
+  avWxTick(dt);
+
+  const warn = [], caut = [];
+  if (gpws.pullUp) warn.push('PULL UP');
+  else if (gpws.terrain) warn.push('TERRAIN');
+  if (tcas.ra) warn.push('TCAS RA');
+  else if (tcas.taActive) caut.push('TRAFFIC');
+  if (state.engineState === 'fire') warn.push('ENG FIRE');
+  if (eicas.cabinAlt > 10000) warn.push('CABIN ALT');
+  if (state.stall) warn.push('STALL');
+  if (state.overspeed) warn.push('OVERSPEED');
+  const running = state.engineState === 'running';
+  if (running && eicas.onBattery) caut.push('ELEC GEN');
+  if (running && eicas.hydA < 1500) caut.push('HYD A');
+  if (running && eicas.hydB < 1500) caut.push('HYD B');
+  const fuelPct = state.fuelMax > 0 ? state.fuel / state.fuelMax * 100 : 0;
+  if (fuelPct <= 10) caut.push('FUEL LO');
+  if (eicas.diffPsi > 8.9) caut.push('CABIN DIFF');
+  avionics.warnMsgs = warn; avionics.cautMsgs = caut;
+  avionics.masterWarn = warn.length > 0;
+  avionics.masterCaut = caut.length > 0;
+}
+
+// ============================ Avionics drawing (2D overlay on ctx) ============================
+function avRoundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+  else { ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+         ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+}
+// EICAS: a screen physically mounted INTO the instrument panel bezel (its own
+// recessed well, drawn by rcPanelBg), never a box floating over the windscreen.
+// If the panel isn't wide enough to cut that bay into it, it's simply omitted —
+// a real cockpit doesn't get a window sticker instead of a missing screen.
+// Outside cockpit-panel mode there is no physical panel to mount into, so it
+// falls back to a slim HUD-style corner readout (same visual language as the
+// other tape-HUD elements, not a bezeled "screen").
+function avEicasRect() {
+  if (cockpitPanelOn()) {
+    const L = rcComputeLayout();
+    if (!L.sideScreens) return null;
+    return { x: L.eicasX, y: L.screenY, w: L.screenW, h: L.screenW, mounted: true };
+  }
+  const w = Math.round(Math.min(280, Math.max(170, W * 0.20)));
+  const h = Math.round(w * 0.9);
+  return { x: W - w - 14, y: Math.round(Math.max(88, H * 0.14)), w: w, h: h, mounted: false };
+}
+// ND (Navigation Display): same rule — physically mounted into the panel bezel
+// on the opposite side from EICAS, or omitted if there's no room; a slim HUD
+// corner readout only when there's no physical panel at all (tape/HUD view).
+// Shows traffic (TCAS), weather (WX radar) and course data together on one
+// scope, exactly how a real EFIS Navigation Display works.
+function avNdRect() {
+  if (cockpitPanelOn()) {
+    const L = rcComputeLayout();
+    if (!L.sideScreens) return null;
+    return { x: L.ndX, y: L.screenY, w: L.screenW, h: L.screenW, mounted: true };
+  }
+  const w = Math.round(Math.min(320, Math.max(190, W * 0.24)));
+  const h = Math.round(w * 1.05);
+  return { x: 14, y: Math.round(Math.max(88, H * 0.14)), w: w, h: h, mounted: false };
+}
+// X-coordinate of the middle of the six-pack gauge block, for centring the
+// docked annunciator strip over the panel instead of the whole screen.
+function avPanelCenterX(L) {
+  if (!L || !L.centers || !L.centers.length) return W / 2;
+  let lo = Infinity, hi = -Infinity;
+  L.centers.forEach(function (c) { lo = Math.min(lo, c.x); hi = Math.max(hi, c.x); });
+  return (lo + hi) / 2;
+}
+function avFrame(r, title, sub) {
+  ctx.save();
+  if (r.mounted) {
+    // Physically mounted in the panel bezel — the recessed well is already
+    // painted by rcPanelBg, so the "frame" here is just the LCD glass itself
+    // (flush black, no floating border/glow) plus a thin metal lip.
+    ctx.fillStyle = '#050806';
+    avRoundRect(r.x, r.y, r.w, r.h, 4); ctx.fill();
+    ctx.strokeStyle = 'rgba(70,74,80,0.8)'; ctx.lineWidth = 1;
+    avRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 3); ctx.stroke();
+  } else {
+    ctx.fillStyle = 'rgba(4,9,7,0.86)';
+    ctx.strokeStyle = 'rgba(0,255,65,0.4)'; ctx.lineWidth = 1.5;
+    avRoundRect(r.x, r.y, r.w, r.h, 8); ctx.fill(); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(0,255,65,0.14)';
+  avRoundRect(r.x, r.y, r.w, 22, r.mounted ? 4 : 8); ctx.fill();
+  ctx.fillStyle = 'rgba(0,255,65,0.95)';
+  ctx.font = '700 12px "JetBrains Mono", monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(title, r.x + 10, r.y + 11);
+  if (sub) { ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(0,255,65,0.6)';
+    ctx.font = '600 10px "JetBrains Mono", monospace'; ctx.fillText(sub, r.x + r.w - 10, r.y + 11); }
+  ctx.restore();
+}
+
+// ── Systems sub-panel: each value is its OWN round analog instrument, built
+// with the exact same bezel/needle/glass toolkit as the six-pack gauges — so
+// the hydraulic, electrical and pressurisation readouts are real separate dials
+// "like all the others", not a shared digital screen. ──
+const RC_SYS_START = Math.PI * 0.75, RC_SYS_SWEEP = Math.PI * 1.5; // 135° → 405° (270° clockwise)
+function rcSysAng(v, maxV) { return RC_SYS_START + Math.max(0, Math.min(1, v / maxV)) * RC_SYS_SWEEP; }
+
+// Cached dial face (bezel + coloured bands + ticks + numerals + caption).
+function rcFaceSys(D, cfg) {
+  const key = 'sys_' + cfg.id + '_' + D;
+  if (RC.faces[key]) return RC.faces[key];
+  const c = rcCanvas(D, D), g = c.getContext('2d');
+  rcDrawBezel(g, D);
+  const r = D / 2, fr = r * 0.9;
+  (cfg.bands || []).forEach(function (b) {
+    g.strokeStyle = b.col; g.lineWidth = Math.max(2, D * 0.035);
+    g.beginPath(); g.arc(r, r, fr * 0.87, rcSysAng(b.a, cfg.maxV), rcSysAng(b.b, cfg.maxV)); g.stroke();
+  });
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let v = 0; v <= cfg.maxV + 1e-6; v += cfg.step / 2) {
+    const major = Math.abs(v % cfg.step) < 1e-6;
+    const ang = rcSysAng(v, cfg.maxV);
+    rcTick(g, r, r, ang, major ? fr * 0.78 : fr * 0.85, fr * 0.94,
+      major ? Math.max(1.5, D * 0.014) : 1, 'rgba(235,237,240,' + (major ? 0.95 : 0.5) + ')');
+    if (major) {
+      g.fillStyle = '#e9ebee';
+      g.font = '600 ' + Math.max(6, D * 0.075) + 'px Arial, sans-serif';
+      g.fillText(cfg.tickLabel ? cfg.tickLabel(v) : String(v), r + Math.cos(ang) * fr * 0.62, r + Math.sin(ang) * fr * 0.62);
+    }
+  }
+  rcDialLabel(g, D, cfg.l1, cfg.l2);
+  RC.faces[key] = c;
+  return c;
+}
+
+// Live instrument: blit face, digital readout, needle, glass — one dial.
+function rcDrawSysGauge(cx, cy, D, cfg, value, digital, needleCol) {
+  const face = rcFaceSys(D, cfg);
+  ctx.drawImage(face, cx - D / 2, cy - D / 2);
+  const fr = (D / 2) * 0.9;
+  if (digital != null) {
+    ctx.fillStyle = needleCol || '#e9ebee'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '700 ' + Math.max(7, D * 0.1) + 'px Arial, sans-serif';
+    ctx.fillText(digital, cx, cy + fr * 0.45);
+  }
+  rcNeedle(cx, cy, rcSysAng(value, cfg.maxV), fr * 0.82, fr * 0.2, Math.max(1.5, D * 0.022), needleCol || '#f2f4f6');
+  ctx.drawImage(rcGlass(D), cx - D / 2, cy - D / 2);
+}
+
+const RC_SYS_CFG = {
+  hyd:   { id: 'hyd',   maxV: 3200, step: 800, l1: 'HYD', l2: 'PSI',
+           bands: [{ a: 0, b: 1500, col: '#e8c832' }, { a: 1500, b: 3200, col: '#1fae4b' }],
+           tickLabel: function (v) { return String(Math.round(v / 1000 * 10) / 10); } },
+  volt:  { id: 'volt',  maxV: 32, step: 8, l1: 'DC', l2: 'VOLTS',
+           bands: [{ a: 0, b: 24, col: '#e8c832' }, { a: 24, b: 30, col: '#1fae4b' }, { a: 30, b: 32, col: '#e33' }] },
+  cabin: { id: 'cabin', maxV: 12000, step: 4000, l1: 'CABIN', l2: '1000 FT',
+           bands: [{ a: 0, b: 8000, col: '#1fae4b' }, { a: 8000, b: 10000, col: '#e8c832' }, { a: 10000, b: 12000, col: '#e33' }],
+           tickLabel: function (v) { return String(Math.round(v / 1000)); } },
+  cdiff: { id: 'cdiff', maxV: 10, step: 2, l1: 'CAB', l2: 'ΔP PSI',
+           bands: [{ a: 0, b: 8.5, col: '#1fae4b' }, { a: 8.5, b: 10, col: '#e33' }] }
+};
+
+function drawEICASCluster(r) {
+  const amber = '#ffb020', red = '#ff3b30';
+  const running = state.engineState === 'running';
+  // 2×2 grid of round instruments filling the sub-panel bay.
+  const pad = Math.max(4, r.w * 0.03);
+  const D = Math.floor(Math.min((r.w - pad * 3) / 2, (r.h - pad * 3) / 2));
+  const cxs = [r.x + pad + D / 2, r.x + r.w - pad - D / 2];
+  const cys = [r.y + pad + D / 2, r.y + r.h - pad - D / 2];
+
+  const hydAvg = (eicas.hydA + eicas.hydB) / 2;
+  rcDrawSysGauge(cxs[0], cys[0], D, RC_SYS_CFG.hyd, hydAvg, Math.round(hydAvg),
+    running && hydAvg < 1500 ? amber : '#f2f4f6');
+
+  const voltVal = eicas.onBattery ? eicas.batV : eicas.genV;
+  rcDrawSysGauge(cxs[1], cys[0], D, RC_SYS_CFG.volt, voltVal, voltVal.toFixed(1),
+    (eicas.onBattery && running) || eicas.batV < 23.6 ? amber : '#f2f4f6');
+
+  rcDrawSysGauge(cxs[0], cys[1], D, RC_SYS_CFG.cabin, eicas.cabinAlt, Math.round(eicas.cabinAlt),
+    eicas.cabinAlt > 10000 ? red : eicas.cabinAlt > 8500 ? amber : '#f2f4f6');
+
+  rcDrawSysGauge(cxs[1], cys[1], D, RC_SYS_CFG.cdiff, eicas.diffPsi, eicas.diffPsi.toFixed(1),
+    eicas.diffPsi > 8.9 ? amber : '#f2f4f6');
+}
+
+// Navigation Display (ND) — the real EFIS way: traffic (TCAS), weather (radar)
+// and course/distance data are all painted on ONE compass scope simultaneously.
+// There is no "page" to switch to; a real ND never hides the weather to show
+// traffic or vice versa — they're always overlaid together.
+function drawNDPage(r) {
+  const navOn = ap.on && ap.mode === 'nav' && ap.nav;
+  avFrame(r, 'ND', navOn ? (ap.nav.destName || 'DIRECT') : (tcas.ra ? tcas.ra.toUpperCase() : (tcas.taActive ? 'TRAFFIC' : avWx.status)));
+
+  const grn = 'rgba(0,255,65,0.75)';
+  ctx.save();
+  ctx.font = '600 9px "JetBrains Mono", monospace'; ctx.fillStyle = grn; ctx.textBaseline = 'middle';
+  const rowY = r.y + 34;
+  ctx.textAlign = 'left';  ctx.fillText('GS ' + Math.round(state.speed) + 'KT', r.x + 10, rowY);
+  ctx.textAlign = 'right'; ctx.fillText('TRK ' + String(Math.round(state.heading) % 360).padStart(3, '0') + '°', r.x + r.w - 10, rowY);
+  let navY = rowY + 13;
+  let db = null, nm = 0;
+  if (navOn) {
+    db = navBearingTo(ap.nav.destLat, ap.nav.destLon);
+    nm = db.dist / 1852;
+    const ete = state.speed > 20 ? db.dist / (state.speed * KTS_TO_MPS) : 0;
+    ctx.textAlign = 'left';  ctx.fillText('DTK ' + String(Math.round(db.brg)).padStart(3, '0') + '°', r.x + 10, navY);
+    ctx.textAlign = 'right'; ctx.fillText((nm < 10 ? nm.toFixed(1) : Math.round(nm)) + 'NM ' + (ete ? fmtEtaHM(ete) : '--'), r.x + r.w - 10, navY);
+  } else {
+    ctx.textAlign = 'left';
+    ctx.fillText('WIND ' + (env.wind.speedKts < 1 ? 'CALM' : Math.round(env.wind.speedKts) + 'KT ' + String(Math.round(env.wind.fromDeg)).padStart(3, '0') + '°'), r.x + 10, navY);
+  }
+  ctx.restore();
+
+  // Compass scope: live weather cells behind, live TCAS traffic in front, own-ship on top.
+  const scopeTop = navY + 10;
+  const cdiH = navOn ? 44 : 0;
+  const cx = r.x + r.w / 2, cy = r.y + r.h - 12 - cdiH;
+  const maxR = Math.max(30, Math.min(r.w / 2 - 12, cy - scopeTop));
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,255,65,0.22)'; ctx.lineWidth = 1;
+  [2, 4, 6].forEach(function (nmR) { ctx.beginPath(); ctx.arc(cx, cy, maxR * nmR / 6, Math.PI, 2 * Math.PI); ctx.stroke(); });
+
+  avWx.cells.forEach(function (c) {
+    const rel = (c.brg - state.heading) * DEG;
+    const rr = maxR * Math.min(c.distNm, 6) / 6;
+    const x = cx + Math.sin(rel) * rr, y = cy - Math.cos(rel) * rr;
+    const col = c.mmh > 15 ? '#ff35d0' : c.mmh > 6 ? '#ff3b30' : c.mmh > 2 ? '#ffb020' : c.mmh > 0.5 ? '#2fd44f' : '#1c7a34';
+    ctx.fillStyle = col; ctx.globalAlpha = 0.55;
+    ctx.beginPath(); ctx.arc(x, y, Math.max(6, maxR * 0.1), 0, 2 * Math.PI); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = '#00ff41';
+  ctx.beginPath(); ctx.moveTo(cx, cy - 7); ctx.lineTo(cx - 6, cy + 5); ctx.lineTo(cx + 6, cy + 5); ctx.closePath(); ctx.fill();
+
+  tcas.threats.forEach(function (th) {
+    if (th.level < 1 && th.rangeNm > 6) return;
+    const rel = (th.brg - state.heading) * DEG;
+    const rr = maxR * Math.min(th.rangeNm, 6) / 6;
+    const x = cx + Math.sin(rel) * rr, y = cy - Math.cos(rel) * rr;
+    const col = th.level >= 3 ? '#ff2a2a' : th.level === 2 ? '#ffb020' : '#e8ecef';
+    ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+    if (th.level >= 3) { ctx.fillRect(x - 5, y - 5, 10, 10); }
+    else if (th.level === 2) { ctx.beginPath(); ctx.arc(x, y, 5.5, 0, 2 * Math.PI); ctx.fill(); }
+    else {
+      ctx.beginPath(); ctx.moveTo(x, y - 6); ctx.lineTo(x + 5, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 5, y); ctx.closePath();
+      if (th.level === 1) ctx.fill(); else ctx.stroke();
+    }
+    const rh = (th.relAlt >= 0 ? '+' : '-') + String(Math.round(Math.abs(th.relAlt) / 100)).padStart(2, '0');
+    ctx.fillStyle = col; ctx.font = '600 9px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText((th.relAlt >= 0 ? rh : ''), x, y - 7);
+    ctx.textBaseline = 'top';
+    ctx.fillText((th.relAlt < 0 ? rh : ''), x, y + 7);
+    if (th.trend) ctx.fillText(th.trend > 0 ? '▲' : '▼', x + 12, y - 5);
+  });
+  ctx.restore();
+
+  // Course-deviation indicator (localizer) + glideslope, drawn as a mini ILS
+  // strip under the scope — only meaningful (and only shown) once a direct-to
+  // course is active, same as a real CDI/GS needle only coming alive on a tuned course.
+  if (navOn && db) {
+    const ilsY = r.y + r.h - cdiH / 2 - 4, half = r.w / 2 - 30;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,255,65,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx - half, ilsY); ctx.lineTo(cx + half, ilsY); ctx.stroke();
+    for (let d = -2; d <= 2; d++) { ctx.beginPath(); ctx.arc(cx + d * half / 2.5, ilsY, 2.5, 0, 2 * Math.PI); ctx.stroke(); }
+    let tae = normDeg(db.brg - state.heading);
+    const devX = Math.max(-1, Math.min(1, tae / 10)) * (half / 1.25);
+    ctx.strokeStyle = '#ffb020'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(cx + devX, ilsY - 16); ctx.lineTo(cx + devX, ilsY + 16); ctx.stroke();
+    const gsReqFt = (nm * 6076) * Math.tan(3 * DEG);
+    const aglDest = state.altitude - (ap.nav.activeGroundFt || state.terrainHeightFt || 0);
+    const gsErr = Math.max(-1, Math.min(1, (aglDest - gsReqFt) / 400));
+    const gx = cx + half + 8;
+    ctx.strokeStyle = 'rgba(0,255,65,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(gx, ilsY - 16); ctx.lineTo(gx, ilsY + 16); ctx.stroke();
+    ctx.fillStyle = '#ff35d0';
+    ctx.beginPath(); ctx.arc(gx, ilsY + gsErr * 15, 3.5, 0, 2 * Math.PI); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawMasterAnnun() {
+  // Master WARNING (red) / CAUTION (amber) annunciators, flashing. Docked to the
+  // glareshield above the instrument panel in cockpit-panel mode (or a slim strip
+  // at the very top of the screen otherwise) — never over the middle of the
+  // windscreen where it would block the view.
+  if (!avionics.masterWarn && !avionics.masterCaut && !gpws.pullUp) return;
+  const flash = (performance.now() % 800) < 480;
+  const panel = cockpitPanelOn();
+  const L = panel ? rcComputeLayout() : null;
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const cx = panel ? avPanelCenterX(L) : W / 2;
+  const tileH = 30, msgLines = Math.min(4, avionics.warnMsgs.length + avionics.cautMsgs.length);
+  const puH = gpws.pullUp ? 54 : 0, tilesH = (avionics.masterWarn || avionics.masterCaut) ? tileH + 8 : 0;
+  const blockH = puH + tilesH + msgLines * 14;
+  // Panel mode: stack the strip bottom-up so it sits flush above the glareshield.
+  // Tape/HUD mode: stack top-down from the top edge of the screen. Either way it
+  // stays out of the centre of the windscreen.
+  let cursorY = panel ? (L.top - 8 - blockH) : 8;
+  let puY = cursorY;
+  if (gpws.pullUp && flash) {
+    ctx.fillStyle = 'rgba(255,30,30,0.92)';
+    avRoundRect(cx - 90, puY, 180, 46, 8); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = '800 26px "JetBrains Mono", monospace';
+    ctx.fillText('PULL UP', cx, puY + 24);
+  }
+  if (gpws.pullUp) cursorY += puH;
+  let bx = cx - 132, by = cursorY;
+  if (avionics.masterWarn) {
+    ctx.globalAlpha = flash ? 1 : 0.35;
+    ctx.fillStyle = '#c00'; avRoundRect(bx, by, 128, 30, 5); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = '800 14px "JetBrains Mono", monospace';
+    ctx.fillText('⚠ WARNING', bx + 64, by + 15);
+  }
+  if (avionics.masterCaut) {
+    ctx.globalAlpha = flash ? 1 : 0.45;
+    ctx.fillStyle = '#c88a00'; avRoundRect(cx + 4, by, 128, 30, 5); ctx.fill();
+    ctx.fillStyle = '#111'; ctx.font = '800 14px "JetBrains Mono", monospace';
+    ctx.fillText('⚠ CAUTION', cx + 68, by + 15);
+  }
+  ctx.globalAlpha = 1;
+  // message list under the tiles
+  const msgs = avionics.warnMsgs.concat(avionics.cautMsgs).slice(0, 4);
+  ctx.font = '700 11px "JetBrains Mono", monospace'; ctx.textBaseline = 'top';
+  msgs.forEach(function (m, i) {
+    const warn = avionics.warnMsgs.indexOf(m) >= 0;
+    ctx.fillStyle = warn ? '#ff5b52' : '#ffc24d';
+    ctx.fillText(m, cx, by + 36 + i * 14);
+  });
+  ctx.restore();
+}
+
+function drawAvionics() {
+  drawMasterAnnun();
+  if (W < 620 || H < 420) return;  // hide the fixed displays on tiny/mobile screens
+  const ndR = avNdRect(), eicasR = avEicasRect();
+  if (ndR)    drawNDPage(ndR);       // Navigation Display: traffic + weather + course, always up
+  if (eicasR) drawEICASCluster(eicasR); // hydraulic / electrical / pressurisation dials, always up
+}
+
 // Master AP dispatcher
 function apControl(dt) {
   if (!ap.on) return null;
@@ -8612,6 +9246,7 @@ function update(dt) {
   updateMultiplayer(dt);
   tickRealWeather(dt);
   checkTerrainBeep(dt);
+  updateAvionics(dt);      // GPWS · TCAS · EICAS systems · live WX radar (all on real-world data)
   tickFlightStats(dt);
 
   // ---- Pilot inputs (elevator / aileron / throttle) ----
@@ -10851,6 +11486,10 @@ function rcComputeLayout() {
   // row on an actual panel, so this is fixed regardless of screen size.
   const sideAnn   = W >= 760;                // annunciator column fits on the right
   const dockRadar = W >= 760;                // nav/radar scope docks into the panel on the left
+  // ND/EICAS only get physical screen bays cut into the panel when there's
+  // real room either side — otherwise they're left out entirely rather than
+  // floating a window over the glass (see avNdRect/avEicasRect).
+  const sideScreens = W >= 1280;
   const glare   = 16;                        // glareshield strip height
   const stripH  = sideAnn ? 0 : 22;          // bottom lamp strip when no side column
   let PH = Math.round(H * 0.30);
@@ -10859,19 +11498,25 @@ function rcComputeLayout() {
   const annW   = sideAnn ? Math.max(100, Math.min(150, Math.round(W * 0.095))) : 0;
   const cols   = 3;
   const gap    = Math.max(8, Math.round(W * 0.009));
-  // Rough radar footprint (sized off the dial block height) so the width budget
-  // below leaves it room; the exact square size is fixed to the final gauge
-  // block height once D is known, so the scope lines up with the dial rows.
+  // Rough radar / ND / EICAS footprints (sized off the dial block height) so the
+  // width budget below leaves them room; the exact square sizes are fixed to the
+  // final gauge block height once D is known, so everything lines up.
   const radarWEst = dockRadar ? Math.max(90, Math.min(210, Math.round(availH * 0.95))) : 0;
+  const screenWEst = sideScreens ? radarWEst : 0;
   let D = Math.min(
     (availH - gap) / 2,
-    (W - annW - radarWEst - 24 - gap * (cols + (sideAnn ? 2 : 0) + (dockRadar ? 2 : 0))) / cols
+    (W - annW - radarWEst - screenWEst * 2 - 24 - gap * (cols + (sideAnn ? 2 : 0) + (dockRadar ? 2 : 0) + (sideScreens ? 4 : 0))) / cols
   );
   D = Math.max(52, Math.floor(D));
-  const radarW = dockRadar ? Math.round(2 * D + gap) : 0;   // exact square, spans both rows
-  const totalW = radarW + (dockRadar ? gap * 2 : 0) + cols * D + (cols - 1) * gap + (sideAnn ? annW + gap * 2 : 0);
+  const radarW  = dockRadar   ? Math.round(2 * D + gap) : 0;   // exact square, spans both rows
+  const screenW = sideScreens ? radarW : 0;                     // ND/EICAS bays match that square
+  const totalW = screenW + (sideScreens ? gap * 2 : 0) +
+    radarW + (dockRadar ? gap * 2 : 0) + cols * D + (cols - 1) * gap +
+    (sideAnn ? annW + gap * 2 : 0) + screenW + (sideScreens ? gap * 2 : 0);
   const blockX0 = Math.max(8, (W - totalW) / 2);
-  const x0  = blockX0 + (dockRadar ? radarW + gap * 2 : 0);
+  const ndX    = sideScreens ? blockX0 : 0;
+  const radarX = dockRadar ? blockX0 + (sideScreens ? screenW + gap * 2 : 0) : 0;
+  const x0  = radarX + (dockRadar ? radarW + gap * 2 : 0);
   const top = H - PH;
   const gy0 = top + glare + 10 + D / 2;
   const centers = [];
@@ -10879,11 +11524,13 @@ function rcComputeLayout() {
     const r = Math.floor(i / 3), c = i % 3;
     centers.push({ x: Math.round(x0 + c * (D + gap) + D / 2), y: Math.round(gy0 + r * (D + gap)) });
   }
-  const annX   = sideAnn   ? x0 + cols * (D + gap) + gap : 0;
-  const radarX = dockRadar ? blockX0 : 0;
-  const radarY = dockRadar ? top + glare + 10 : 0;
+  const annX    = sideAnn ? x0 + cols * (D + gap) + gap : 0;
+  const eicasX  = sideScreens ? annX + (sideAnn ? annW + gap * 2 : 0) : 0;
+  const radarY  = dockRadar   ? top + glare + 10 : 0;
+  const screenY = sideScreens ? top + glare + 10 : 0;
   RC.layoutKey = key;
-  RC.layout = { sideAnn, dockRadar, PH, top, glare, D, gap, centers, annW, annX, stripH, radarW, radarX, radarY };
+  RC.layout = { sideAnn, dockRadar, sideScreens, PH, top, glare, D, gap, centers, annW, annX, stripH,
+    radarW, radarX, radarY, screenW, ndX, eicasX, screenY };
   RC.faces = {};   // sizes changed → drop cached art
   RC.bg = null;
   return RC.layout;
@@ -11285,6 +11932,21 @@ function rcPanelBg(L) {
     g.fillStyle = rg;
     g.beginPath(); g.arc(rcx, rcy, rr + 6, 0, RC_TAU); g.fill();
   }
+  // recessed square wells behind the physically-mounted ND and EICAS screens —
+  // same treatment as the radar dock, so they read as built into the panel.
+  if (L.sideScreens) {
+    [L.ndX, L.eicasX].forEach(function (sx) {
+      const w = L.screenW, y0 = L.screenY - L.top;
+      g.fillStyle = 'rgba(0,0,0,0.55)';
+      g.beginPath();
+      if (g.roundRect) g.roundRect(sx - 5, y0 - 5, w + 10, w + 10, 6); else g.rect(sx - 5, y0 - 5, w + 10, w + 10);
+      g.fill();
+      g.strokeStyle = 'rgba(130,134,142,0.4)'; g.lineWidth = 1.5;
+      g.beginPath();
+      if (g.roundRect) g.roundRect(sx - 3, y0 - 3, w + 6, w + 6, 5); else g.rect(sx - 3, y0 - 3, w + 6, w + 6);
+      g.stroke();
+    });
+  }
   // screws
   function screw(x, y, seed) {
     const rg = g.createRadialGradient(x - 1, y - 1, 0.5, x, y, 4.5);
@@ -11551,6 +12213,8 @@ function render() {
   }
 
   drawWindshieldRain(); // droplets clinging to the cockpit glass — closest layer, drawn last
+
+  drawAvionics();       // ND (traffic+weather+course) + EICAS, always on — plus master warning & caution
 
   document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : 'CHASE';
 
