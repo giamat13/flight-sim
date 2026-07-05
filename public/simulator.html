@@ -94,6 +94,12 @@ body.hide-pausebtn #flight-btns{display:none !important}
 body.hide-viewlabel #cam-label{display:none !important}
 body.hide-viewlabel #fps-counter{right:16px}
 body.cam-cockpit #fps-counter{top:auto;bottom:16px}
+/* ===== Slew mode (free external camera) — hide flight-focused HUD chrome while
+   the pilot is floating around the aircraft for a cinematic/inspection shot ===== */
+body.slew-mode #hud,body.slew-mode #ahi-container,body.slew-mode #compass,
+body.slew-mode #throttle-bar-container,body.slew-mode #fuel-gauge-container,
+body.slew-mode #sys-panel{display:none !important}
+#active-pause-badge{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:41;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:3px;color:#7fd0ff;background:rgba(0,20,40,0.55);border:1px solid rgba(127,208,255,0.45);border-radius:4px;padding:5px 14px;text-shadow:0 0 10px rgba(127,208,255,0.6);pointer-events:none;display:none}
 body.hide-controllerlabel #gp-indicator{display:none !important}
 body.rc-panel #traffic-info{bottom:calc(var(--rc-lift,240px) + 8px) !important}
 body.rc-panel #ap-panel{bottom:calc(var(--rc-lift,240px) + 14px)}
@@ -612,6 +618,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
   <div id="vjoy-label">PITCH · ROLL</div>
 </div>
 <div id="hud-toast"></div>
+<div id="active-pause-badge">⏸ ACTIVE PAUSE — K TO RESUME</div>
 
 <div id="sys-panel">
   <div class="sys-row"><span class="sys-key">ENG</span><span class="sys-val sys-off" id="sys-eng">OFF</span></div>
@@ -777,6 +784,8 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
     <button class="tc-btn" id="tc-flap">FLAP</button>
     <button class="tc-btn" id="tc-gear">GEAR</button>
     <button class="tc-btn" id="tc-cam">CAM</button>
+    <button class="tc-btn" id="tc-slew">SLEW</button>
+    <button class="tc-btn" id="tc-apause">⏸K</button>
     <button class="tc-btn" id="tc-ap" title="Tap = autopilot · Double-tap = nav-to-point">AP</button>
   </div>
   <div id="tc-right">
@@ -2175,6 +2184,11 @@ function resetState() {
   const rw = document.getElementById('rotate-warn');   if (rw) rw.style.display = 'none';
   if (typeof initTraffic === 'function') initTraffic();
   resetMechSoundTrackers();
+  if (cameraMode === 2) { cameraMode = slewPrevCameraMode === 0 ? 0 : 1; document.body.classList.remove('slew-mode'); }
+  slewPos = null;
+  activePause = false;
+  const apBadge = document.getElementById('active-pause-badge');
+  if (apBadge) apBadge.style.display = 'none';
 }
 
 // ===================== Web Audio — engine & environment sounds (no external files) =====================
@@ -2467,6 +2481,7 @@ function updateMechSounds(dt) {
 // Index keys by e.code (PHYSICAL key position) instead of e.key, so controls
 // work regardless of keyboard language/layout (Hebrew, AZERTY, etc.).
 const USED_CODES = { KeyW:1, KeyS:1, KeyB:1, KeyC:1, KeyE:1, KeyF:1, KeyG:1, KeyR:1, KeyP:1, KeyA:1, KeyH:1, KeyV:1,
+  KeyX:1, KeyK:1, KeyZ:1, KeyD:1,
   BracketLeft:1, BracketRight:1, Semicolon:1, Quote:1, Comma:1, Period:1,
   ArrowUp:1, ArrowDown:1, ArrowLeft:1, ArrowRight:1, Space:1, F3:1, Minus:1, Equal:1 };
 const keys = {};
@@ -2515,11 +2530,14 @@ window.addEventListener('keydown', e => {
   keys[code] = true;
   if (!wasDown) {
     // edge-triggered actions
-    if (code === 'KeyC' && TUT.allows('camera')) cameraMode = (cameraMode + 1) % 2;
+    if (code === 'KeyC' && TUT.allows('camera') && cameraMode !== 2) cameraMode = (cameraMode + 1) % 2;
     // F3+A (Minecraft-style) reloads the render of loaded tiles without re-downloading;
-    // A alone toggles the autopilot.
-    if (code === 'KeyA') { if (keys['F3']) reloadRender(); else onApButtonPress(); }
+    // A alone toggles the autopilot. While slewing, A/D are the free-camera strafe
+    // keys instead, so skip the autopilot toggle.
+    if (code === 'KeyA' && cameraMode !== 2) { if (keys['F3']) reloadRender(); else onApButtonPress(); }
     if (code === 'KeyE') handleEngineKey();
+    if (code === 'KeyX' && TUT.allows('camera')) toggleSlewMode();
+    if (code === 'KeyK') toggleActivePause();
     // AP knob shortcuts (only when AP is on)
     if (ap.on) {
       if (code === 'BracketLeft')  apAdjHdg(-5);
@@ -2781,6 +2799,8 @@ function initTouchControls() {
   wireTap(document.getElementById('tc-flap'), cycleFlaps);
   wireTap(document.getElementById('tc-gear'), toggleGear);
   wireTap(document.getElementById('tc-cam'), function () { cameraMode = (cameraMode + 1) % 2; });
+  wireTap(document.getElementById('tc-slew'), function () { toggleSlewMode(); });
+  wireTap(document.getElementById('tc-apause'), function () { toggleActivePause(); });
   wireTap(document.getElementById('tc-ap'), onApButtonPress);
   initVirtualJoystick();
   _updateVjoyVisibility();
@@ -3226,9 +3246,9 @@ let gpConnected = false;
 
 // Two versions of the on-screen control hint — keyboard vs. gamepad.
 const HINT_KEYBOARD =
-  'E ENGINE<br>F FLAPS · G GEAR · V SPEEDBRAKE<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="color:#ffe066">A·A NAV-TO-POINT</span><br><span style="color:rgba(127,208,255,0.6)">[/] HDG · ;/\' ALT · ,/. SPD</span><br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
+  'E ENGINE<br>F FLAPS · G GEAR · V SPEEDBRAKE<br>↓ NOSE UP · ↑ NOSE DN<br>←→ BANK<br>W/S THROTTLE<br>C CAMERA · P PAUSE<br>A AUTOPILOT<br><span style="color:#ffe066">A·A NAV-TO-POINT</span><br><span style="color:rgba(127,208,255,0.6)">[/] HDG · ;/\' ALT · ,/. SPD</span><br><span style="color:#7fd0ff">X SLEW CAM · K ACTIVE PAUSE</span><br><span style="opacity:0.7">🎮 GAMEPAD READY</span>';
 const HINT_GAMEPAD =
-  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br><span style="color:#ffe066">RB·RB NAV-TO-POINT</span><br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>Y CAMERA · ☰ PAUSE<br><span style="color:rgba(127,208,255,0.6)">AP: D-PAD HDG/ALT · R3+D-PAD SPD</span>';
+  '<span style="color:#7fd0ff">🎮 GAMEPAD</span><br>B ENGINE<br>X FLAPS · LB GEAR · RB AP<br><span style="color:#ffe066">RB·RB NAV-TO-POINT</span><br>L-STICK FLY · R-STICK LOOK<br>RT/LT THROTTLE<br>Y CAMERA · ☰ PAUSE<br><span style="color:rgba(127,208,255,0.6)">AP: D-PAD HDG/ALT · R3+D-PAD SPD</span><br><span style="color:#7fd0ff">KEYBOARD: X SLEW CAM · K ACTIVE PAUSE</span>';
 
 function updateControlsHint() {
   const el = document.getElementById('controls-hint');
@@ -4793,7 +4813,25 @@ function stallSpeedKts() {
 }
 
 let lastTime = performance.now();
-let cameraMode = 1; // 0=cockpit, 1=chase (default: 3rd-person so you see the plane)
+let cameraMode = 1; // 0=cockpit, 1=chase, 2=slew (default: 3rd-person so you see the plane)
+
+// ===================== Slew mode (free external camera) =====================
+// Detaches the camera from the aircraft so the pilot can float around it in
+// real time — cinematic shots, close inspection, walk-arounds — while the
+// flight itself keeps running in the background (controlled by trim/autopilot,
+// since keyboard input while slewing drives the camera, not the stick).
+let slewPrevCameraMode = 1;  // camera mode to restore when slew is turned off
+let slewPos = null;          // THREE.Vector3, world ENU metres
+let slewYaw = 0, slewPitch = 0; // degrees
+const SLEW_LOOK_RATE = 75;   // deg/sec
+const SLEW_BASE_SPEED = 30;  // m/s
+const SLEW_BOOST_MULT = 4;   // Shift held
+
+// ===================== Active pause (freeze without opening the menu) =====================
+// Stops the flight clock in place — instantly, no menu, no fade to the map —
+// so the pilot can hold a moment (or free-look/slew around it) without
+// interrupting the view. Distinct from the full pause menu opened by P/Esc.
+let activePause = false;
 
 // ===================== Realistic cockpit mode =====================
 // Feature flags: (1) analog instrument panel, (2) cockpit window frame,
@@ -6042,6 +6080,53 @@ const FT_TO_M = 0.3048;
 const KTS_TO_MPS = 0.514444;
 const M_PER_DEG_LAT = 111320;
 
+// Turn slew mode on/off. Turning it on captures the camera's current position/
+// facing as the starting point for free flight; turning it off restores
+// whichever camera mode (cockpit/chase) was active beforehand.
+function toggleSlewMode() {
+  if (!(chosen && simReady) || !THREEJS || spectate.active) return;
+  if (cameraMode === 2) {
+    cameraMode = (slewPrevCameraMode === 0) ? 0 : 1;
+    camFollowHeading = null; // let chase view re-settle behind the tail
+    showToast('SLEW OFF');
+  } else {
+    slewPrevCameraMode = cameraMode;
+    const cam = THREEJS.camera;
+    slewPos = cam.position.clone();
+    const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    slewYaw = wrap360(Math.atan2(d.x, -d.z) / DEG);
+    slewPitch = Math.asin(Math.max(-1, Math.min(1, d.y))) / DEG;
+    cameraMode = 2;
+    showToast('SLEW MODE — ARROWS LOOK · WASD MOVE · SPACE/Z UP-DOWN');
+  }
+  document.body.classList.toggle('slew-mode', cameraMode === 2);
+}
+
+// Reads the free-fly keys every frame (independent of the physics step, so it
+// keeps working during Active Pause) and moves the detached slew camera.
+function updateSlewCamera(dt) {
+  if (cameraMode !== 2 || !slewPos || !chosen || !simReady || paused) return;
+  if (keys['ArrowUp'])    slewPitch = Math.min(89,  slewPitch + SLEW_LOOK_RATE * dt);
+  if (keys['ArrowDown'])  slewPitch = Math.max(-89, slewPitch - SLEW_LOOK_RATE * dt);
+  if (keys['ArrowLeft'])  slewYaw = wrap360(slewYaw - SLEW_LOOK_RATE * dt);
+  if (keys['ArrowRight']) slewYaw = wrap360(slewYaw + SLEW_LOOK_RATE * dt);
+
+  const boost = (keys['ShiftLeft'] || keys['ShiftRight']) ? SLEW_BOOST_MULT : 1;
+  const spd = SLEW_BASE_SPEED * boost;
+  const yawR = slewYaw * DEG, pitchR = slewPitch * DEG;
+  const fwd = new THREE.Vector3(Math.sin(yawR) * Math.cos(pitchR), Math.sin(pitchR), -Math.cos(yawR) * Math.cos(pitchR));
+  const right = new THREE.Vector3(Math.cos(yawR), 0, Math.sin(yawR));
+  const mv = new THREE.Vector3();
+  if (keys['KeyW']) mv.addScaledVector(fwd, 1);
+  if (keys['KeyS']) mv.addScaledVector(fwd, -1);
+  if (keys['KeyD']) mv.addScaledVector(right, 1);
+  if (keys['KeyA']) mv.addScaledVector(right, -1);
+  if (keys['Space']) mv.y += 1;
+  if (keys['KeyZ']) mv.y -= 1;
+  if (_vjoy.active) { mv.addScaledVector(fwd, _vjoy.pitch); mv.addScaledVector(right, _vjoy.roll); } // touch joystick
+  if (mv.lengthSq() > 0) { mv.normalize(); slewPos.addScaledVector(mv, spd * dt); }
+}
+
 // Drives the Three.js camera from the flight model, orients + lights the aircraft
 // mesh, refreshes the surrounding world (tiles + buildings) and renders the scene.
 function updateCamera() {
@@ -6125,6 +6210,13 @@ function updateCamera() {
     THREEJS.aircraft.visible = false;
     cam.position.copy(acPos);
     setCamOrient(cam, state.heading + lookYawOff + turbYawJit, state.pitch + buf * 1.2 + lookPitchOff + turbPitchJit, state.bank + buf * 2.2 + turbBankJit);
+  } else if (cameraMode === 2) {
+    // Slew: a fully detached free camera — the aircraft keeps flying itself
+    // (trim/autopilot) in the background while the pilot floats around it.
+    THREEJS.aircraft.visible = true;
+    if (!slewPos) { slewPos = acPos.clone(); slewYaw = state.heading; slewPitch = 0; }
+    cam.position.copy(slewPos);
+    setCamOrient(cam, slewYaw, slewPitch, 0);
   } else {
     // Chase: a stable third-person rig behind the aircraft. The left stick visibly
     // banks/pitches the (real, lit) model; the right stick orbits the camera, which
@@ -9422,15 +9514,18 @@ function update(dt) {
   }
 
   // MSFS keyboard convention — UP arrow / stick back = NOSE UP.
+  // While slewing, the arrow/WASD keys drive the free camera instead (see
+  // updateSlewCamera) — the aircraft keeps its last trim/throttle/attitude.
+  const slewing = cameraMode === 2;
   let pitchIn = 0;
-  if (keys['ArrowUp']) pitchIn -= 1;
-  if (keys['ArrowDown']) pitchIn += 1;
+  if (!slewing && keys['ArrowUp']) pitchIn -= 1;
+  if (!slewing && keys['ArrowDown']) pitchIn += 1;
   let rollIn = 0;
-  if (keys['ArrowRight']) rollIn += 1;
-  if (keys['ArrowLeft']) rollIn -= 1;
+  if (!slewing && keys['ArrowRight']) rollIn += 1;
+  if (!slewing && keys['ArrowLeft']) rollIn -= 1;
   let thrIn = 0;
-  if (keys['KeyW']) thrIn += 1;
-  if (keys['KeyS']) thrIn -= 1;
+  if (!slewing && keys['KeyW']) thrIn += 1;
+  if (!slewing && keys['KeyS']) thrIn -= 1;
   if (gp) { pitchIn += gp.pitch; rollIn += gp.roll; thrIn += gp.thr; }
   const tilt = getTiltControl();           // phone tilt (if enabled)
   if (tilt) { pitchIn += tilt.pitch; rollIn += tilt.roll; }
@@ -9774,7 +9869,7 @@ function update(dt) {
     gamma = 0;
 
     // Rolling friction (brakes give ~12× more deceleration)
-    const braking = !!(keys['Space'] || apBrakeCmd);
+    const braking = !!((cameraMode !== 2 && keys['Space']) || apBrakeCmd);
     const frictionDecel = braking ? 5.5 : 0.45;   // m/s²
     V = Math.max(0, V - frictionDecel * dt);
 
@@ -12500,6 +12595,9 @@ function rcDrawPlacard(L) {
 }
 
 function render() {
+  // Free-fly camera movement, if slewing — runs every frame independent of the
+  // physics step so it keeps working during Active Pause.
+  updateSlewCamera(frameDt || 0.016);
   // Update + render the Three.js world first (terrain, buildings, aircraft, camera),
   // then draw the 2D HUD overlay on top of it.
   updateCamera();
@@ -12536,8 +12634,9 @@ function render() {
 
   drawAvionics();       // ND (traffic+weather+course) + EICAS, always on — plus master warning & caution
 
-  document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : 'CHASE';
+  document.getElementById('cam-label').textContent = cameraMode === 0 ? 'COCKPIT' : cameraMode === 2 ? 'SLEW' : 'CHASE';
   document.body.classList.toggle('cam-cockpit', cameraMode === 0);
+  document.body.classList.toggle('slew-mode', cameraMode === 2);
 
   // Coordinates display
   const coordEl = document.getElementById('coord-display');
@@ -15128,6 +15227,9 @@ function setPaused(p) {
   if (pauseMenu) pauseMenu.style.display = p ? 'flex' : 'none';
   const fbp = document.getElementById('fb-pause');
   if (fbp) fbp.textContent = p ? '▶' : '⏸';
+  const apBadge = document.getElementById('active-pause-badge');
+  if (apBadge && p) apBadge.style.display = 'none'; // menu pause takes visual precedence
+  else if (apBadge && activePause) apBadge.style.display = 'block';
   if (p) {
     pauseItems = pauseMenu ? Array.prototype.slice.call(pauseMenu.querySelectorAll('.sm-btn')) : [];
     setPauseFocus(0);
@@ -15149,8 +15251,30 @@ function setPaused(p) {
   }
 }
 function togglePause() { if (chosen && simReady) setPaused(!paused); }
+
+// Active pause: freezes the flight clock in place with no menu and no
+// interruption to the view — unlike setPaused(), which opens the pause menu.
+function setActivePause(p) {
+  if (!(chosen && simReady) || paused) return; // menu pause takes precedence
+  activePause = p;
+  const badge = document.getElementById('active-pause-badge');
+  if (badge) badge.style.display = p ? 'block' : 'none';
+  if (audioCtx && audio.masterGain) {
+    const g = audio.masterGain.gain, t = audioCtx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(p ? 0 : volSettings.master, t + 0.3);
+  }
+  if (!p) lastTime = performance.now(); // avoid a dt spike on resume
+}
+function toggleActivePause() { setActivePause(!activePause); }
 function returnToMenu() {
   setPaused(false);
+  activePause = false;
+  const apBadge = document.getElementById('active-pause-badge');
+  if (apBadge) apBadge.style.display = 'none';
+  if (cameraMode === 2) document.body.classList.remove('slew-mode');
+  cameraMode = 1; slewPos = null;
   stopVideoCapture(true); // abort any in-progress screen recording without downloading
   if (spectate.replay) { replayPlay = null; hideReplayBar(); } // leaving a replay — drop its cursor + controls
   else finalizeFlightStats('quit');
@@ -16225,7 +16349,7 @@ function loop() {
 
   if (chosen && simReady) pollPauseGamepad();
   if (chosen && simReady) pollApGamepad();
-  if (simReady && !paused) update(dt);
+  if (simReady && !paused && !activePause) update(dt);
   render();
   requestAnimationFrame(loop);
 }
