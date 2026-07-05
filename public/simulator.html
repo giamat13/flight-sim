@@ -14961,11 +14961,21 @@ function setPaused(p) {
   if (p) {
     pauseItems = pauseMenu ? Array.prototype.slice.call(pauseMenu.querySelectorAll('.sm-btn')) : [];
     setPauseFocus(0);
-    if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(function(){});
+    if (audioCtx && audio.masterGain) {
+      const g = audio.masterGain.gain, t = audioCtx.currentTime;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(0, t + 0.8);
+    }
   } else {
     lastTime = performance.now();            // avoid a dt spike on resume
     try { window.focus(); } catch (e) {}
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(function(){});
+    if (audioCtx && audio.masterGain) {
+      const g = audio.masterGain.gain, t = audioCtx.currentTime;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(volSettings.master, t + 0.8);
+    }
   }
 }
 function togglePause() { if (chosen && simReady) setPaused(!paused); }
