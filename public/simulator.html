@@ -88,7 +88,10 @@ body.rc-panel #minimap{bottom:calc(var(--rc-lift,240px) + 10px)}
 #minimap.rc-radar-docked{border-radius:50%;border:4px solid #3a3e46;box-shadow:0 0 0 2px #0e0f11,0 3px 8px rgba(0,0,0,0.55),inset 0 0 22px rgba(0,0,0,0.55);background:#05070a}
 #minimap.rc-radar-docked #mm-label{color:rgba(230,232,235,0.55);text-shadow:none}
 body.rc-panel #loc-label{bottom:calc(var(--rc-lift,240px) + 6px)}
-body.rc-panel #coord-display{bottom:calc(var(--rc-lift,240px) + 8px)}
+body.rc-panel #coord-display{display:none}
+body.hide-keyhint #controls-hint{display:none !important}
+body.hide-pausebtn #flight-btns{display:none !important}
+body.hide-viewlabel #cam-label{display:none !important}
 body.rc-panel #traffic-info{bottom:calc(var(--rc-lift,240px) + 8px) !important}
 body.rc-panel #ap-panel{bottom:calc(var(--rc-lift,240px) + 14px)}
 body.rc-panel #vjoy-wrap{bottom:calc(var(--rc-lift,240px) + 12px)}
@@ -750,7 +753,6 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
 </div>
 <div id="flight-btns">
   <button class="fb-btn" id="fb-pause" title="Pause (P)">⏸</button>
-  <button class="fb-btn" id="fb-maps" title="Open current location in Google Maps">🗺</button>
 </div>
 <div id="loc-label">GRAND CANYON, AZ</div>
 <div id="controls-hint">
@@ -1088,6 +1090,18 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
             <div class="stp-toggle-row">
               <span class="stp-toggle-label">FPS COUNTER</span>
               <label class="stp-toggle"><input type="checkbox" id="stp-fps-counter" checked><span class="stp-toggle-track"></span></label>
+            </div>
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">KEY HINTS (SIDE)</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-keyhint" checked><span class="stp-toggle-track"></span></label>
+            </div>
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">PAUSE BUTTON</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-pausebtn" checked><span class="stp-toggle-track"></span></label>
+            </div>
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">VIEW LABEL (COCKPIT/CHASE)</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-viewlabel" checked><span class="stp-toggle-track"></span></label>
             </div>
           </div>
         </div>
@@ -7873,14 +7887,16 @@ const avionics = {
 };
 
 // ---- Aural callout engine (Web Speech, with a synthesized-tone fallback) ----
-let _avLastPhrase = '', _avLastPhraseAt = -9999;
+// Dedup is PER PHRASE (keyed by text) so an interleaved "terrain" and "traffic"
+// don't reset each other's cooldown and machine-gun the pilot.
+const _avPhraseAt = {};
 function avSpeak(text, opts) {
   opts = opts || {};
   const vol = (window._volAlarms !== undefined ? window._volAlarms : 1);
   if (vol <= 0) return;
   const now = performance.now();
-  if (text === _avLastPhrase && now - _avLastPhraseAt < (opts.gap || 1300)) return;
-  _avLastPhrase = text; _avLastPhraseAt = now;
+  if (now - (_avPhraseAt[text] || -9999) < (opts.gap || 1300)) return;
+  _avPhraseAt[text] = now;
   try {
     if ('speechSynthesis' in window && window.SpeechSynthesisUtterance) {
       if (opts.priority) window.speechSynthesis.cancel();
@@ -7990,53 +8006,61 @@ function updateGPWS(dt) {
   if (state.onGround) { gpws.maxAgl = 0; gpws.pullUp = false; gpws.terrain = false; return; }
   gpws.maxAgl = Math.max(gpws.maxAgl, agl);
 
-  // Mode 6 — descending radio-altitude callouts ("one thousand" … "fifty" … "ten"), + minimums.
-  if (vs < -80) {
+  const sink = -vs;                              // ft/min while descending
+  const sinkFps = sink / 60;                     // ft/sec
+
+  // Mode 6 — radio-altitude callouts only during a genuine approach descent (low and
+  // sinking). A light aircraft that simply cruises low — normal for a Cessna — is left
+  // in peace instead of being read its altitude the whole flight.
+  if (agl < 1100 && sink > 200) {
     for (let i = 0; i < GPWS_CALLOUTS.length; i++) {
       const h = GPWS_CALLOUTS[i];
+      if (h > 1000) continue;
       if (prev > h && agl <= h && agl > h - 55) {
-        const say = h === 2500 ? 'two thousand five hundred' : h === 1000 ? 'one thousand' : String(h);
-        avSpeak(say, { pitch: 0.55, gap: 800 });
+        avSpeak(h === 1000 ? 'one thousand' : String(h), { pitch: 0.55, gap: 900 });
         break;
       }
     }
-    if (prev > 200 && agl <= 200 && state.gearDown) avSpeak('minimums', { pitch: 0.55, gap: 4000 });
+    if (prev > 200 && agl <= 200 && state.gearDown) avSpeak('minimums', { pitch: 0.55, gap: 5000 });
   }
 
   const V = Math.max(state.speed * KTS_TO_MPS, 1);
   const lookM = Math.max(2500, Math.min(14000, V * 30));
   const clearAhead = state.altitude - terrainAheadMaxFt(lookM);   // ft over terrain in our path
-  const sink = -vs;                              // ft/min while descending
+  // Time to hit that terrain at the current descent rate. This is what makes low
+  // cruise silent: level or gently-descending flight has a huge (or infinite) time
+  // to impact, so only a real dive toward close ground trips the warning.
+  const ttiSec = sinkFps > 1 ? Math.max(0, clearAhead) / sinkFps : 999;
 
   let pullUp = false, caution = null;
-  if (agl < 2450) {
-    // Mode 1 — excessive descent rate close to the ground.
-    if (sink > 5000 - agl * 1.0) caution = 'sinkrate';
-    if (sink > 7000 - agl * 1.4 && agl < 1500) pullUp = true;
-    // Mode 2 — excessive closure to terrain ahead.
-    if (clearAhead < 900 && agl < 2000) caution = caution || 'terrain';
-    if (clearAhead < 450 && agl < 1200) pullUp = true;
-    // Mode 4 — unsafe terrain clearance in a non-landing configuration.
-    if (agl < 500 && !state.gearDown && clearAhead < 700) caution = caution || 'gear';
-    else if (agl < 245 && state.gearDown && state.flaps < 1 && clearAhead < 420) caution = caution || 'flaps';
+  if (agl < 2450 && sink > 100) {
+    // Mode 1 — excessive descent rate for the height (boundary rises with altitude).
+    if (sink > 2200 + agl * 1.25) caution = 'sinkrate';
+    if (sink > 3800 + agl * 1.6 && agl < 1600) pullUp = true;
+    // Mode 2 — closure to terrain ahead, judged by TIME to impact, not raw distance.
+    if (agl < 1500 && ttiSec < 22) caution = caution || 'terrain';
+    if (agl < 1000 && ttiSec < 11) pullUp = true;
+    // Mode 4 — unsafe terrain clearance in a non-landing configuration, and closing.
+    if (agl < 300 && !state.gearDown && ttiSec < 45) caution = caution || 'gear';
+    else if (agl < 200 && state.gearDown && state.flaps < 1 && ttiSec < 45) caution = caution || 'flaps';
     // Mode 3 — altitude loss just after take-off.
-    if (gpws.maxAgl > 60 && gpws.maxAgl < 700 && agl < gpws.maxAgl - 70 && vs < -120 && state.gearDown)
+    if (gpws.maxAgl > 60 && gpws.maxAgl < 700 && agl < gpws.maxAgl - 90 && vs < -150 && state.gearDown)
       caution = caution || 'dontsink';
   }
 
   gpws.pullUp = pullUp;
   gpws.terrain = !pullUp && caution === 'terrain';
   if (pullUp) {
-    avSpeak('pull up', { priority: true, pitch: 0.5, rate: 1.15, gap: 1100 });
-  } else if (caution === 'terrain')  avSpeak('terrain, terrain', { pitch: 0.55, gap: 1500 });
-  else if (caution === 'sinkrate')   avSpeak('sink rate', { pitch: 0.55, gap: 1600 });
-  else if (caution === 'gear')       avSpeak('too low, gear', { pitch: 0.55, gap: 1700 });
-  else if (caution === 'flaps')      avSpeak('too low, flaps', { pitch: 0.55, gap: 1700 });
-  else if (caution === 'dontsink')   avSpeak("don't sink", { pitch: 0.55, gap: 1700 });
+    avSpeak('pull up', { priority: true, pitch: 0.5, rate: 1.15, gap: 1300 });
+  } else if (caution === 'terrain')  avSpeak('terrain, terrain', { pitch: 0.55, gap: 3500 });
+  else if (caution === 'sinkrate')   avSpeak('sink rate', { pitch: 0.55, gap: 3500 });
+  else if (caution === 'gear')       avSpeak('too low, gear', { pitch: 0.55, gap: 4000 });
+  else if (caution === 'flaps')      avSpeak('too low, flaps', { pitch: 0.55, gap: 4000 });
+  else if (caution === 'dontsink')   avSpeak("don't sink", { pitch: 0.55, gap: 4000 });
 }
 
 // ---- TCAS II (traffic advisories + resolution advisories over the live ADS-B feed) ----
-const tcas = { threats: [], ra: null, prevRa: null, taActive: false };
+const tcas = { threats: [], ra: null, prevRa: null, taActive: false, taLatch: false };
 function updateTCAS(dt) {
   tcas.threats = [];
   if (!avionics.tcas || state.terrainHit) { tcas.ra = null; tcas.taActive = false; return; }
@@ -8064,10 +8088,13 @@ function updateTCAS(dt) {
     const closing = -(dN * rvN + dE * rvE) / Math.max(rangeM, 1); // m/s, + = closing
     const tau = closing > 2 ? rangeM / closing : 999;
 
+    // TA/RA require genuine CONVERGENCE (a real closing time-to-CPA), not just a
+    // co-altitude aircraft sitting nearby — otherwise dense real-world cruise traffic
+    // would trip a "traffic" call every few seconds.
     let level = 0; // 0 other · 1 proximate · 2 TA · 3 RA
     if (rangeNm < 6 && Math.abs(relAlt) < 1200) level = 1;
-    if ((tau < 40 || (rangeNm < 3 && Math.abs(relAlt) < 850))) level = 2;
-    if ((tau < 25 || (rangeNm < 2.1 && Math.abs(relAlt) < 600))) level = 3;
+    if (tau < 35 && rangeNm < 5 && Math.abs(relAlt) < 850) level = 2;
+    if (tau < 22 && rangeNm < 4 && Math.abs(relAlt) < 600) level = 3;
 
     // RA / aural inhibits near the ground (TCAS suppresses descend RAs low, all RAs very low).
     if (agl < 1000 && level === 3) level = 2;
@@ -8085,9 +8112,18 @@ function updateTCAS(dt) {
 
   tcas.taActive = worst >= 2;
   const newRa = worst === 3 ? raSense : null;
-  if (newRa && newRa !== tcas.prevRa) avSpeak(newRa + ', ' + newRa, { priority: true, pitch: 0.5, rate: 1.1, gap: 1400 });
-  else if (worst === 2 && tcas.prevRa == null) avSpeak('traffic, traffic', { pitch: 0.55, gap: 4000 });
-  else if (!newRa && tcas.prevRa) avSpeak('clear of conflict', { pitch: 0.6, gap: 3000 });
+  // "Traffic, traffic" is announced ONCE on the rising edge of a TA and re-armed only
+  // after the encounter fully clears (worst drops to 0) — not every cooldown while a
+  // co-altitude aircraft lingers in range.
+  if (worst === 0) tcas.taLatch = false;
+  if (newRa && newRa !== tcas.prevRa) {
+    avSpeak(newRa + ', ' + newRa, { priority: true, pitch: 0.5, rate: 1.1, gap: 2000 });
+  } else if (worst === 2 && !newRa && !tcas.taLatch) {
+    avSpeak('traffic, traffic', { pitch: 0.55, gap: 6000 });
+    tcas.taLatch = true;
+  } else if (!newRa && tcas.prevRa) {
+    avSpeak('clear of conflict', { pitch: 0.6, gap: 3000 });
+  }
   tcas.prevRa = newRa;
   tcas.ra = newRa;
 }
@@ -11450,7 +11486,70 @@ function drawTraffic() {
 // Static art (panel background, bezels, dial faces, glass) is pre-rendered into
 // offscreen canvases and only needles / rotating cards are redrawn per frame.
 const RC_TAU = Math.PI * 2;
-const RC = { layout: null, layoutKey: '', bg: null, faces: {}, lift: 0 };
+const RC = { layout: null, layoutKey: '', bg: null, faces: {}, lift: 0, theme: null, themeKey: '' };
+
+// ── Per-aircraft cockpit theme ─────────────────────────────────────────────
+// In the realistic panel we don't hand-paint a bespoke cockpit per aircraft.
+// Instead we CLASSIFY each aircraft from the numbers it already carries
+// (Vne, radar range, wingspan, fuel) into a broad family, give each family a
+// base palette, then nudge the metal tone / backlight / screw layout by a stable
+// hash of the aircraft key — so every aircraft's panel reads a little different,
+// and a warbird, a Cessna, an airliner and a fighter look clearly distinct.
+function rcHash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0);
+}
+function rcAcClass() {
+  const vneKt = (AC.Vne || 160) / 0.514444;
+  const span  = (AC.playerModelDims && AC.playerModelDims.span) || 0;
+  const radar = AC.radarNm || 0, fuel = AC.fuelMax || 0;
+  const desc  = (AC.desc || '').toLowerCase();
+  if (/ww ?ii|wwii|escort fighter|1930s/.test(desc) || (radar <= 10 && vneKt < 470 && fuel < 1300 && (span === 0 || span < 17))) return 'warbird';
+  if (vneKt < 230 && radar <= 20 && (span === 0 || span < 23) && fuel < 2300) return 'ga';
+  if (radar >= 55 && (span === 0 || span < 17)) return 'fighter';
+  if (radar >= 45) return 'military';
+  return 'airliner';   // remaining civil types (airliners, regional/business jets, Concorde)
+}
+// Base palettes keyed by family. `glass` = has modern EFIS glass screens (ND/EICAS).
+const RC_THEMES = {
+  ga:       { bezel: ['#8f8a7e','#585349','#2e2b25','#131210'], face: ['#1b1a16','#100f0c','#070605'], panel: ['#2e2b25','#241f19','#171310','#0d0a08'],
+              screw: ['#9a9080','#464036','#181510'], backlight: '26,12,4', glassTint: '255,246,224', label: ['rgba(235,230,215,0.72)','rgba(235,230,215,0.45)'], glass: false },
+  warbird:  { bezel: ['#7d7566','#4a4034','#241d15','#0e0b07'], face: ['#171208','#0d0a05','#060402'], panel: ['#24211a','#1b1712','#12100c','#090705'],
+              screw: ['#8a7d63','#3f382a','#15110a'], backlight: '34,10,3', glassTint: '255,236,196', label: ['rgba(236,224,190,0.72)','rgba(236,224,190,0.44)'], glass: false },
+  airliner: { bezel: ['#828892','#474d57','#23262d','#0c0d11'], face: ['#15171b','#0b0d10','#050607'], panel: ['#222831','#1a1f27','#0f1319','#080a0e'],
+              screw: ['#8b9099','#3d4148','#15171a'], backlight: '14,10,6', glassTint: '235,242,255', label: ['rgba(228,234,242,0.72)','rgba(228,234,242,0.46)'], glass: true },
+  fighter:  { bezel: ['#6f747a','#3a3e44','#1b1d21','#08090b'], face: ['#0c120d','#070c08','#030603'], panel: ['#1a1f1b','#141814','#0c0f0c','#070907'],
+              screw: ['#787d75','#333833','#131513'], backlight: '6,20,8', glassTint: '210,255,220', label: ['rgba(214,236,220,0.72)','rgba(214,236,220,0.46)'], glass: true },
+  military: { bezel: ['#767a70','#3e423a','#1d1f1a','#090a08'], face: ['#10120d','#0a0c08','#040503'], panel: ['#232619','#1a1d13','#10120c','#080906'],
+              screw: ['#82866f','#383b2e','#141610'], backlight: '10,16,5', glassTint: '224,240,208', label: ['rgba(224,232,208,0.72)','rgba(224,232,208,0.45)'], glass: true }
+};
+function rcTheme() {
+  const key = selectedAircraftKey || '';
+  if (RC.theme && RC.themeKey === key) return RC.theme;
+  const base = RC_THEMES[rcAcClass()] || RC_THEMES.airliner;
+  // Per-aircraft nudge: shift the panel metal a few points lighter/darker and the
+  // backlight warmth, so two aircraft of the same family still differ subtly.
+  const h = rcHash(key);
+  const dl = ((h & 15) - 7);                 // -7..+8 lightness delta
+  const shift = function (hex, d) {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) + d, g = ((n >> 8) & 255) + d, b = (n & 255) + d;
+    r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  };
+  const t = {
+    bezel: base.bezel.map(function (c, i) { return shift(c, i < 2 ? dl : 0); }),
+    face: base.face.slice(), faceRim: 'rgba(0,0,0,0.85)',
+    panel: base.panel.map(function (c) { return shift(c, dl); }),
+    screw: base.screw.slice(), backlight: base.backlight, glassTint: base.glassTint,
+    label: base.label.slice(), glass: base.glass,
+    screwSeed: (h >>> 4) & 255,
+    noiseLight: 'rgba(255,255,255,0.016)', noiseDark: 'rgba(0,0,0,0.05)'
+  };
+  RC.theme = t; RC.themeKey = key;
+  return t;
+}
 // Needle lag: real steam gauges don't jump straight to the sensed value — they ease
 // toward it, each at its own mechanical time constant. Smoothed once per frame.
 RC.disp = { spd: 0, alt: 0, vs: 0, hdg: null, init: false };
@@ -11480,16 +11579,18 @@ function rcIndicatedAlt() {
 }
 
 function rcComputeLayout() {
-  const key = W + 'x' + H;
+  // Key on aircraft too: switching aircraft changes the theme (and whether the
+  // EFIS glass bays exist), so all cached faces/backgrounds must rebuild.
+  const key = W + 'x' + H + '_' + (selectedAircraftKey || '');
   if (RC.layout && RC.layoutKey === key) return RC.layout;
   // A real six-pack is two rows of three dials — six gauges never fit a single
   // row on an actual panel, so this is fixed regardless of screen size.
   const sideAnn   = W >= 760;                // annunciator column fits on the right
   const dockRadar = W >= 760;                // nav/radar scope docks into the panel on the left
-  // ND/EICAS only get physical screen bays cut into the panel when there's
-  // real room either side — otherwise they're left out entirely rather than
-  // floating a window over the glass (see avNdRect/avEicasRect).
-  const sideScreens = W >= 1280;
+  // ND/EICAS glass bays only exist on GLASS-COCKPIT aircraft (modern jets /
+  // airliners) and only when there's real width for them — a Cessna or a
+  // Spitfire is steam-gauge only, so its panel has no EFIS screens at all.
+  const sideScreens = W >= 1280 && rcTheme().glass;
   const glare   = 16;                        // glareshield strip height
   const stripH  = sideAnn ? 0 : 22;          // bottom lamp strip when no side column
   let PH = Math.round(H * 0.30);
@@ -11544,18 +11645,19 @@ function rcCanvas(w, h) {
 
 // Metal bezel + recessed black dial face (shared by all round gauges)
 function rcDrawBezel(g, D) {
+  const T = rcTheme();
   const r = D / 2, cx = r, cy = r;
   let grd = g.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.15, cx, cy, r);
-  grd.addColorStop(0, '#82868e'); grd.addColorStop(0.5, '#4a4e56');
-  grd.addColorStop(0.85, '#26282d'); grd.addColorStop(1, '#0e0f11');
+  grd.addColorStop(0, T.bezel[0]); grd.addColorStop(0.5, T.bezel[1]);
+  grd.addColorStop(0.85, T.bezel[2]); grd.addColorStop(1, T.bezel[3]);
   g.fillStyle = grd;
   g.beginPath(); g.arc(cx, cy, r, 0, RC_TAU); g.fill();
   const fr = r * 0.9;
   grd = g.createRadialGradient(cx, cy, fr * 0.15, cx, cy, fr);
-  grd.addColorStop(0, '#16171b'); grd.addColorStop(0.75, '#0c0d10'); grd.addColorStop(1, '#050607');
+  grd.addColorStop(0, T.face[0]); grd.addColorStop(0.75, T.face[1]); grd.addColorStop(1, T.face[2]);
   g.fillStyle = grd;
   g.beginPath(); g.arc(cx, cy, fr, 0, RC_TAU); g.fill();
-  g.strokeStyle = 'rgba(0,0,0,0.85)';
+  g.strokeStyle = T.faceRim;
   g.lineWidth = Math.max(1.5, D * 0.014);
   g.beginPath(); g.arc(cx, cy, fr, 0, RC_TAU); g.stroke();
 }
@@ -11570,16 +11672,17 @@ function rcTick(g, cx, cy, ang, r0, r1, w, color) {
 
 // Curved glass reflection, cached per size, blitted over each gauge after the needles
 function rcGlass(D) {
-  const key = 'glass' + D;
+  const T = rcTheme();
+  const key = 'glass' + D + '_' + T.glassTint;
   if (RC.faces[key]) return RC.faces[key];
   const c = rcCanvas(D, D), g = c.getContext('2d');
   const r = D / 2, fr = r * 0.9;
   g.save();
   g.beginPath(); g.arc(r, r, fr, 0, RC_TAU); g.clip();
   const grd = g.createLinearGradient(0, 0, D * 0.7, D * 0.7);
-  grd.addColorStop(0, 'rgba(255,255,255,0.10)');
-  grd.addColorStop(0.4, 'rgba(255,255,255,0.02)');
-  grd.addColorStop(0.6, 'rgba(255,255,255,0)');
+  grd.addColorStop(0, 'rgba(' + T.glassTint + ',0.10)');
+  grd.addColorStop(0.4, 'rgba(' + T.glassTint + ',0.02)');
+  grd.addColorStop(0.6, 'rgba(' + T.glassTint + ',0)');
   g.fillStyle = grd; g.fillRect(0, 0, D, D);
   g.beginPath(); g.ellipse(r - fr * 0.35, r - fr * 0.45, fr * 0.42, fr * 0.2, -0.6, 0, RC_TAU);
   g.fillStyle = 'rgba(255,255,255,0.05)'; g.fill();
@@ -11608,14 +11711,15 @@ function rcNeedle(cx, cy, ang, len, tail, w, color, hub) {
 }
 
 function rcDialLabel(g, D, line1, line2) {
+  const T = rcTheme();
   const r = D / 2;
-  g.fillStyle = 'rgba(230,232,235,0.7)';
+  g.fillStyle = T.label[0];
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = '600 ' + Math.max(6, D * 0.055) + 'px Arial, sans-serif';
   g.fillText(line1, r, r - D * 0.16);
   if (line2) {
     g.font = '600 ' + Math.max(5, D * 0.04) + 'px Arial, sans-serif';
-    g.fillStyle = 'rgba(230,232,235,0.45)';
+    g.fillStyle = T.label[1];
     g.fillText(line2, r, r - D * 0.16 + D * 0.06);
   }
 }
@@ -11632,7 +11736,8 @@ function rcAsiAng(v, maxV) { return RC_ASI_START + Math.min(1, Math.max(0, v / m
 
 function rcFaceASI(D) {
   const maxV = rcAsiMax();
-  const key = 'asi' + D + '_' + maxV + '_' + Math.round(VNE_KTS);
+  const vr = ROTATION_KTS || 0;
+  const key = 'asi' + D + '_' + maxV + '_' + Math.round(VNE_KTS) + '_' + Math.round(vr);
   if (RC.faces[key]) return RC.faces[key];
   const c = rcCanvas(D, D), g = c.getContext('2d');
   rcDrawBezel(g, D);
@@ -11649,6 +11754,21 @@ function rcFaceASI(D) {
   });
   // red radial line at Vne
   rcTick(g, r, r, rcAsiAng(Math.min(VNE_KTS, maxV), maxV), fr * 0.78, fr * 0.97, Math.max(2, D * 0.03), '#e33');
+  // Vr — rotation/takeoff-speed reference bug (white triangle pointing in at the
+  // rotation speed, marked "Vr"), so the pilot knows exactly when to rotate.
+  if (vr > 0 && vr < maxV) {
+    const va = rcAsiAng(vr, maxV);
+    const br = fr * 0.87;
+    g.fillStyle = '#f2f4f6';
+    g.save();
+    g.translate(r + Math.cos(va) * br, r + Math.sin(va) * br);
+    g.rotate(va + Math.PI / 2);
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(-fr * 0.09, -fr * 0.13); g.lineTo(fr * 0.09, -fr * 0.13); g.closePath(); g.fill();
+    g.restore();
+    g.fillStyle = '#f2f4f6'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '700 ' + Math.max(6, D * 0.06) + 'px Arial, sans-serif';
+    g.fillText('Vr', r + Math.cos(va) * fr * 0.7, r + Math.sin(va) * fr * 0.7);
+  }
   // ticks + numerals
   const step = maxV <= 300 ? 20 : maxV <= 500 ? 50 : maxV <= 1000 ? 100 : 250;
   g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -11893,15 +12013,16 @@ function rcDrawAI(cx, cy, D) {
 // ── Panel background: gradient face, glareshield, gauge recesses, screws ──
 function rcPanelBg(L) {
   if (RC.bg) return RC.bg;
+  const T = rcTheme();
   const c = rcCanvas(W, L.PH), g = c.getContext('2d');
   let grd = g.createLinearGradient(0, 0, 0, L.PH);
-  grd.addColorStop(0, '#22252b'); grd.addColorStop(0.15, '#1a1d22');
-  grd.addColorStop(0.85, '#101216'); grd.addColorStop(1, '#0a0b0e');
+  grd.addColorStop(0, T.panel[0]); grd.addColorStop(0.15, T.panel[1]);
+  grd.addColorStop(0.85, T.panel[2]); grd.addColorStop(1, T.panel[3]);
   g.fillStyle = grd; g.fillRect(0, 0, W, L.PH);
   // brushed-metal noise
   for (let i = 0; i < 1600; i++) {
     const x = Math.random() * W, y = Math.random() * L.PH;
-    g.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.016)' : 'rgba(0,0,0,0.05)';
+    g.fillStyle = Math.random() > 0.5 ? T.noiseLight : T.noiseDark;
     g.fillRect(x, y, Math.random() * 14 + 2, 1);
   }
   // glareshield lip
@@ -11949,8 +12070,9 @@ function rcPanelBg(L) {
   }
   // screws
   function screw(x, y, seed) {
+    seed = seed + T.screwSeed;
     const rg = g.createRadialGradient(x - 1, y - 1, 0.5, x, y, 4.5);
-    rg.addColorStop(0, '#8b9099'); rg.addColorStop(0.7, '#3d4148'); rg.addColorStop(1, '#15171a');
+    rg.addColorStop(0, T.screw[0]); rg.addColorStop(0.7, T.screw[1]); rg.addColorStop(1, T.screw[2]);
     g.fillStyle = rg;
     g.beginPath(); g.arc(x, y, 4, 0, RC_TAU); g.fill();
     const a = seed * 2.4;
@@ -12174,9 +12296,30 @@ function drawCockpitPanel() {
   // lighting rather than daylight glareshield reflections.
   const nightAmt = rcNightAmt();
   if (nightAmt > 0.02) {
-    ctx.fillStyle = 'rgba(18,8,4,' + (nightAmt * 0.5).toFixed(3) + ')';
+    ctx.fillStyle = 'rgba(' + rcTheme().backlight + ',' + (nightAmt * 0.5).toFixed(3) + ')';
     ctx.fillRect(0, L.top, W, L.PH);
   }
+
+  rcDrawPlacard(L);   // coordinates (left) + live weather/time (right) engraved on the glareshield
+}
+
+// Glareshield placard: aircraft position on the left, live weather + time-of-day on
+// the right — the readouts that used to float over the windscreen, now on the panel.
+function rcDrawPlacard(L) {
+  ctx.save();
+  const y = L.top + L.glare * 0.5 + 1;
+  ctx.font = '600 9px "JetBrains Mono", monospace';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(0,255,65,0.6)';
+  const latDir = state.lat >= 0 ? 'N' : 'S', lonDir = state.lon >= 0 ? 'E' : 'W';
+  ctx.textAlign = 'left';
+  ctx.fillText(latDir + ' ' + Math.abs(state.lat).toFixed(3) + '°  ' + lonDir + ' ' + Math.abs(state.lon).toFixed(3) + '°', 12, y);
+  const timeLabels = { day: 'DAY', dusk: 'DUSK', night: 'NIGHT', dawn: 'DAWN' };
+  const wxLabels   = { clear: 'CLEAR', clouds: 'CLOUDS', rain: 'RAIN', snow: 'SNOW', fog: 'FOG' };
+  const wind = env.wind.speedKts < 1 ? 'CALM' : Math.round(env.wind.speedKts) + 'KT';
+  ctx.textAlign = 'right';
+  ctx.fillText((timeLabels[env.time] || env.time) + ' · ' + (wxLabels[env.weather] || env.weather) + ' · ' + wind, W - 12, y);
+  ctx.restore();
 }
 
 function render() {
@@ -12372,22 +12515,18 @@ function render() {
   // Landing panel (shown while on the ground)
   renderLandingPanel();
 
-  // Traffic info overlay — shows live flight data status
+  // Weather / time chip. The ADS-B traffic-status readout was removed; only the live
+  // weather + time-of-day remain, and in realistic-panel mode even that moves onto
+  // the panel itself (rcDrawPlacard), so this chip hides to avoid duplication.
   const trafficInfoEl = document.getElementById('traffic-info');
-  if (trafficInfoEl && chosen && simReady) {
+  if (trafficInfoEl && chosen && simReady && !cockpitPanelOn()) {
     trafficInfoEl.style.display = 'block';
-    const alive    = traffic.filter(function(t){ return t.alive; });
-    const airborne = alive.filter(function(t){ return t.phase !== 'ground'; }).length;
-    const onGnd    = alive.filter(function(t){ return t.phase === 'ground'; }).length;
-    const secSince = Math.round((performance.now() / 1000) - trafficLastFetch);
-    const nextIn   = Math.max(0, TRAFFIC_FETCH_S - secSince);
     const wxLabels   = { clear:'CLEAR', clouds:'CLOUDS', rain:'RAIN', snow:'SNOW', fog:'FOG' };
     const timeLabels = { day:'DAY', dusk:'DUSK', night:'NIGHT', dawn:'DAWN' };
     trafficInfoEl.innerHTML =
-      '<span style="color:#00e860">' + trafficStatus + '</span><br>' +
-      '✈ ' + airborne + ' airborne' + (onGnd > 0 ? ' · ' + onGnd + ' gnd' : '') + '<br>' +
-      (trafficFetching ? '<span style="color:#ffe066">↻ fetching…</span>' : 'next in ' + nextIn + 's') + '<br>' +
       '<span style="color:rgba(127,208,255,0.7)">🌍 LIVE WX</span> · ' + (timeLabels[env.time] || env.time) + ' · ' + (wxLabels[env.weather] || env.weather);
+  } else if (trafficInfoEl) {
+    trafficInfoEl.style.display = 'none';
   }
 
   // Minimap (the 3D world + camera were already updated at the top of render())
@@ -12400,7 +12539,7 @@ function renderLandingPanel() {
   const rotateEl = document.getElementById('rotate-warn');
   if (!panel) return;
 
-  if (!state.onGround) {
+  if (!state.onGround || cockpitPanelOn()) {
     panel.style.display    = 'none';
     if (rotateEl) rotateEl.style.display = 'none';
     return;
@@ -13855,6 +13994,11 @@ function applyVolSettings() {
     const el = document.getElementById('minimap');
     if (el) el.style.display = on ? '' : 'none';
   });
+  // UI-clutter toggles — use body classes so they survive the in-flight code that
+  // shows/hides these elements on its own.
+  wireToggle('stp-keyhint',   function (on) { document.body.classList.toggle('hide-keyhint',  !on); _saveSettings(); });
+  wireToggle('stp-pausebtn',  function (on) { document.body.classList.toggle('hide-pausebtn', !on); _saveSettings(); });
+  wireToggle('stp-viewlabel', function (on) { document.body.classList.toggle('hide-viewlabel', !on); _saveSettings(); });
 
   // ── Realistic cockpit (1=analog panel, 2=window frame, 3=hide markers) ──
   // No master switch: each toggle is independent, and turning all three off
@@ -13996,6 +14140,9 @@ function applyVolSettings() {
       hud:         get('stp-hud'),
       minimap:     get('stp-minimap'),
       fpsCounter:  get('stp-fps-counter'),
+      keyHint:     get('stp-keyhint'),
+      pauseBtn:    get('stp-pausebtn'),
+      viewLabel:   get('stp-viewlabel'),
       rcPanel:     cockpit.panel,
       rcFrame:     cockpit.frame,
       rcMarkers:   cockpit.hideMarkers,
@@ -14032,6 +14179,9 @@ function applyVolSettings() {
     applyToggle('stp-hud',       s.hud,       function(on){ const el = document.getElementById('hud');       if(el) el.style.display  = on ? 'flex':'none'; });
     applyToggle('stp-minimap',   s.minimap,   function(on){ const el = document.getElementById('minimap');   if(el) el.style.display  = on ? '':'none'; });
     applyToggle('stp-fps-counter', s.fpsCounter, function(on){ const el = document.getElementById('fps-counter'); if(el) el.style.display = on ? 'block':'none'; });
+    applyToggle('stp-keyhint',   s.keyHint,   function(on){ document.body.classList.toggle('hide-keyhint',  !on); });
+    applyToggle('stp-pausebtn',  s.pauseBtn,  function(on){ document.body.classList.toggle('hide-pausebtn', !on); });
+    applyToggle('stp-viewlabel', s.viewLabel, function(on){ document.body.classList.toggle('hide-viewlabel', !on); });
     applyToggle('stp-rc-panel',   s.rcPanel,   function(on){ cockpit.panel = on; });
     applyToggle('stp-rc-frame',   s.rcFrame,   function(on){ cockpit.frame = on; });
     applyToggle('stp-rc-markers', s.rcMarkers, function(on){ cockpit.hideMarkers = on; });
@@ -14115,6 +14265,7 @@ function applyVolSettings() {
     if (rdSlider) rdSlider.addEventListener('input', _saveSettings);
     // Patch toggles
     ['stp-scanlines','stp-vignette','stp-hud','stp-minimap','stp-fps-counter',
+     'stp-keyhint','stp-pausebtn','stp-viewlabel',
      'stp-rc-panel','stp-rc-frame','stp-rc-markers'].forEach(function(id){
       const cb = document.getElementById(id); if (cb) cb.addEventListener('change', _saveSettings);
     });
