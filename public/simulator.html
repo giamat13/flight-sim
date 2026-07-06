@@ -132,6 +132,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
 #loading .l-boot-line{font-size:9px;letter-spacing:2px;opacity:0;animation:bootFade 0.4s ease forwards;color:rgba(0,255,65,0.55)}
 @keyframes bootFade{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
 #ap-indicator{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;display:none;color:#7fd0ff;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(0,160,255,0.10);border:1px solid rgba(80,180,255,0.55);border-radius:4px;padding:4px 14px;text-shadow:0 0 8px rgba(127,208,255,0.5)}
+#simrate-indicator{position:fixed;top:74px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;display:none;color:#ffe066;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:2px;background:rgba(255,200,0,0.08);border:1px solid rgba(255,200,0,0.5);border-radius:4px;padding:4px 14px;text-shadow:0 0 8px rgba(255,224,102,0.5)}
 /* ===== Autopilot control panel ===== */
 #ap-panel{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:25;display:none;flex-direction:column;align-items:center;gap:6px;background:rgba(0,12,30,0.88);border:1px solid rgba(80,180,255,0.45);border-radius:8px;padding:10px 16px 8px;font-family:'JetBrains Mono',monospace;backdrop-filter:blur(4px);pointer-events:auto;cursor:auto}
 #ap-panel .ap-title{font-size:9px;letter-spacing:3px;color:rgba(80,180,255,0.7);margin-bottom:2px}
@@ -660,6 +661,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
 <div id="gp-indicator">🎮 CONTROLLER</div>
 <div id="offline-indicator">⚠ OFFLINE</div>
 <div id="ap-indicator">✈ AUTOPILOT</div>
+<div id="simrate-indicator"></div>
 <div id="nav-hud"></div>
 
 <!-- Advanced autopilot: full-screen destination picker -->
@@ -679,6 +681,7 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
   <div id="nm-zoom">
     <button class="nm-zbtn" id="nm-zin">+</button>
     <button class="nm-zbtn" id="nm-zout">-</button>
+    <button class="nm-zbtn" id="nm-layer-toggle" style="font-size:10px" title="Toggle satellite / IFR-style map layer">🛰 SAT</button>
   </div>
   <div id="nm-actions">
     <button class="nm-act nm-resume" id="nm-resume">▶ RESUME</button>
@@ -1116,6 +1119,65 @@ body.rc-panel #tc-right{bottom:calc(var(--rc-lift,240px) + 12px)}
             <button class="stp-btn" id="stp-season-autumn">🍂 AUTUMN</button>
             <button class="stp-btn" id="stp-season-winter">❄ WINTER</button>
           </div>
+        </div>
+
+        <div class="stp-card">
+          <div class="stp-card-head"><span class="stp-card-icon">💥</span><span class="stp-card-title">DAMAGE &amp; REALISM</span></div>
+          <div class="stp-toggle-grid">
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">CRASH DAMAGE</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-crash-damage" checked><span class="stp-toggle-track"></span></label>
+            </div>
+            <div class="stp-toggle-row">
+              <span class="stp-toggle-label">AIRCRAFT STRESS DAMAGE</span>
+              <label class="stp-toggle"><input type="checkbox" id="stp-stress-damage" checked><span class="stp-toggle-track"></span></label>
+            </div>
+          </div>
+          <div class="stp-hint">CRASH DAMAGE ends the flight on a bad landing, terrain/building strike or mid-air collision. AIRCRAFT STRESS DAMAGE lets the wings or landing gear fail under overspeed. Turn either OFF for a more forgiving, arcade-style flight. Both default ON.</div>
+        </div>
+
+        <div class="stp-card">
+          <div class="stp-card-head"><span class="stp-card-icon">⏩</span><span class="stp-card-title">SIMULATION RATE</span></div>
+          <div class="stp-row">
+            <button class="stp-btn stp-active" id="stp-simrate-1" data-rate="1">1×</button>
+            <button class="stp-btn" id="stp-simrate-2" data-rate="2">2×</button>
+            <button class="stp-btn" id="stp-simrate-4" data-rate="4">4×</button>
+          </div>
+          <div class="stp-hint">Speeds up the flight for long-haul cruising. Only takes effect with the autopilot engaged, well above the ground — it snaps back to 1× automatically on approach, so you're always at real-time speed for takeoff and landing.</div>
+        </div>
+
+        <div class="stp-card">
+          <div class="stp-card-head"><span class="stp-card-icon">💺</span><span class="stp-card-title">PILOT VIEW (SEAT HEIGHT)</span></div>
+          <div class="stp-vol-row">
+            <span class="stp-vol-name">SEAT HEIGHT</span>
+            <input type="range" class="stp-vol-slider" id="stp-seat-slider" min="-30" max="30" value="0" step="1">
+            <span class="stp-vol-val" id="stp-seat-val" style="width:44px">0 cm</span>
+          </div>
+          <div class="stp-hint">Raises or lowers the cockpit eye point, like adjusting a real seat — raise it for a better view of the runway on landing.</div>
+        </div>
+
+        <div class="stp-card">
+          <div class="stp-card-head"><span class="stp-card-icon">🚁</span><span class="stp-card-title">FREE / DRONE CAMERA</span></div>
+          <div class="stp-vol-row">
+            <span class="stp-vol-name">MOVE SPEED</span>
+            <input type="range" class="stp-vol-slider" id="stp-drone-speed" min="25" max="400" value="100" step="25">
+            <span class="stp-vol-val" id="stp-drone-speed-val" style="width:44px">100%</span>
+          </div>
+          <div class="stp-vol-row">
+            <span class="stp-vol-name">ZOOM (FOV)</span>
+            <input type="range" class="stp-vol-slider" id="stp-drone-fov" min="20" max="100" value="60" step="1">
+            <span class="stp-vol-val" id="stp-drone-fov-val" style="width:44px">60°</span>
+          </div>
+          <div class="stp-toggle-row">
+            <span class="stp-toggle-label">DEPTH OF FIELD</span>
+            <label class="stp-toggle"><input type="checkbox" id="stp-drone-dof"><span class="stp-toggle-track"></span></label>
+          </div>
+          <div class="stp-vol-row">
+            <span class="stp-vol-name">DOF BLUR</span>
+            <input type="range" class="stp-vol-slider" id="stp-drone-dof-amt" min="1" max="100" value="40" step="1">
+            <span class="stp-vol-val" id="stp-drone-dof-amt-val" style="width:44px">40%</span>
+          </div>
+          <div class="stp-hint">MOVE SPEED sets how fast SLEW flies when you fly around with WASD/SPACE/Z (hold SHIFT to boost further). ZOOM and DEPTH OF FIELD apply to SLEW, ORBIT and DRONE camera views (cycle with X / the on-screen SLEW button) for cinematic screenshots.</div>
         </div>
       </div>
 
@@ -5588,6 +5650,7 @@ async function initThree() {
     THREEJS.camera.aspect = window.innerWidth / window.innerHeight;
     THREEJS.camera.updateProjectionMatrix();
     THREEJS.renderer.setSize(window.innerWidth, window.innerHeight);
+    if (dofComposer) dofComposer.setSize(window.innerWidth, window.innerHeight);
   });
 
   // Start downloading the player aircraft model if the current type defines one.
@@ -6513,7 +6576,7 @@ function updateSlewCamera(dt) {
   if (keys['ArrowRight']) slewYaw = wrap360(slewYaw + SLEW_LOOK_RATE * dt);
 
   const boost = (keys['ShiftLeft'] || keys['ShiftRight']) ? SLEW_BOOST_MULT : 1;
-  const spd = SLEW_BASE_SPEED * boost;
+  const spd = SLEW_BASE_SPEED * boost * (window._droneSpeedMult || 1);
   const yawR = slewYaw * DEG, pitchR = slewPitch * DEG;
   const fwd = new THREE.Vector3(Math.sin(yawR) * Math.cos(pitchR), Math.sin(pitchR), -Math.cos(yawR) * Math.cos(pitchR));
   const right = new THREE.Vector3(Math.cos(yawR), 0, Math.sin(yawR));
@@ -6539,14 +6602,43 @@ function updateOrbitCamera(dt) {
   if (keys['ArrowRight']) orbitYaw = wrap360(orbitYaw + ORBIT_LOOK_RATE * dt);
 }
 
+// Depth-of-field post-processing (free/drone camera only) — loaded lazily on first
+// use so normal flight never pays for the extra composer pass. Any import/runtime
+// failure just leaves dofComposer null and the sim falls back to a plain render.
+let dofComposer = null, dofBokehPass = null, dofLoading = false;
+async function ensureDofPipeline() {
+  if (dofComposer || dofLoading || !THREEJS) return;
+  dofLoading = true;
+  try {
+    const [ecMod, rpMod, bpMod] = await Promise.all([
+      import('three/addons/postprocessing/EffectComposer.js'),
+      import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/BokehPass.js')
+    ]);
+    const composer = new ecMod.EffectComposer(THREEJS.renderer);
+    composer.setSize(window.innerWidth, window.innerHeight);
+    composer.addPass(new rpMod.RenderPass(THREEJS.scene, THREEJS.camera));
+    const bokeh = new bpMod.BokehPass(THREEJS.scene, THREEJS.camera, { focus: 100, aperture: 0.0004, maxblur: 0.01 });
+    composer.addPass(bokeh);
+    dofComposer = composer;
+    dofBokehPass = bokeh;
+  } catch (e) {
+    dofComposer = null; dofBokehPass = null;
+  } finally {
+    dofLoading = false;
+  }
+}
+
 // Drives the Three.js camera from the flight model, orients + lights the aircraft
 // mesh, refreshes the surrounding world (tiles + buildings) and renders the scene.
 function updateCamera() {
   if (!THREEJS) return;
   const cam = THREEJS.camera;
 
-  // Sense of speed: widen FOV as we go faster.
-  const fovDeg = 60 + Math.min(20, Math.max(0, state.speed - 150) * 0.06);
+  // Sense of speed: widen FOV as we go faster. Free/drone camera views (SLEW,
+  // ORBIT, DRONE) use their own fixed zoom instead, set from the GAMEPLAY settings.
+  const isFreeCam = cameraMode === 2 || cameraMode === 3 || cameraMode === 8;
+  const fovDeg = isFreeCam ? (window._droneFov || 60) : (60 + Math.min(20, Math.max(0, state.speed - 150) * 0.06));
   if (Math.abs(cam.fov - fovDeg) > 0.05) { cam.fov = fovDeg; cam.updateProjectionMatrix(); }
 
   // Before the user picks a location: animate a slow pan over Grand Canyon as a backdrop.
@@ -6625,6 +6717,7 @@ function updateCamera() {
     // Cockpit: the camera IS the aircraft, looking out the nose. Hide the model.
     THREEJS.aircraft.visible = false;
     cam.position.copy(acPos);
+    cam.position.y += window._seatHeight || 0; // seat height adjustment (PILOT VIEW setting)
     setCamOrient(cam, state.heading + lookYawOff + turbYawJit, state.pitch + buf * 1.2 + lookPitchOff + turbPitchJit, state.bank + buf * 2.2 + turbBankJit);
   } else if (cameraMode === 2) {
     // Slew: a fully detached free camera — the aircraft keeps flying itself
@@ -6742,6 +6835,20 @@ function updateCamera() {
   updateProcScatter();     // trees & houses in seeded worlds
   updateProcAirport();     // the seed's airport building
   updateTrafficModels();   // place/refresh real downloaded aircraft models in the scene
+
+  // Depth of field: only for the free/drone camera views, and only once the
+  // (lazily-loaded) composer is ready — otherwise a plain render, same as always.
+  if (isFreeCam && window._droneDof) {
+    if (!dofComposer && !dofLoading) ensureDofPipeline();
+    if (dofComposer && dofBokehPass) {
+      const amt = window._droneDofAmt !== undefined ? window._droneDofAmt : 0.4;
+      dofBokehPass.uniforms['focus'].value = cam.position.distanceTo(acPos);
+      dofBokehPass.uniforms['aperture'].value = 0.00005 + amt * 0.0009;
+      dofBokehPass.uniforms['maxblur'].value = 0.005 + amt * 0.02;
+      dofComposer.render();
+      return;
+    }
+  }
   THREEJS.renderer.render(THREEJS.scene, cam);
 }
 
@@ -7259,7 +7366,7 @@ function updateTraffic(dt) {
   }
 
   // ---- Mid-air collision check: player vs. real traffic ----
-  if (!state.onGround && !state.terrainHit) {
+  if (window._crashDamage !== false && !state.onGround && !state.terrainHit) {
     for (let i = 0; i < traffic.length; i++) {
       const t = traffic[i];
       if (!t.alive || t.phase === 'ground') continue;
@@ -7913,7 +8020,7 @@ function updateMultiplayer(dt) {
     e._isMp = true;
     traffic.push(e);
 
-    if (state.onGround && e.phase === 'ground' && !state.terrainHit) {
+    if (window._crashDamage !== false && state.onGround && e.phase === 'ground' && !state.terrainHit) {
       const horizM = distFromPlayerM(e.lat, e.lon);
       if (horizM < MP_GROUND_COLLIDE_M) {
         state.terrainHit = true;
@@ -10177,7 +10284,7 @@ function update(dt) {
     // Wing structural failure if severely overspeeding for extended time
     if (state.overspeed) {
       state.engineTimer = (state.engineTimer || 0) + dt;
-      if (state.engineTimer > 8 && !state.wingBroken) {
+      if (state.engineTimer > 8 && !state.wingBroken && window._stressDamage !== false) {
         state.wingBroken = true;
         state.wingBreakSide = Math.random() > 0.5 ? 1 : -1;
         state.engineTimer = 0;
@@ -10202,7 +10309,7 @@ function update(dt) {
   // that it just snaps off — gone for the rest of the flight, no relanding.
   const GEAR_SAFE_KTS = 250;  // no risk at or below this speed
   const GEAR_FAIL_KTS = 420;  // up here, failure is near-certain within ~1s
-  if (state.gearDown && !state.gearBroken && !state.onGround && state.speed > GEAR_SAFE_KTS) {
+  if (state.gearDown && !state.gearBroken && !state.onGround && state.speed > GEAR_SAFE_KTS && window._stressDamage !== false) {
     const overFrac = Math.min(1, (state.speed - GEAR_SAFE_KTS) / (GEAR_FAIL_KTS - GEAR_SAFE_KTS));
     // Cubic (not squared) so a brief, moderate excursion just above GEAR_SAFE_KTS gives
     // a real multi-second window to react, while still failing fast near GEAR_FAIL_KTS.
@@ -10391,7 +10498,7 @@ function update(dt) {
     // Water (ocean/sea) is never a valid landing surface — always a crash.
     const landingOnWater = groundM <= 0;
     const lc = checkLandingConditions();
-    if (!landingOnWater && lc.ok) {
+    if (window._crashDamage === false || (!landingOnWater && lc.ok)) {
       // ---- GOOD LANDING ----
       state.onGround = true;
       newAltM = groundM + 3;
@@ -10429,7 +10536,7 @@ function update(dt) {
   state.lat = Math.max(-85, Math.min(85, state.lat));
 
   // ---- Building strike: flying into a building is fatal ----
-  if (!state.terrainHit && buildingCollision()) {
+  if (window._crashDamage !== false && !state.terrainHit && buildingCollision()) {
     state.terrainHit = true;
     state.terrainTimer = 2.2;
     terrainWarn.style.display = 'block';
@@ -14801,6 +14908,75 @@ function applyVolSettings() {
   window._skipRunwaySearch = window._skipRunwaySearch || false;
   wireToggle('stp-skip-runway', function (on) { window._skipRunwaySearch = on; _saveSettings(); });
 
+  // ── Damage & realism: crash damage / structural stress damage (both default ON) ──
+  window._crashDamage  = window._crashDamage  !== undefined ? window._crashDamage  : true;
+  window._stressDamage = window._stressDamage !== undefined ? window._stressDamage : true;
+  wireToggle('stp-crash-damage',  function (on) { window._crashDamage  = on; _saveSettings(); });
+  wireToggle('stp-stress-damage', function (on) { window._stressDamage = on; _saveSettings(); });
+
+  // ── Simulation rate: time acceleration for long cruise legs ──
+  window._simRate = window._simRate || 1;
+  ['stp-simrate-1', 'stp-simrate-2', 'stp-simrate-4'].forEach(function (id) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      settingsPanel.querySelectorAll('[id^="stp-simrate-"]').forEach(function (b) { b.classList.remove('stp-active'); });
+      btn.classList.add('stp-active');
+      window._simRate = parseInt(btn.dataset.rate, 10) || 1;
+      _saveSettings();
+    });
+  });
+
+  // ── Pilot view: cockpit seat height offset (metres, ±0.3m) ──
+  window._seatHeight = window._seatHeight || 0;
+  const seatSlider = document.getElementById('stp-seat-slider');
+  const seatVal = document.getElementById('stp-seat-val');
+  if (seatSlider) {
+    seatSlider.addEventListener('input', function () {
+      const cm = parseInt(seatSlider.value, 10) || 0;
+      window._seatHeight = cm / 100;
+      if (seatVal) seatVal.textContent = cm + ' cm';
+      _saveSettings();
+    });
+  }
+
+  // ── Free / drone camera: move speed, FOV (zoom) and depth of field ──
+  window._droneSpeedMult = window._droneSpeedMult || 1;
+  window._droneFov = window._droneFov || 60;
+  window._droneDof = window._droneDof || false;
+  window._droneDofAmt = window._droneDofAmt !== undefined ? window._droneDofAmt : 0.4;
+  const droneSpeedSlider = document.getElementById('stp-drone-speed');
+  const droneSpeedVal = document.getElementById('stp-drone-speed-val');
+  if (droneSpeedSlider) {
+    droneSpeedSlider.addEventListener('input', function () {
+      const pct = parseInt(droneSpeedSlider.value, 10) || 100;
+      window._droneSpeedMult = pct / 100;
+      if (droneSpeedVal) droneSpeedVal.textContent = pct + '%';
+      _saveSettings();
+    });
+  }
+  const droneFovSlider = document.getElementById('stp-drone-fov');
+  const droneFovVal = document.getElementById('stp-drone-fov-val');
+  if (droneFovSlider) {
+    droneFovSlider.addEventListener('input', function () {
+      const deg = parseInt(droneFovSlider.value, 10) || 60;
+      window._droneFov = deg;
+      if (droneFovVal) droneFovVal.textContent = deg + '°';
+      _saveSettings();
+    });
+  }
+  wireToggle('stp-drone-dof', function (on) { window._droneDof = on; _saveSettings(); });
+  const droneDofAmtSlider = document.getElementById('stp-drone-dof-amt');
+  const droneDofAmtVal = document.getElementById('stp-drone-dof-amt-val');
+  if (droneDofAmtSlider) {
+    droneDofAmtSlider.addEventListener('input', function () {
+      const pct = parseInt(droneDofAmtSlider.value, 10) || 40;
+      window._droneDofAmt = pct / 100;
+      if (droneDofAmtVal) droneDofAmtVal.textContent = pct + '%';
+      _saveSettings();
+    });
+  }
+
   // ── Camera views (C key): which base views are in the cycle, and in what order ──
   // State model: camCfg is a full ordered list of ALL modes (enabled first, in the
   // order the user wants them cycled, followed by the disabled ones in their last
@@ -15000,6 +15176,7 @@ function applyVolSettings() {
 
   function _collectSettings() {
     const get = function (id) { const el = document.getElementById(id); return el ? el.checked : undefined; };
+    const getVal = function (id) { const el = document.getElementById(id); return el ? el.value : undefined; };
     const getActive = function (sel) {
       const el = settingsPanel.querySelector(sel + '.stp-active');
       return el ? (el.dataset.fps || el.dataset.ratio || el.id) : null;
@@ -15026,6 +15203,14 @@ function applyVolSettings() {
       invertPitch: get('stp-invert-pitch'),
       invertPitchMigrated: true,
       skipRunway:  get('stp-skip-runway'),
+      crashDamage: get('stp-crash-damage'),
+      stressDamage: get('stp-stress-damage'),
+      simRate:     window._simRate,
+      seatHeight:  getVal('stp-seat-slider'),
+      droneSpeed:  getVal('stp-drone-speed'),
+      droneFov:    getVal('stp-drone-fov'),
+      droneDof:    get('stp-drone-dof'),
+      droneDofAmt: getVal('stp-drone-dof-amt'),
       volMaster:   volSettings.master,
       volEngine:   volSettings.engine,
       volWind:     volSettings.wind,
@@ -15111,6 +15296,39 @@ function applyVolSettings() {
     }
     applyToggle('stp-invert-pitch', s.invertPitch, function(on){ window._ctrlInvertPitch = on; });
     applyToggle('stp-skip-runway',  s.skipRunway,  function(on){ window._skipRunwaySearch = on; });
+    applyToggle('stp-crash-damage',  s.crashDamage,  function(on){ window._crashDamage = on; });
+    applyToggle('stp-stress-damage', s.stressDamage, function(on){ window._stressDamage = on; });
+    applyToggle('stp-drone-dof', s.droneDof, function(on){ window._droneDof = on; });
+
+    // Simulation rate
+    if (s.simRate) {
+      const rateBtn = document.getElementById('stp-simrate-' + s.simRate);
+      if (rateBtn) {
+        settingsPanel.querySelectorAll('[id^="stp-simrate-"]').forEach(function(b){ b.classList.remove('stp-active'); });
+        rateBtn.classList.add('stp-active');
+      }
+      window._simRate = s.simRate;
+    }
+
+    // Pilot seat height
+    if (s.seatHeight !== undefined) {
+      const el = document.getElementById('stp-seat-slider');
+      if (el) { el.value = s.seatHeight; el.dispatchEvent(new Event('input')); }
+    }
+
+    // Free / drone camera speed, FOV, DOF amount
+    if (s.droneSpeed !== undefined) {
+      const el = document.getElementById('stp-drone-speed');
+      if (el) { el.value = s.droneSpeed; el.dispatchEvent(new Event('input')); }
+    }
+    if (s.droneFov !== undefined) {
+      const el = document.getElementById('stp-drone-fov');
+      if (el) { el.value = s.droneFov; el.dispatchEvent(new Event('input')); }
+    }
+    if (s.droneDofAmt !== undefined) {
+      const el = document.getElementById('stp-drone-dof-amt');
+      if (el) { el.value = s.droneDofAmt; el.dispatchEvent(new Event('input')); }
+    }
 
     // Volume
     if (s.volMaster !== undefined) volSettings.master = s.volMaster;
@@ -15155,8 +15373,8 @@ function applyVolSettings() {
     ].forEach(function(id){
       const el = document.getElementById(id); if (el) el.addEventListener('click', _saveSettings);
     });
-    // Patch FPS / res buttons
-    settingsPanel.querySelectorAll('[id^="stp-fps-"],[id^="stp-res-"]').forEach(function(btn){
+    // Patch FPS / res / sim-rate buttons
+    settingsPanel.querySelectorAll('[id^="stp-fps-"],[id^="stp-res-"],[id^="stp-simrate-"]').forEach(function(btn){
       btn.addEventListener('click', _saveSettings);
     });
     // Patch render distance slider
@@ -15165,7 +15383,8 @@ function applyVolSettings() {
     // Patch toggles
     ['stp-scanlines','stp-vignette','stp-hud','stp-minimap','stp-fps-counter',
      'stp-keyhint','stp-pausebtn','stp-viewlabel','stp-controllerlabel',
-     'stp-rc-panel','stp-rc-frame','stp-rc-markers','stp-skip-runway','stp-invert-pitch'].forEach(function(id){
+     'stp-rc-panel','stp-rc-frame','stp-rc-markers','stp-skip-runway','stp-invert-pitch',
+     'stp-crash-damage','stp-stress-damage','stp-drone-dof'].forEach(function(id){
       const cb = document.getElementById(id); if (cb) cb.addEventListener('change', _saveSettings);
     });
   }
@@ -15953,6 +16172,10 @@ let nmInit = false;
 let nmCanvas = null, nmCtx = null;
 let nmView = { lat: 0, lon: 0, zoom: 9 };
 const nmTiles = {};
+// Background layer: 'sat' = Esri World Imagery (satellite), 'ifr' = a labelled
+// street/road basemap (OpenStreetMap, keyless) — much easier to read waypoints,
+// place names and airport layout against than raw satellite imagery.
+let nmLayer = 'sat';
 let nmDestName = null;
 let nmElevFt = null, nmElevWater = false, nmElevKey = '', nmElevTimer = null;
 
@@ -16144,14 +16367,21 @@ function tileY2lat(y, z) { const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
 function nmClampLat(l) { return Math.max(-85, Math.min(85, l)); }
 
 function nmGetTile(z, x, y) {
-  const key = z + '/' + x + '/' + y;
+  const key = nmLayer + '/' + z + '/' + x + '/' + y;
   let img = nmTiles[key];
   if (!img) {
     img = new Image();
-    img.src = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
+    img.src = nmLayer === 'ifr'
+      ? 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png'
+      : 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
     nmTiles[key] = img;
   }
   return img;
+}
+function nmToggleLayer() {
+  nmLayer = nmLayer === 'sat' ? 'ifr' : 'sat';
+  const btn = document.getElementById('nm-layer-toggle');
+  if (btn) btn.textContent = nmLayer === 'ifr' ? '🗺 IFR' : '🛰 SAT';
 }
 
 function nmPanPixels(dx, dy) {
@@ -16434,6 +16664,7 @@ function initNavPicker() {
   wire('nm-resume', nmResume);
   wire('nm-zin', function () { nmZoom(1); });
   wire('nm-zout', function () { nmZoom(-1); });
+  wire('nm-layer-toggle', nmToggleLayer);
   wire('nm-find', nmSearch);
   const input = document.getElementById('nm-input');
   if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); nmSearch(); } e.stopPropagation(); });
@@ -16961,9 +17192,34 @@ function loop() {
 
   if (chosen && simReady) pollPauseGamepad();
   if (chosen && simReady) pollApGamepad();
-  if (simReady && !paused && !activePause) update(dt);
+  if (simReady && !paused && !activePause) {
+    const simRate = getEffectiveSimRate();
+    for (let i = 0; i < simRate; i++) update(dt);
+    updateSimRateIndicator(simRate);
+  }
   render();
   requestAnimationFrame(loop);
+}
+
+// Simulation rate (time acceleration): only takes effect on autopilot, well above
+// the ground, so takeoff/approach/landing always play out in real time. Implemented
+// as extra update(dt) sub-steps per frame (not by scaling dt) so the physics
+// integrator never sees a larger, potentially unstable timestep.
+let _simRateShown = 1;
+function getEffectiveSimRate() {
+  const want = window._simRate || 1;
+  if (want <= 1 || !ap.on || state.onGround || state.terrainHit) return 1;
+  const aglFt = Math.max(0, state.altitude - (state.terrainHeightFt || 0));
+  if (aglFt < 2000) return 1;
+  return want;
+}
+function updateSimRateIndicator(rate) {
+  if (rate === _simRateShown) return;
+  _simRateShown = rate;
+  const el = document.getElementById('simrate-indicator');
+  if (!el) return;
+  if (rate > 1) { el.textContent = '⏩ ' + rate + '× SIM RATE'; el.style.display = 'block'; }
+  else el.style.display = 'none';
 }
 
 updateControlsHint();
