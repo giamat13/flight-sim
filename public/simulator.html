@@ -12999,14 +12999,60 @@ function rcLampStates() {
   ];
 }
 
+// ── RPM tachometer: full round gauge, same sweep/tick/needle style as the
+//    airspeed indicator, sized to sit at the top of the annunciator column. ──
+const RC_RPM_SWEEP = 270 * DEG;
+function rcRpmAng(pct) {
+  return -Math.PI / 2 - RC_RPM_SWEEP / 2 + Math.min(1, Math.max(0, pct / 100)) * RC_RPM_SWEEP;
+}
+function rcFaceRPM(D) {
+  const key = 'rpm' + D;
+  if (RC.faces[key]) return RC.faces[key];
+  const c = rcCanvas(D, D), g = c.getContext('2d');
+  rcDrawBezel(g, D);
+  const r = D / 2, fr = r * 0.9;
+  g.strokeStyle = '#1fae4b'; g.lineWidth = Math.max(2, D * 0.035);
+  g.beginPath(); g.arc(r, r, fr * 0.87, rcRpmAng(18), rcRpmAng(95)); g.stroke();
+  g.strokeStyle = '#e33'; g.lineWidth = Math.max(2, D * 0.035);
+  g.beginPath(); g.arc(r, r, fr * 0.87, rcRpmAng(95), rcRpmAng(100)); g.stroke();
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let p = 0; p <= 100.001; p += 10) {
+    const major = p % 20 === 0;
+    const ang = rcRpmAng(p);
+    rcTick(g, r, r, ang, major ? fr * 0.78 : fr * 0.84, fr * 0.94,
+      major ? Math.max(1.5, D * 0.014) : 1, 'rgba(235,237,240,' + (major ? 0.95 : 0.55) + ')');
+    if (major) {
+      g.fillStyle = '#e9ebee';
+      g.font = '600 ' + Math.max(7, D * 0.09) + 'px Arial, sans-serif';
+      g.fillText(String(p / 10), r + Math.cos(ang) * fr * 0.62, r + Math.sin(ang) * fr * 0.62);
+    }
+  }
+  rcDialLabel(g, D, 'RPM', 'X10 %');
+  RC.faces[key] = c;
+  return c;
+}
+function rcDrawRpm(cx, cy, D) {
+  const fr = D / 2 * 0.9;
+  ctx.drawImage(rcFaceRPM(D), cx - D / 2, cy - D / 2);
+  const rpmPct = Math.max(0, Math.min(100, state.rpm || 0));
+  rcNeedle(cx, cy, rcRpmAng(rpmPct), fr * 0.8, fr * 0.18, Math.max(1.5, D * 0.022), '#f2f4f6');
+  ctx.drawImage(rcGlass(D), cx - D / 2, cy - D / 2);
+}
+
 function rcDrawAnnColumn(L) {
   const x = L.annX, w = L.annW;
   const top = L.top + L.glare + 10;
   const availH = L.PH - L.glare - 22;
-  const fuelH = Math.min(availH * 0.42, w * 0.75);
+  // RPM tach docked at the top of the column, above the warning lamps —
+  // a real analog round gauge (bezel + ticks + needle), not just a readout.
+  const rpmD = Math.max(40, Math.min(w, availH * 0.36));
+  rcDrawRpm(x + w / 2, top + rpmD / 2, rpmD);
+  const bodyTop = top + rpmD + 8;
+  const bodyH = availH - rpmD - 8;
+  const fuelH = Math.min(bodyH * 0.42, w * 0.75);
   const lamps = rcLampStates();
-  const lampH = Math.min(26, (availH - fuelH - 8 - lamps.length * 4) / lamps.length);
-  let y = top;
+  const lampH = Math.min(26, (bodyH - fuelH - 8 - lamps.length * 4) / lamps.length);
+  let y = bodyTop;
   lamps.forEach(function (l) {
     rcLamp(x, y, w, lampH, l.label, l.color, l.lit, l.flash);
     y += lampH + 4;
@@ -13153,9 +13199,6 @@ function drawCockpitPanel() {
 
   // 6 — Turn coordinator + slip ball (bottom-left, its real six-pack slot)
   rcDrawTC(cs[3].x, cs[3].y, D);
-  ctx.fillStyle = 'rgba(230,232,235,0.6)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = '600 ' + Math.max(6, fr * 0.15) + 'px Arial, sans-serif';
-  ctx.fillText('THR ' + Math.round(state.throttle || 0) + '  RPM ' + Math.round(state.rpm || 0), cs[3].x, cs[3].y + fr * 0.72);
   ctx.drawImage(rcGlass(D), cs[3].x - D / 2, cs[3].y - D / 2);
 
   // Annunciators
